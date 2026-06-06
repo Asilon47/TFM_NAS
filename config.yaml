@@ -1,0 +1,14 @@
+# Edit this to match your Jetson. Used by orchestrate/ssh_client.py.
+jetson:
+  host: 192.168.55.1        # Default for USB-C device mode (L4T gadget)
+  user: jetson              # Replace with the user you created in JetPack initial setup
+  ssh_key: ~/.ssh/id_ed25519  # Key registered via `ssh-copy-id`
+  remote_workdir: /home/jetson/lut_runner
+  docker_image: lut-runner:latest
+
+sweep:
+  precision: fp16           # fp16 | fp32 | int8 (int8 needs a calibration dataset; v1 does fp16)
+  warmup_iters: 50
+  timed_iters: 200
+  output_jsonl: data/lut.jsonl
+  device_info_json: data/device_info.json

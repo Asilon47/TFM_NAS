@@ -1,0 +1,44 @@
+# Cross-session memory for the NAS execution plan.
+# See PROJECT_PLAN.md for the full checkpoint catalog.
+current_checkpoint: "1.3"
+last_completed: "1.3"
+completed:
+  - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
+  - "1.1"    # Skeleton repo + deps
+  - "1.2"    # OFA checkpoint download + cache
+  - "1.3"    # Subnet sampler (arch_dict -> nn.Module)
+cached_artifacts:
+  ofa_mbv3_w1_0:
+    net_id: "ofa_mbv3_d234_e346_k357_w1.0"
+    path: "~/.cache/ofa/ofa_mbv3_d234_e346_k357_w1.0"
+    size_bytes: 31011816
+    sha256: "a7def36bb4e4c688c16d37eb60d5d34b2e6dcf6438c05bc86dea918fda04c6c7"
+    pinned_in: "ofa_extractor/download_ofa.py"
+notes: |
+  Phase 0 (Jetson LUT), CP 1.1 (skeleton + deps), CP 1.2 (OFA
+  checkpoint download + hash pin), and CP 1.3 (subnet sampler) are
+  complete. `python -m ofa_extractor.sampler` materialises a random
+  subnet from the cached MBv3-w1.0 checkpoint and forwards
+  (1, 3, 224, 224) → (1, 1000); param counts span ~3.4M (min arch)
+  to ~7.7M (max arch).
+
+  CP 1.3 added `Pillow` and `torchvision` to `requirements-nas.txt`
+  (transitive deps of the elastic_nn import chain via
+  `ofa.utils.my_dataloader`). CP 1.2's "what's next" guess
+  (gdown + Pillow) was wrong: gdown is only needed by
+  `ofa.model_zoo`, which we deliberately bypass — see
+  `ofa_extractor/README.md`.
+
+  **Venv-refresh gotcha:** a plain
+  `pip install -r requirements-nas.txt` lands on PyPI's CUDA-13
+  torchvision wheel and breaks at import with `libcudart.so.13: not
+  found` (torch is `+cu128`). Always install via
+  `bash scripts/setup_laptop_nas.sh`, which passes
+  `--extra-index-url https://download.pytorch.org/whl/cu128` so the
+  matching `torchvision==0.26.0+cu128` wheel is selected.
+
+  Next: CP 1.4 — ImageNet sanity (top-1 within 1.5 % of OFA's
+  published number for one published arch). Blocked on D1 (target
+  dataset choice) for the long-term harness, but the CP 1.4
+  smoke-test on a 2k-image ImageNet-val subset can run independently
+  of D1.

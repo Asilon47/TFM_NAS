@@ -1,0 +1,16 @@
+# NAS-side dependencies. Install into a separate venv (.venv-nas/) —
+# do NOT mix with requirements.txt (the LUT pipeline uses CPU torch).
+# See ofa_extractor/README.md for the OFA checkpoint pin.
+#
+# Install via `bash scripts/setup_laptop_nas.sh`, which passes
+# `--extra-index-url https://download.pytorch.org/whl/cu128` so torch
+# AND torchvision land on the +cu128 local-segment wheels (matching
+# CUDA major version). A plain `pip install -r requirements-nas.txt`
+# pulls torchvision from PyPI default, which is built for CUDA 13.x
+# and fails with "libcudart.so.13: not found" against torch's cu128.
+torch>=2.3,<2.12
+torchvision>=0.18
+numpy>=1.26
+pyyaml>=6.0
+Pillow>=10.0
+ofa==0.1.0.post202307202001

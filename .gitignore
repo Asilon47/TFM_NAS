@@ -1,0 +1,44 @@
+# Virtual environments
+.venv/
+.venv-nas/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# ONNX / TensorRT artifacts (large, regeneratable)
+*.onnx
+*.engine
+*.plan
+
+# Data — device-specific measurements, large, regeneratable
+data/
+
+# PyTorch checkpoints saved locally (e.g. state/winner_v1/*.pt)
+*.pt
+*.pth
+
+# Claude AI — session memory and local settings (personal, not project config)
+.claude/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+/tmp/
