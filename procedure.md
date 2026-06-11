@@ -860,3 +860,95 @@ literally last) is ML-correct: you export the distilled weights.
 CP 2.2 — `search/cost.py` (LUT composite-cost). The distillation phase is future
 work gated on the CUDA blocker (same as CP 2.4+); nothing in Phase 8 is
 actionable until D1 is resolved and a GPU is available.
+
+---
+
+## Hardening pass — code quality & architecture (2026-06-11)
+
+**Type:** Quality/infrastructure pass (not a checkpoint). No roadmap advance in
+`state/plan_state.yaml` (still at CP 2.1).
+**Source request:** "analyze the codebase and implement code quality and
+architectural improvements" — robustness/scalability for the research-community
+codebase.
+
+### Decisions taken (via AskUserQuestion)
+
+| Question | Choice | Why |
+|---|---|---|
+| Committed Jetson credentials (public repo) | **Untrack + rewrite history + force-push** | `git filter-repo --invert-paths` scrubbed `jetson credentials username.txt` and the stray `curl` from all 3 commits; mirror backup at `../TFM_NAS_backup_2026-06-11.git`. **Rotate the Jetson password** — it was public and GitHub may cache pre-rewrite objects. |
+| `config.yaml` `precision: fp32` vs FP16-only docs | **Keep fp32; document + precision-aware resume** | Resume now filters by precision (`completed_keys(path, precision=...)`), so the fp16 dummy LUT can no longer mask a real fp32 sweep; the caveat (precision is NOT in `row_key`) is documented in `lut/docs/schema.md`. |
+| `lut/loader.py` in scope? | **Yes (CP 2.2 groundwork)** | `load_lut(path, precision)` filters before keying and raises on duplicate keys — the validated input surface `search/cost.py` will consume. |
+| GitHub Actions CI? | **Yes** | ruff + mypy + `pytest -m "not slow"` on the CPU venv; ofa/LUT-file tests skip by design. |
+
+### What was done (chronological, one commit per phase)
+
+1. **Git hygiene + history rewrite.** Both stray files scrubbed from history
+   (first commit hash `793bb7b` unchanged; `34fddcd`→`5999341`, `a4c19a7`→`eac1715`),
+   force-pushed. `.gitignore` gained `*credential*`/`*secret*`/`.env` and tool
+   caches; duplicate `*.swo` removed. Credentials note survives untracked on disk.
+2. **Dev tooling.** `pyproject.toml` (tool config only — deliberately no
+   `[project]`: runtime stays `python -m` from repo root), root `conftest.py`,
+   `requirements-dev.txt` (pytest/ruff/mypy) wired into both setup scripts,
+   `scripts/check.sh` (uses `python -m`, unsets `PYTHONPATH` — ROS's setup.bash
+   was crashing pytest via auto-loaded `launch` plugins).
+3. **Safety-net tests (before any refactor).** `tests/` froze: 5 golden
+   `row_key` hashes + the bool-vs-int JSON tripwire (`se=True` vs `se=0` hash
+   differently — load-bearing!), catalog counts (2710/2107/91) + schema
+   uniformity + CP 2.1 reachable⊆grid invariant, arch_to_blocks structure
+   (chaining/strides/resolutions/depth truncation) + in-memory key coverage,
+   hand-computed FLOPs goldens, slow end-to-end `gen_dummy_lut` regeneration
+   identity, `resume.py` corruption semantics, sampler smoke (skips sans ofa).
+4. **Refactor (contract-frozen).** `catalog/flops.py` extracted the FLOPs hook
+   counter that lived verbatim in BOTH `run_sweep.py` and `gen_dummy_lut.py`;
+   `catalog/contracts.py` added TypedDicts (`MBConvCfg`, `ArchDict`, `LutRow`,
+   `LatencyStats`, `Block`) — TypedDict not dataclass so the runtime wire format
+   (and hence hashes) cannot drift. Dead code removed (duplicate docker `cmd`
+   in `run_remote_bench`, unused `pending`); deprecated `utcnow()` replaced.
+5. **Robustness.** `_parse_bench_stdout` (empty/garbage container output →
+   diagnosable ValueError); per-row failure accounting + end-of-run summary +
+   exit 1; `load_config` aggregate validation naming every missing key;
+   `validate_arch_dict` at the search boundary (lengths, membership, exact-int
+   types — rejects `bool`/`np.int64` that would corrupt `row_key` JSON);
+   `build_block` unknown-name ValueError listing known blocks.
+6. **Loader + precision-aware resume.** `lut/loader.py` (`iter_lut_rows` owns
+   tolerant line-parsing + malformed-count warning; `load_lut` filters
+   precision before keying, raises on collisions). `completed_keys` gained
+   `precision=None` (legacy default — DoD smoke test untouched); `run_sweep`
+   passes its configured precision. Dummy rows now carry
+   `"source": "roofline_dummy"`; dummy LUT regenerated (keys identical).
+7. **Lint/type.** ruff (E,F,W,I,B,UP @ line-length 100) and mypy clean across
+   36 files; `lut/bench/` + `nas-course/` excluded (Jetson-side files are
+   deployed separately and untestable locally — left untouched on purpose).
+8. **Docs.** `lut/docs/schema.md`: precision/`source` caveats, `res` added to
+   the cfg example, stale `python -m orchestrate.probe_device` path fixed;
+   CLAUDE.md: hardening state + "Tests & tooling" conventions;
+   `requirements-nas.txt`: stale `ofa_extractor/` reference fixed.
+
+### Erratum (CP 2.1 entry)
+
+CP 2.1's narrative (and a comment in `catalog/ofa_mbv3.py`) claimed the catalog
+MBConv represents the first block's `expand=1` "as a (redundant) 1x1". Wrong:
+`catalog/mbconv.py` skips the expansion conv when `expand == 1` (`if expand !=
+1`), exactly like OFA — the structures match. No behavioral impact (the CP 2.1
+DoD checked key membership only); comment fixed, CP 2.1's entry left as
+written per journal discipline.
+
+### Verification (final)
+
+```
+bash scripts/check.sh            # ruff clean, mypy clean (36 files), 102 passed / 1 skipped
+python -m search.arch_to_blocks  # DoD PASS (10 archs, 0 missing keys)
+git log --all -- "jetson credentials username.txt"   # empty (scrubbed)
+```
+
+### Pending (user contribution)
+
+`load_device_info` in `lut/orchestrate/run_sweep.py` carries a TODO(user): the
+fail-fast policy for missing/corrupt `device_info.json` (rows must never
+silently get `power_mode: None`). Scaffolded with acceptance criteria;
+recommended shape is fail-fast + `--allow-missing-device-info` escape hatch.
+
+### What's next (unchanged)
+
+CP 2.2 — `search/cost.py`, now consuming `lut.loader.load_lut` and covered by
+the existing test scaffolding. The CUDA blocker (CP 2.4+) is unchanged.

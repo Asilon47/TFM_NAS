@@ -29,7 +29,7 @@ external teacher for its final deployable weights (Phase 8).
 
 ---
 
-## Current state (as of last update: CP 2.1)
+## Current state (as of last update: CP 2.1 + hardening pass 2026-06-11)
 
 - **Phase 0 (LUT):** Complete. `data/lut.jsonl` has all catalog rows.
 - **CP 1.1:** Done — skeleton packages + state file.
@@ -43,8 +43,18 @@ external teacher for its final deployable weights (Phase 8).
   `catalog/ofa_mbv3.py` (shared OFA-MBv3 topology + `reachable_mbconv_configs()`
   → 91 configs) and unioned those into the catalog grid (mbconv 2016→2107);
   dummy LUT regenerated (2710 rows). DoD passes (10 random + 1 real arch).
+- **Hardening pass (2026-06-11):** not a checkpoint. Test suite (`tests/`,
+  102 tests incl. golden row_key hashes), dev tooling (`pyproject.toml`,
+  `scripts/check.sh`, `requirements-dev.txt`, GitHub Actions CI),
+  `lut/loader.py` + precision-aware `completed_keys()` (CP 2.2 groundwork),
+  `catalog/flops.py` + `catalog/contracts.py`, boundary validation
+  (`validate_arch_dict`, config checks), credentials scrubbed from git
+  history (history rewritten + force-pushed — stale clones must re-clone).
+  One TODO(user) remains: the `load_device_info` failure policy in
+  `lut/orchestrate/run_sweep.py`. See `procedure.md` "Hardening pass".
 - **CP 2.2 (next):** `search/cost.py` — sum `LUT[row_key]` over
   `arch_to_blocks(arch)` + constant stem/head offset → cost dict.
+  Consume the LUT via `lut.loader.load_lut` (precision-filtered).
 - **Phases 2–9:** Planned (see `PROJECT_PLAN.md`).
 
 ### Known blockers
@@ -76,7 +86,9 @@ measured-vs-summed additivity check needs the Jetson.
 
 ```
 catalog/      Block registry (shared by lut/ and all NAS phases)
+              + flops.py (shared FLOPs counter), contracts.py (TypedDicts)
 lut/          Phase 0: Jetson LUT pipeline (DONE)
+  loader.py   Validated LUT reading (precision filter) — CP 2.2's input surface
   export/     PyTorch → ONNX
   bench/      Jetson-side TRT engine build + benchmarking (runs in Docker)
   orchestrate/ Laptop-side sweep loop + SSH orchestration
@@ -89,7 +101,8 @@ expand/       Phase 5–6: supernet expansion stub
 distill/      Phase 8: knowledge-distillation harness (external teacher) stub
 state/        Checkpoint tracking (plan_state.yaml)
 data/         lut.jsonl + device_info.json (gitignored)
-scripts/      Setup scripts (setup_laptop.sh, setup_laptop_nas.sh, etc.)
+tests/        Contract + regression tests (run via scripts/check.sh)
+scripts/      Setup scripts + check.sh (ruff + mypy + pytest)
 ```
 
 ---
@@ -108,6 +121,23 @@ breaks things.
 To rebuild `.venv-nas`: `bash scripts/setup_laptop_nas.sh` — **do not**
 `pip install -r requirements-nas.txt` directly (it pulls the wrong torchvision
 CUDA variant from PyPI).
+
+---
+
+## Tests & tooling
+
+- `bash scripts/check.sh` = ruff + mypy + pytest (uses `.venv`); append
+  `-m "not slow"` for the ~3 s fast lane. CI (`.github/workflows/ci.yml`)
+  runs the same on every push.
+- **The golden hashes in `tests/test_row_key.py` ARE the LUT contract.** A
+  failing golden means the change re-keys every measured Jetson row. Never
+  update them without recording the decision in `procedure.md`.
+- ofa-dependent tests auto-skip outside `.venv-nas`; LUT-file tests skip when
+  `data/lut.jsonl` is absent (e.g. CI).
+- Invoke venv tools as `python -m <tool>`, never via `bin/` entry points —
+  the venvs' script shebangs went stale when the repo directory moved.
+  `check.sh` also unsets `PYTHONPATH` (ROS's setup.bash leaks pytest plugins
+  into venvs on this machine).
 
 ---
 
@@ -133,6 +163,8 @@ CUDA variant from PyPI).
 
 - `pip install -r requirements-nas.txt` directly → use `setup_laptop_nas.sh`.
 - Edit `data/lut.jsonl` by hand.
+- Update the golden hashes in `tests/test_row_key.py` without a decision
+  recorded in `procedure.md` — they pin the LUT key contract.
 - Commit anything in `data/` (it's gitignored for a reason — 50+ MB).
 - Resolve open decisions D1–D5 without a user conversation.
 - Name a local Python package `ofa/` — it shadows the pip-installed OFA library.

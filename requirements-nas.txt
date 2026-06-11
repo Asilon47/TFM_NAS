@@ -1,6 +1,6 @@
 # NAS-side dependencies. Install into a separate venv (.venv-nas/) —
 # do NOT mix with requirements.txt (the LUT pipeline uses CPU torch).
-# See ofa_extractor/README.md for the OFA checkpoint pin.
+# See supernet/README.md for the OFA checkpoint pin.
 #
 # Install via `bash scripts/setup_laptop_nas.sh`, which passes
 # `--extra-index-url https://download.pytorch.org/whl/cu128` so torch

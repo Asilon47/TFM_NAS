@@ -10,7 +10,7 @@ Append-only. Safe to delete and regenerate.
 {
   "row_key": "a7f1b9cc2de41b8c",
   "block": "mbconv",
-  "cfg": {"in_c": 32, "out_c": 64, "kernel": 5, "stride": 2, "expand": 6, "se": true},
+  "cfg": {"in_c": 32, "out_c": 64, "kernel": 5, "stride": 2, "expand": 6, "se": true, "res": 56},
   "input_shape": [1, 32, 56, 56],
   "precision": "fp16",
   "latency_ms": {"mean": 0.412, "std": 0.008, "p50": 0.410, "p95": 0.425, "n": 200},
@@ -27,6 +27,16 @@ Append-only. Safe to delete and regenerate.
 
 Notes:
 - `row_key` is a 16-hex sha1 of `(block, cfg, input_shape)`; used for resumability.
+  **`precision` is deliberately NOT part of the key**: rows measured at different
+  precisions coexist in the file under the same `row_key`. Always filter to one
+  precision before keying rows in memory (`lut/loader.py:load_lut` does this and
+  raises on collisions); `completed_keys(path, precision=...)` makes resume
+  precision-aware, so changing `sweep.precision` re-measures instead of skipping.
+- Rows written by `gen_dummy_lut` carry `"source": "roofline_dummy"` so dummy
+  estimates are distinguishable from real Jetson measurements in a mixed file.
+  Real rows have no `source` field.
+- The golden hashes in `tests/test_row_key.py` pin this key contract; a change
+  that re-keys rows fails those tests by design.
 - `latency_ms` values measured via CUDA events with `n` timed iterations after 50 warmups.
 - `peak_mem_mib` comes from `cudaMemGetInfo` delta around the timed loop. Noisy: treat as an upper bound, not a precise reading.
 - `flops` is a static estimate (Conv + Linear multiply-adds, counted via forward hooks). Useful as a predictive-model feature; not a deployment figure.
@@ -48,15 +58,21 @@ Notes:
 ```
 
 If you switch the Jetson's power mode (`sudo nvpmodel -m N`), re-run
-`python -m orchestrate.probe_device` and archive the previous file — the LUT
+`python -m lut.orchestrate.probe_device` and archive the previous file — the LUT
 rows only apply to the power mode that was active when they were measured.
 
 ## Reading the LUT from your NAS code
 
+Use the validated loader (filters by precision, refuses duplicate keys):
+
 ```python
-import pandas as pd
-lut = pd.read_json("data/lut.jsonl", lines=True)
-lat = lut.query("block == 'mbconv' and cfg == @target_cfg").latency_ms.iloc[0]["mean"]
+from pathlib import Path
+from lut.loader import load_lut
+
+lut = load_lut(Path("data/lut.jsonl"), precision="fp16")  # row_key -> row
+lat = lut[some_row_key]["latency_ms"]["mean"]
 ```
 
-Or build an in-memory dict keyed by `row_key` for O(1) lookup.
+Pandas works too for exploration
+(`pd.read_json("data/lut.jsonl", lines=True)`), but remember to filter by
+`precision` before keying anything by `row_key`.

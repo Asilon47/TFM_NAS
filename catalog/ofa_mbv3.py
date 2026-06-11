@@ -30,8 +30,9 @@ MAX_DEPTH = 4           # ks/e are length 5 * MAX_DEPTH = 20 (one slot per block
 STEM_RES = 112          # resolution after the 3->16 stride-2 stem (224 -> 112)
 
 # The fixed, non-elastic first block (``blocks[0]``): 16->16, k3, s1, no
-# expansion, no SE. expand=1 means OFA skips the inverted bottleneck; the
-# catalog's MBConv represents it as a (redundant) 1x1 — fine for a LUT key.
+# expansion, no SE. expand=1 means OFA skips the inverted bottleneck's 1x1
+# expansion conv — and the catalog's MBConv does the same (see
+# catalog/mbconv.py, `if expand != 1`), so the two structures match exactly.
 FIRST_BLOCK = {
     "in_c": 16, "out_c": 16, "kernel": 3, "stride": 1,
     "expand": 1, "se": False, "res": STEM_RES,

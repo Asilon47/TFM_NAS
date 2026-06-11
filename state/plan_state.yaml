@@ -81,3 +81,17 @@ notes: |
   `completed` are unchanged (still CP 2.1); the new phase is future work
   gated on the same CUDA blocker as CP 2.4+. See `PROJECT_PLAN.md`
   Phase 8 and the plan-amendment entry in `procedure.md`.
+
+  **Hardening pass 2026-06-11:** quality/infra only — no checkpoint
+  advance (still CP 2.1). Added tests/ (102 tests; the golden row_key
+  hashes in tests/test_row_key.py pin the LUT key contract — never
+  update without a procedure.md decision), pyproject.toml +
+  scripts/check.sh + requirements-dev.txt + GitHub Actions CI,
+  lut/loader.py + precision-aware completed_keys() (CP 2.2 groundwork),
+  catalog/flops.py + catalog/contracts.py, validate_arch_dict + config
+  validation. Git history was REWRITTEN (credentials scrubbed) and
+  force-pushed — stale clones must be re-cloned; rotate the Jetson
+  password. Dummy LUT regenerated (keys identical; rows now carry
+  source=roofline_dummy). TODO(user): the load_device_info failure
+  policy in lut/orchestrate/run_sweep.py. See procedure.md
+  "Hardening pass".
