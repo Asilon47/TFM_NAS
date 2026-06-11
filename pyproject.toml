@@ -1,0 +1,37 @@
+# Tool configuration only — this repo is intentionally NOT packaged.
+# Runtime invocation is `python -m <pkg>.<mod>` from the repo root (see
+# CLAUDE.md); tests gain importability via the root conftest.py. There is
+# deliberately no [project] table: `pip install -e .` would install flat
+# top-level packages with generic names (catalog, search, eval, ...) into
+# site-packages, which invites collisions for no benefit.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "slow: full-catalog tests (~20-25 s); deselect with -m 'not slow'",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# nas-course/ is HTML course material; lut/bench/ runs on the Jetson inside
+# Docker and is deployed separately — local lint churn there buys nothing.
+extend-exclude = ["nas-course", "lut/bench"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py files re-export names for the package's public API.
+"**/__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["catalog", "search", "supernet", "lut", "tests"]
+exclude = "lut/bench/"
+
+[[tool.mypy.overrides]]
+# ofa lives only in .venv-nas; fabric/tqdm/yaml ship no type stubs.
+module = ["ofa.*", "fabric.*", "tqdm.*", "yaml.*"]
+ignore_missing_imports = true

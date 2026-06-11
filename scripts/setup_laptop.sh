@@ -16,6 +16,7 @@ source .venv/bin/activate
 python -m pip install --upgrade pip wheel
 # CPU wheels for torch; other packages resolve from PyPI
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+python -m pip install -r requirements-dev.txt
 
 python - <<'PY'
 import torch, onnx, onnxruntime, fabric, numpy, pandas, tqdm, yaml

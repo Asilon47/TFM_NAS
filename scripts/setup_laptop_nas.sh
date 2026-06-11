@@ -21,6 +21,7 @@ source .venv-nas/bin/activate
 
 python -m pip install --upgrade pip wheel
 python -m pip install --extra-index-url "$TORCH_INDEX_URL" -r requirements-nas.txt
+python -m pip install -r requirements-dev.txt
 
 # CP 1.1 DoD — confirm `import ofa` works.
 python - <<'PY'

@@ -1,0 +1,6 @@
+# Dev tooling — shared by both venvs, scripts/check.sh, and CI.
+# Install with:  python -m pip install -r requirements-dev.txt
+# (run inside whichever venv you're using; see CLAUDE.md "Two environments")
+pytest>=8.2
+ruff>=0.4
+mypy>=1.10
