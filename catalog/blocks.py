@@ -116,13 +116,22 @@ BLOCK_REGISTRY = {
 }
 
 
+def _spec(block_name: str) -> dict:
+    try:
+        return BLOCK_REGISTRY[block_name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown block {block_name!r}. Known blocks: "
+            + ", ".join(sorted(BLOCK_REGISTRY))
+        ) from None
+
+
 def build_block(block_name: str, cfg: dict) -> nn.Module:
-    spec = BLOCK_REGISTRY[block_name]
-    return spec["builder"](cfg)
+    return _spec(block_name)["builder"](cfg)
 
 
 def input_shape_for(block_name: str, cfg: dict):
-    return BLOCK_REGISTRY[block_name]["input_shape"](cfg)
+    return _spec(block_name)["input_shape"](cfg)
 
 
 def count_params(module: nn.Module) -> int:

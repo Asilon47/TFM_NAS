@@ -5,8 +5,8 @@ jetson:
   ssh_key: ~/.ssh/id_ed25519
   remote_workdir: /home/CVAR/lut_runner
   docker_image: lut-runner:latest
-  power_mode: 0
-  lock_clocks: true
+  power_mode: 0      # read by scripts/setup_jetson.sh (nvpmodel -m), not Python
+  lock_clocks: true  # read by scripts/setup_jetson.sh (jetson_clocks), not Python
 
 sweep:
   precision: fp32

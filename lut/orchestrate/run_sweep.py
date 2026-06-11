@@ -57,18 +57,57 @@ def run_remote_bench(conn, cfg, row_key: str, local_onnx: Path,
         res = conn.run(cmd, hide=True, warn=True)
         if res.return_code != 0:
             raise RuntimeError(f"remote bench failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}")
-        # run_bench.py emits one JSON object on stdout (last non-empty line).
-        lines = [l for l in res.stdout.strip().splitlines() if l.strip()]
-        return json.loads(lines[-1])
+        return _parse_bench_stdout(res.stdout)
     finally:
         conn.run(f"rm -rf {remote_job}", hide=True, warn=True)
 
 
+def _parse_bench_stdout(stdout: str) -> dict:
+    """run_bench.py prints one JSON object as the last non-empty stdout line.
+
+    Raises ValueError (never IndexError) with the offending output embedded,
+    so a container that exits 0 without producing results is diagnosable
+    straight from the sweep log.
+    """
+    lines = [line for line in stdout.strip().splitlines() if line.strip()]
+    if not lines:
+        raise ValueError(
+            "remote bench produced no stdout despite exit code 0 — the "
+            "container likely failed before run_bench.py started"
+        )
+    last = lines[-1]
+    try:
+        result = json.loads(last)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"remote bench's last stdout line is not JSON ({e}): {last[:200]!r}"
+        ) from e
+    if not isinstance(result, dict):
+        raise ValueError(f"remote bench JSON is not an object: {last[:200]!r}")
+    return result
+
+
 def load_device_info(path: Path) -> dict:
+    """Device metadata stamped into every LUT row (power_mode, jetpack, ...).
+
+    PROJECT_PLAN Phase 0's DoD requires data/device_info.json to exist for
+    the locked power mode: rows stamped ``power_mode: None`` are ambiguous
+    and can't be compared across sweeps, so degrading silently is a trap.
+
+    TODO(user): implement the failure policy here (~8 lines). Requirements:
+      (a) a row must never silently get power_mode=None,
+      (b) a missing file and a corrupt file produce distinguishable errors,
+      (c) the message names `python -m lut.orchestrate.probe_device` as the
+          remedy.
+    Recommended shape: fail fast (raise SystemExit) by default, with an
+    `--allow-missing-device-info` escape hatch threaded through main() for
+    bring-up on a fresh device. Legacy behavior (silent {}) kept below until
+    the policy lands.
+    """
     if path.exists():
         try:
             return json.loads(path.read_text())
-        except Exception:
+        except json.JSONDecodeError:
             return {}
     return {}
 
@@ -101,6 +140,7 @@ def main():
     conn.run(f"mkdir -p {cfg.remote_workdir}/job", hide=True)
 
     n_new = 0
+    failures: list[tuple[str, str, str]] = []
     with tempfile.TemporaryDirectory(prefix="lut_onnx_") as tmp, \
          open(out_jsonl, "a") as out_f:
         tmp = Path(tmp)
@@ -117,8 +157,11 @@ def main():
                     precision=precision, warmup=warmup, iters=iters,
                 )
             except Exception as e:
+                # One bad row must not kill an overnight sweep: log, record,
+                # move on. The end-of-run summary + exit code surface it.
                 sys.stderr.write(f"\n[ERR] {block} {block_cfg} {input_shape}: {e}\n")
                 traceback.print_exc(file=sys.stderr)
+                failures.append((row_key, block, repr(e)))
                 continue
 
             lat_mean_s = bench_result["latency_ms"]["mean"] / 1000.0
@@ -152,6 +195,17 @@ def main():
                 break
 
     print(f"Done. Added {n_new} rows to {out_jsonl}.")
+    if failures:
+        sys.stderr.write(
+            f"\n[run_sweep] {len(failures)} row(s) FAILED and were skipped:\n")
+        for key, block, err in failures[:10]:
+            sys.stderr.write(f"  {key} {block}: {err[:120]}\n")
+        if len(failures) > 10:
+            sys.stderr.write(f"  ... and {len(failures) - 10} more\n")
+        sys.stderr.write(
+            "Re-running the sweep retries only failed rows (resume skips "
+            "completed ones).\n")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

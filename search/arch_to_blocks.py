@@ -26,6 +26,34 @@ from catalog.ofa_mbv3 import STAGES, FIRST_BLOCK, MAX_DEPTH, KS, E, D, stage_in_
 from catalog.sweep import row_key
 
 
+def validate_arch_dict(arch_dict: ArchDict) -> None:
+    """Reject malformed arch dicts at the boundary, naming every violation.
+
+    Phase-3 search (BO / evolution) will generate arch dicts
+    programmatically; a malformed one must fail here with a precise message,
+    not as an IndexError deep inside the stage walk. ``type(x) is int``
+    deliberately rejects ``bool`` and ``np.int64``: a non-plain int would
+    change (bool) or crash (np.int64) the row_key JSON serialization
+    downstream. Extra keys are tolerated for forward compatibility.
+    """
+    problems: list[str] = []
+    n_slots = len(STAGES) * MAX_DEPTH
+    checks = (("ks", n_slots, KS), ("e", n_slots, E), ("d", len(STAGES), D))
+    for field, expected_len, allowed in checks:
+        if field not in arch_dict:
+            problems.append(f"missing key {field!r}")
+            continue
+        seq = arch_dict[field]  # type: ignore[literal-required]
+        if not isinstance(seq, list) or len(seq) != expected_len:
+            problems.append(f"{field!r} must be a list of length {expected_len}")
+            continue
+        bad = [x for x in seq if type(x) is not int or x not in allowed]
+        if bad:
+            problems.append(f"{field!r} has values outside {allowed}: {bad[:5]!r}")
+    if problems:
+        raise ValueError("invalid arch_dict: " + "; ".join(problems))
+
+
 def arch_to_blocks(arch_dict: ArchDict) -> list[Block]:
     """OFA ``arch_dict`` -> ordered list of ``("mbconv", cfg, input_shape)``.
 
@@ -34,7 +62,11 @@ def arch_to_blocks(arch_dict: ArchDict) -> list[Block]:
     ``j in range(d[s])`` reads slot ``MAX_DEPTH * s + j``. Block 0 is the entry
     (prev_w -> out_w at the stage stride, at ``res_in``); blocks 1+ are repeats
     (out_w -> out_w, stride 1, at ``res_in // stride``).
+
+    Raises ``ValueError`` on a malformed ``arch_dict`` (see
+    :func:`validate_arch_dict`).
     """
+    validate_arch_dict(arch_dict)
     ks, e, d = arch_dict["ks"], arch_dict["e"], arch_dict["d"]
     blocks: list[Block] = []
 
