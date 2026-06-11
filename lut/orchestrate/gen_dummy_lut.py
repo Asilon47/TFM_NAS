@@ -21,9 +21,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 from catalog.blocks import build_block, count_params
+from catalog.flops import count_flops_forward
 from catalog.sweep import iter_sweep, sweep_size
 
 
@@ -59,38 +59,11 @@ def measure_block(block: str, cfg: dict, input_shape) -> dict:
     """Build the module, run one forward pass, and capture flops + io_bytes + params."""
     module = build_block(block, cfg).eval()
     params = count_params(module)
-
-    flops_total = 0
-
-    def hook(m, inp, out):
-        nonlocal flops_total
-        if isinstance(m, nn.Conv2d):
-            oh, ow = out.shape[-2:]
-            cin_per_group = m.in_channels // m.groups
-            kh, kw = m.kernel_size
-            flops_total += 2 * m.out_channels * cin_per_group * kh * kw * oh * ow
-        elif isinstance(m, nn.ConvTranspose2d):
-            oh, ow = out.shape[-2:]
-            kh, kw = m.kernel_size
-            flops_total += (2 * m.out_channels * m.in_channels * kh * kw * oh * ow
-                            // max(1, m.groups))
-        elif isinstance(m, nn.Linear):
-            flops_total += 2 * m.in_features * m.out_features
-
-    handles = [m.register_forward_hook(hook) for m in module.modules()
-               if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear))]
-    try:
-        with torch.no_grad():
-            x = torch.zeros(*input_shape)
-            y = module(x)
-    finally:
-        for h in handles:
-            h.remove()
-
+    flops_total, y = count_flops_forward(module, input_shape)
     io_numel = int(np.prod(input_shape) + np.prod(y.shape))
     return {
         "params": params,
-        "flops": int(flops_total),
+        "flops": flops_total,
         "io_bytes": io_numel * FP16_BYTES,
     }
 

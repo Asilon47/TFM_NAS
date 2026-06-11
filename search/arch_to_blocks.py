@@ -21,14 +21,12 @@ from __future__ import annotations
 import random
 
 from catalog.blocks import input_shape_for
-from catalog.sweep import row_key
+from catalog.contracts import ArchDict, Block
 from catalog.ofa_mbv3 import STAGES, FIRST_BLOCK, MAX_DEPTH, KS, E, D, stage_in_c
-
-# A LUT-keyed block: (block_name, cfg, input_shape).
-Block = tuple[str, dict, tuple]
+from catalog.sweep import row_key
 
 
-def arch_to_blocks(arch_dict: dict) -> list[Block]:
+def arch_to_blocks(arch_dict: ArchDict) -> list[Block]:
     """OFA ``arch_dict`` -> ordered list of ``("mbconv", cfg, input_shape)``.
 
     ``ks`` / ``e`` are length ``5 * MAX_DEPTH`` (one slot per block position);
@@ -61,12 +59,12 @@ def arch_to_blocks(arch_dict: dict) -> list[Block]:
     return blocks
 
 
-def arch_to_keys(arch_dict: dict) -> list[str]:
+def arch_to_keys(arch_dict: ArchDict) -> list[str]:
     """The LUT ``row_key`` for each block in the arch's ordered block list."""
     return [row_key(b, cfg, shape) for b, cfg, shape in arch_to_blocks(arch_dict)]
 
 
-def _random_arch_dict(rng: random.Random) -> dict:
+def _random_arch_dict(rng: random.Random) -> ArchDict:
     """A random arch in OFA's format (matches ``supernet.sampler.random_arch``)."""
     n = 5 * MAX_DEPTH
     return {

@@ -25,7 +25,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from catalog.blocks import count_params, build_block
+from catalog.blocks import build_block
+from catalog.flops import count_flops
 from catalog.sweep import iter_sweep, sweep_size
 from lut.export.to_onnx import export_block
 from lut.orchestrate.ssh_client import load_config, connect
@@ -41,17 +42,8 @@ def run_remote_bench(conn, cfg, row_key: str, local_onnx: Path,
     conn.run(f"mkdir -p {remote_job}", hide=True)
     try:
         conn.put(str(local_onnx), remote=f"{remote_job}/model.onnx")
-        cmd = (
-            f"docker run --rm --runtime nvidia "
-            f"-v {remote_job}:/job {cfg.docker_image} bash -c "
-            f"'python3 /job/../../bench/build_engine.py "
-            f"--onnx /job/model.onnx --engine /job/model.plan --precision {precision} "
-            f"&& python3 /job/../../bench/run_bench.py "
-            f"--engine /job/model.plan --warmup {warmup} --iters {iters}'"
-        )
-        # The container's /job mounts the per-row dir; we reach bench/ via the
-        # parent path on the host side. Use an explicit second mount instead,
-        # since `..` in container paths is brittle.
+        # /job mounts the per-row dir; bench/ rides in via an explicit second
+        # mount because `..` traversal in container paths is brittle.
         cmd = (
             f"docker run --rm --runtime nvidia "
             f"-v {remote_job}:/job "
@@ -70,42 +62,6 @@ def run_remote_bench(conn, cfg, row_key: str, local_onnx: Path,
         return json.loads(lines[-1])
     finally:
         conn.run(f"rm -rf {remote_job}", hide=True, warn=True)
-
-
-def compute_flops_static(block: str, cfg: dict, input_shape) -> int:
-    """FLOPs estimated from the eager PyTorch module via a hook-based counter.
-    Keeps it simple: counts Conv and Linear multiply-adds. Good enough as a
-    feature for the future predictive model — it's not a guarantee.
-    """
-    import torch
-    import torch.nn as nn
-
-    total = 0
-
-    def hook(m, inp, out):
-        nonlocal total
-        if isinstance(m, nn.Conv2d):
-            oh, ow = out.shape[-2:]
-            cin_per_group = m.in_channels // m.groups
-            kh, kw = m.kernel_size
-            total += 2 * m.out_channels * cin_per_group * kh * kw * oh * ow
-        elif isinstance(m, nn.ConvTranspose2d):
-            oh, ow = out.shape[-2:]
-            kh, kw = m.kernel_size
-            total += 2 * m.out_channels * m.in_channels * kh * kw * oh * ow // max(1, m.groups)
-        elif isinstance(m, nn.Linear):
-            total += 2 * m.in_features * m.out_features
-
-    mod = build_block(block, cfg).eval()
-    hooks = [m.register_forward_hook(hook) for m in mod.modules()
-             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear))]
-    try:
-        with torch.no_grad():
-            mod(torch.zeros(*input_shape))
-    finally:
-        for h in hooks:
-            h.remove()
-    return int(total)
 
 
 def load_device_info(path: Path) -> dict:
@@ -137,7 +93,6 @@ def main():
     device_info = load_device_info(dev_info_path)
     done = completed_keys(out_jsonl)
     total = sweep_size(args.blocks)
-    pending = total - len([k for k in done])  # approximate; resume skips on the fly
 
     print(f"Sweep size: {total} rows (catalog). Already complete: {len(done)}. "
           f"Pending: ~{max(0, total - len(done))}.", flush=True)
@@ -156,7 +111,7 @@ def main():
             onnx_path = tmp / f"{row_key}.onnx"
             try:
                 meta = export_block(block, block_cfg, input_shape, onnx_path)
-                flops = compute_flops_static(block, block_cfg, input_shape)
+                flops = count_flops(build_block(block, block_cfg).eval(), input_shape)
                 bench_result = run_remote_bench(
                     conn, cfg, row_key, onnx_path,
                     precision=precision, warmup=warmup, iters=iters,
@@ -184,7 +139,7 @@ def main():
                 "trt_version": bench_result.get("trt_version"),
                 "power_mode": device_info.get("power_mode"),
                 "jetpack": device_info.get("jetpack"),
-                "timestamp": dt.datetime.utcnow().isoformat() + "Z",
+                "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
             out_f.write(json.dumps(row) + "\n")
             out_f.flush()
