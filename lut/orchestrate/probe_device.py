@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from lut.orchestrate.ssh_client import load_config, connect
+from lut.orchestrate.ssh_client import connect, load_config
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,21 +30,20 @@ def main():
         raise SystemExit(f"device_probe.sh failed:\n{res.stderr}")
     raw_output = res.stdout.strip()
     try:
-            # Find the first '{' and the last '}' to extract only the JSON payload
-            start_idx = raw_output.find('{')
-            end_idx = raw_output.rfind('}')
-            
-            if start_idx == -1 or end_idx == -1:
-                raise ValueError("No JSON brackets found in the output.")
-                
-            clean_json = raw_output[start_idx:end_idx + 1]
-            info = json.loads(clean_json)
-            
+        # Extract the JSON payload between the first '{' and the last '}' —
+        # docker/driver noise may precede or follow it on stdout.
+        start_idx = raw_output.find('{')
+        end_idx = raw_output.rfind('}')
+        if start_idx == -1 or end_idx == -1:
+            raise ValueError("No JSON brackets found in the output.")
+        info = json.loads(raw_output[start_idx:end_idx + 1])
     except (json.JSONDecodeError, ValueError) as e:
-        # If it STILL fails, print exactly what the Jetson sent back so we can debug it
-        raise SystemExit(f"Failed to parse JSON. Raw output from Jetson was:\n"
-                        f"--- START RAW OUTPUT ---\n{raw_output}\n--- END RAW OUTPUT ---\n"
-                        f"Error: {e}")    
+        # Print exactly what the Jetson sent back so it's debuggable.
+        raise SystemExit(
+            f"Failed to parse JSON. Raw output from Jetson was:\n"
+            f"--- START RAW OUTPUT ---\n{raw_output}\n--- END RAW OUTPUT ---\n"
+            f"Error: {e}"
+        ) from e
     dest.write_text(json.dumps(info, indent=2))
     print(f"Wrote {dest}:\n{json.dumps(info, indent=2)}")
 

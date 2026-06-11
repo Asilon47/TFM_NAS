@@ -49,7 +49,7 @@ def test_channels_chain_across_all_blocks():
     rng = random.Random(3)
     for _ in range(N_ARCHS):
         blocks = arch_to_blocks(_random_arch_dict(rng))
-        for prev, cur in zip(blocks, blocks[1:]):
+        for prev, cur in zip(blocks, blocks[1:], strict=False):
             assert cur[1]["in_c"] == prev[1]["out_c"]
 
 

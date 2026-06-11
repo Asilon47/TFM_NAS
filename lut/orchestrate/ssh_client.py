@@ -3,10 +3,9 @@
 Centralizes host/user/key resolution so run_sweep.py and resume.py both read
 the same config. Nothing here is Jetson-specific — it's just SSH.
 """
+import os
 from dataclasses import dataclass
 from pathlib import Path
-import os
-from typing import Optional
 
 import yaml
 from fabric import Connection
@@ -24,7 +23,7 @@ class JetsonConfig:
 _REQUIRED_JETSON_KEYS = ("host", "user", "ssh_key", "remote_workdir", "docker_image")
 
 
-def load_config(path: Optional[Path] = None) -> tuple[JetsonConfig, dict]:
+def load_config(path: Path | None = None) -> tuple[JetsonConfig, dict]:
     """Read config.yaml; fail with every missing key named at once.
 
     ``jetson.power_mode`` / ``jetson.lock_clocks`` are deliberately not part

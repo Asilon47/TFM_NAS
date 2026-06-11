@@ -26,7 +26,6 @@ from catalog.blocks import build_block, count_params
 from catalog.flops import count_flops_forward
 from catalog.sweep import iter_sweep, sweep_size
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 # Jetson Orin Nano (15W power mode), per public specs and docs/schema.md.
@@ -141,7 +140,7 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     total = sweep_size(args.blocks)

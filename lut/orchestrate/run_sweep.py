@@ -29,9 +29,8 @@ from catalog.blocks import build_block
 from catalog.flops import count_flops
 from catalog.sweep import iter_sweep, sweep_size
 from lut.export.to_onnx import export_block
-from lut.orchestrate.ssh_client import load_config, connect
 from lut.orchestrate.resume import completed_keys
-
+from lut.orchestrate.ssh_client import connect, load_config
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -56,7 +55,8 @@ def run_remote_bench(conn, cfg, row_key: str, local_onnx: Path,
         )
         res = conn.run(cmd, hide=True, warn=True)
         if res.return_code != 0:
-            raise RuntimeError(f"remote bench failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}")
+            raise RuntimeError(
+                f"remote bench failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}")
         return _parse_bench_stdout(res.stdout)
     finally:
         conn.run(f"rm -rf {remote_job}", hide=True, warn=True)
@@ -184,7 +184,7 @@ def main():
                 "trt_version": bench_result.get("trt_version"),
                 "power_mode": device_info.get("power_mode"),
                 "jetpack": device_info.get("jetpack"),
-                "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
             out_f.write(json.dumps(row) + "\n")
             out_f.flush()

@@ -1,5 +1,4 @@
 """MBConv-family building blocks used by MobileNet/EfficientNet NAS search spaces."""
-import torch
 import torch.nn as nn
 
 

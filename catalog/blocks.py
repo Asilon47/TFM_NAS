@@ -9,18 +9,28 @@ The sweep module does the cartesian product; keep grids narrow — every cfg
 becomes a row in the LUT.
 """
 from itertools import product
+
 import torch.nn as nn
 
-from .mbconv import Conv3x3, Conv1x1, DWConv, MBConv, Skip, SEBlock
-from .seg_det import (Upsample, Deconv, PixelShuffleBlock, FPNLateral,
-                      FPNTopDown, DilatedConv3x3, ASPP, SegHead, DetHead)
-from .shapes import BATCH
+from .mbconv import Conv1x1, Conv3x3, DWConv, MBConv, SEBlock, Skip
 from .ofa_mbv3 import reachable_mbconv_configs
+from .seg_det import (
+    ASPP,
+    Deconv,
+    DetHead,
+    DilatedConv3x3,
+    FPNLateral,
+    FPNTopDown,
+    PixelShuffleBlock,
+    SegHead,
+    Upsample,
+)
+from .shapes import BATCH
 
 
 def _grid(**axes):
     keys = list(axes.keys())
-    return [dict(zip(keys, vals)) for vals in product(*axes.values())]
+    return [dict(zip(keys, vals, strict=True)) for vals in product(*axes.values())]
 
 
 # ---- builders ----------------------------------------------------------------

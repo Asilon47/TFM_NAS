@@ -22,7 +22,7 @@ import random
 
 from catalog.blocks import input_shape_for
 from catalog.contracts import ArchDict, Block
-from catalog.ofa_mbv3 import STAGES, FIRST_BLOCK, MAX_DEPTH, KS, E, D, stage_in_c
+from catalog.ofa_mbv3 import FIRST_BLOCK, KS, MAX_DEPTH, STAGES, D, E, stage_in_c
 from catalog.sweep import row_key
 
 
@@ -109,6 +109,7 @@ def _random_arch_dict(rng: random.Random) -> ArchDict:
 def _dod_smoke_test(n_archs: int = 10, seed: int = 0) -> None:
     """CP 2.1 DoD: every emitted tuple of N random archs matches a LUT row_key."""
     from pathlib import Path
+
     from lut.orchestrate.resume import completed_keys
 
     lut_path = Path(__file__).resolve().parents[1] / "data" / "lut.jsonl"

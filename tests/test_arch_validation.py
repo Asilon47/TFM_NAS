@@ -9,8 +9,7 @@ import random
 import pytest
 
 from catalog.ofa_mbv3 import MAX_DEPTH
-from search.arch_to_blocks import (_random_arch_dict, arch_to_blocks,
-                                   validate_arch_dict)
+from search.arch_to_blocks import _random_arch_dict, arch_to_blocks, validate_arch_dict
 
 N = 5 * MAX_DEPTH
 

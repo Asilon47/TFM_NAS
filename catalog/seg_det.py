@@ -19,7 +19,8 @@ class Deconv(nn.Module):
     def __init__(self, in_c: int, out_c: int, kernel: int = 4, stride: int = 2):
         super().__init__()
         self.op = nn.Sequential(
-            nn.ConvTranspose2d(in_c, out_c, kernel, stride, padding=(kernel - stride) // 2, bias=False),
+            nn.ConvTranspose2d(in_c, out_c, kernel, stride,
+                               padding=(kernel - stride) // 2, bias=False),
             nn.BatchNorm2d(out_c), nn.ReLU6(inplace=True),
         )
 

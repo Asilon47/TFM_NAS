@@ -22,9 +22,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import torch
-from torch import nn
-
 from ofa.imagenet_classification.elastic_nn.networks import OFAMobileNetV3
+from torch import nn
 
 from supernet.download_ofa import CHECKPOINT_PATH
 
