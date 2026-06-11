@@ -5,6 +5,8 @@ jetson:
   ssh_key: ~/.ssh/id_ed25519
   remote_workdir: /home/CVAR/lut_runner
   docker_image: lut-runner:latest
+  power_mode: 0
+  lock_clocks: true
 
 sweep:
   precision: fp32

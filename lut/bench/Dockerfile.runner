@@ -1,12 +1,17 @@
 # Built on the Jetson once during setup_jetson.sh.
 # Base image ships TensorRT, CUDA, cuDNN, trtexec, and the CUDA samples.
 # We only add the Python glue we need.
-FROM nvcr.io/nvidia/l4t-tensorrt:r36.3.0-runtime
+FROM nvcr.io/nvidia/l4t-tensorrt:r10.3.0-devel
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3-pip python3-dev build-essential cuda-samples-12-2 && \
+        python3-pip python3-dev build-essential git && \
+    git clone -b v12.2 --depth 1 https://github.com/NVIDIA/cuda-samples.git /tmp/cuda-samples && \
+    cd /tmp/cuda-samples/Samples/1_Utilities/bandwidthTest && \
+    make SMS=87 && \
+    cp bandwidthTest /usr/local/bin/ && \
+    rm -rf /tmp/cuda-samples && \
     rm -rf /var/lib/apt/lists/*
 
 # pycuda needs CUDA headers present (they are, via the base image).

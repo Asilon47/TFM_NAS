@@ -25,6 +25,8 @@ HOST="$(yaml_get host)"
 USER="$(yaml_get user)"
 REMOTE_DIR="$(yaml_get remote_workdir)"
 IMAGE="$(yaml_get docker_image)"
+POWER_MODE="$(yaml_get power_mode)"
+LOCK_CLOCKS="$(yaml_get lock_clocks)"
 
 TARGET="${USER}@${HOST}"
 
@@ -34,6 +36,14 @@ echo "[setup_jetson] Docker image tag: $IMAGE"
 
 ssh -o BatchMode=yes "$TARGET" 'echo ok' >/dev/null || {
   echo "SSH to $TARGET failed. Run: ssh-copy-id $TARGET"; exit 1; }
+
+echo "[setup_jetson] Setting power mode to -m $POWER_MODE..."
+ssh -t "$TARGET" "sudo nvpmodel -m $POWER_MODE"
+
+if [ "$LOCK_CLOCKS" = "true" ]; then
+    echo "[setup_jetson] Locking clocks to maximum..."
+    ssh -t "$TARGET" "sudo jetson_clocks"
+fi
 
 echo "[setup_jetson] Verifying docker on Jetson..."
 ssh "$TARGET" 'docker --version && docker info --format "{{json .Runtimes}}" | grep -q nvidia' || {
@@ -48,7 +58,7 @@ echo "[setup_jetson] Copying lut/bench/ to Jetson..."
 rsync -az --delete "$ROOT/lut/bench/" "$TARGET:$REMOTE_DIR/bench/"
 
 echo "[setup_jetson] Pulling base image (this can take a while)..."
-ssh "$TARGET" 'docker pull nvcr.io/nvidia/l4t-tensorrt:r36.3.0-runtime'
+ssh "$TARGET" 'docker pull nvcr.io/nvidia/l4t-tensorrt:r10.3.0-devel'
 
 echo "[setup_jetson] Building $IMAGE on Jetson..."
 ssh "$TARGET" "cd $REMOTE_DIR/bench && docker build -f Dockerfile.runner -t $IMAGE ."

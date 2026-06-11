@@ -19,14 +19,32 @@ def main():
 
     conn = connect(cfg)
     cmd = (
-        f"docker run --rm --runtime nvidia "
-        f"-v {cfg.remote_workdir}/bench:/bench {cfg.docker_image} "
-        f"bash /bench/device_probe.sh"
-    )
+            f"docker run --rm --runtime nvidia --privileged "
+            f"-v /sys/kernel/debug:/sys/kernel/debug:ro "
+            f"-v /var/lib/nvpmodel:/var/lib/nvpmodel:ro "
+            f"-v {cfg.remote_workdir}/bench:/bench {cfg.docker_image} "
+            f"bash /bench/device_probe.sh"
+        )
     res = conn.run(cmd, hide=True, warn=True)
     if res.return_code != 0:
         raise SystemExit(f"device_probe.sh failed:\n{res.stderr}")
-    info = json.loads(res.stdout)
+    raw_output = res.stdout.strip()
+    try:
+            # Find the first '{' and the last '}' to extract only the JSON payload
+            start_idx = raw_output.find('{')
+            end_idx = raw_output.rfind('}')
+            
+            if start_idx == -1 or end_idx == -1:
+                raise ValueError("No JSON brackets found in the output.")
+                
+            clean_json = raw_output[start_idx:end_idx + 1]
+            info = json.loads(clean_json)
+            
+    except (json.JSONDecodeError, ValueError) as e:
+        # If it STILL fails, print exactly what the Jetson sent back so we can debug it
+        raise SystemExit(f"Failed to parse JSON. Raw output from Jetson was:\n"
+                        f"--- START RAW OUTPUT ---\n{raw_output}\n--- END RAW OUTPUT ---\n"
+                        f"Error: {e}")    
     dest.write_text(json.dumps(info, indent=2))
     print(f"Wrote {dest}:\n{json.dumps(info, indent=2)}")
 

@@ -1,7 +1,7 @@
 # LUT Pipeline
 
 Measures **latency, memory, params, and FLOPs** for every block in the catalog,
-on a real Jetson Orin Nano running TensorRT (FP16), and writes them to
+on a real Jetson Orin Nano running TensorRT (FP32), and writes them to
 `data/lut.jsonl`.
 
 - **Laptop** runs Python, holds the catalog, generates ONNX per block,
@@ -17,19 +17,18 @@ Schema details: [`lut/docs/schema.md`](docs/schema.md).
 
 ## 1. Physical setup
 
-1. Flash JetPack 6 (L4T r36.3+) on the Jetson via NVIDIA SDK Manager.
-2. Do the Jetson's first-boot setup over HDMI once — create a user (e.g. `jetson`), connect it to Wi-Fi for the initial `apt update`, enable SSH.
-3. Plug the Jetson's **USB-C data port** (the one on the module, not the barrel jack) into the laptop.
-4. On the laptop, you should now see a new network interface and the Jetson reachable at `192.168.55.1`:
+1. Flash JetPack 7.2 on the Jetson via NVIDIA SDK Manager.
+2. Plug the Jetson's **USB-C data port** (the one on the module, not the barrel jack) into the laptop.
+3. On the laptop, you should now see a new network interface and the Jetson reachable at `192.168.55.1`:
    ```bash
    ip addr | grep -A2 l4tbr0   # or similar interface name
    ping -c1 192.168.55.1
    ```
-5. Copy your SSH key to the Jetson so the scripts can run without a password prompt:
+4. Copy your SSH key to the Jetson so the scripts can run without a password prompt:
    ```bash
    ssh-copy-id jetson@192.168.55.1
    ```
-6. Edit `config.yaml` to match your Jetson's user/host/key path.
+5. Edit `config.yaml` to match your Jetson's user/host/key path.
 
 ## 2. Pick a power mode (do this before benchmarking)
 

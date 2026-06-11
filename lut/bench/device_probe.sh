@@ -6,21 +6,26 @@ set -euo pipefail
 power_mode() {
   if command -v nvpmodel >/dev/null; then
     nvpmodel -q 2>/dev/null | awk -F':' '/NV Power Mode/ {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}'
+  elif [[ -r /var/lib/nvpmodel/status ]]; then
+    awk -F':' '{print int($2)}' /var/lib/nvpmodel/status
   else
     echo "unknown"
   fi
 }
 
 bandwidth_gbps() {
-  # CUDA sample bandwidthTest: device-to-device is the best proxy for DRAM BW.
   local bin
-  for bin in /usr/local/cuda/extras/demo_suite/bandwidthTest \
+  for bin in /usr/local/bin/bandwidthTest \
+             /usr/local/cuda/extras/demo_suite/bandwidthTest \
              /usr/local/cuda/samples/bin/x86_64/linux/release/bandwidthTest \
              /usr/local/cuda-samples/Samples/1_Utilities/bandwidthTest/bandwidthTest; do
-    [[ -x "$bin" ]] && { "$bin" --device=0 --dtod --csv 2>/dev/null \
-        | awk -F',' '/bandwidthTest/ {next} /[0-9]+,[0-9.]+/ {print $2; exit}'; return; }
+    if [[ -x "$bin" ]]; then
+      # Matches lines starting with numbers, splits by comma, and strips the hidden space
+      "$bin" --device=0 --dtod --csv 2>/dev/null | awk -F',' '/^[0-9]+/ {gsub(/ /, "", $2); print $2; exit}'
+      return
+    fi
   done
-  echo "0"
+  echo "0.0"
 }
 
 gpu_clock_mhz() {
