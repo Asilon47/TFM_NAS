@@ -110,6 +110,9 @@ def make_row(block: str, cfg: dict, input_shape, row_key: str,
         "power_mode": ROW_CONSTANTS["power_mode"],
         "jetpack": ROW_CONSTANTS["jetpack"],
         "timestamp": timestamp,
+        # Provenance: lets downstream consumers (and humans) tell roofline
+        # estimates from real Jetson measurements in a mixed file.
+        "source": "roofline_dummy",
     }
 
 

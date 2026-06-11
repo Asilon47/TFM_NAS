@@ -130,7 +130,9 @@ def main():
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
 
     device_info = load_device_info(dev_info_path)
-    done = completed_keys(out_jsonl)
+    # Precision-aware: row_key does not encode precision, so resuming under a
+    # different precision must re-measure, not skip (see lut/docs/schema.md).
+    done = completed_keys(out_jsonl, precision=precision)
     total = sweep_size(args.blocks)
 
     print(f"Sweep size: {total} rows (catalog). Already complete: {len(done)}. "

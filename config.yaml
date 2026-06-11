@@ -9,6 +9,9 @@ jetson:
   lock_clocks: true  # read by scripts/setup_jetson.sh (jetson_clocks), not Python
 
 sweep:
+  # precision is NOT part of row_key (lut/docs/schema.md): rows of different
+  # precisions coexist under the same key, and resume is precision-aware —
+  # changing this value re-measures every row rather than skipping.
   precision: fp32
   warmup_iters: 50
   timed_iters: 200

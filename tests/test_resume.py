@@ -58,3 +58,30 @@ def test_rows_without_row_key_ignored(tmp_path):
 def test_duplicate_keys_dedupe(tmp_path):
     p = _write(tmp_path / "lut.jsonl", [_row("aaa"), _row("aaa")])
     assert completed_keys(p) == {"aaa"}
+
+
+def _prow(key: str, precision: str) -> str:
+    return json.dumps({"row_key": key, "precision": precision})
+
+
+def test_precision_none_keeps_legacy_any_precision_behavior(tmp_path):
+    p = _write(tmp_path / "lut.jsonl", [_prow("aaa", "fp16"), _prow("bbb", "fp32")])
+    assert completed_keys(p) == {"aaa", "bbb"}
+
+
+def test_precision_filter_restricts_completed_set(tmp_path):
+    """A dummy/fp16 file must not mask an fp32 sweep (and vice versa)."""
+    p = _write(tmp_path / "lut.jsonl", [_prow("aaa", "fp16"), _prow("bbb", "fp32")])
+    assert completed_keys(p, precision="fp32") == {"bbb"}
+    assert completed_keys(p, precision="fp16") == {"aaa"}
+
+
+def test_precision_filter_excludes_rows_without_the_field(tmp_path):
+    p = _write(tmp_path / "lut.jsonl", [_row("aaa"), _prow("bbb", "fp16")])
+    assert completed_keys(p, precision="fp16") == {"bbb"}
+
+
+def test_malformed_lines_surface_a_warning(tmp_path, capsys):
+    p = _write(tmp_path / "lut.jsonl", [_row("aaa"), '{"broken'])
+    assert completed_keys(p) == {"aaa"}
+    assert "skipped 1 malformed line(s)" in capsys.readouterr().err
