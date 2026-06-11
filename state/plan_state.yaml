@@ -1,23 +1,27 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "1.3"
-last_completed: "1.3"
+current_checkpoint: "2.1"
+last_completed: "2.1"
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
   - "1.2"    # OFA checkpoint download + cache
   - "1.3"    # Subnet sampler (arch_dict -> nn.Module)
+  - "2.1"    # Arch -> block list translator (search/arch_to_blocks.py)
+# NOTE: CP 1.4 (ImageNet sanity) intentionally deferred — gated on an
+# ImageNet-val subset download + dataset decision D1. CP 2.1 was taken
+# first because it needs nothing external. CP 1.4 remains open.
 cached_artifacts:
   ofa_mbv3_w1_0:
     net_id: "ofa_mbv3_d234_e346_k357_w1.0"
     path: "~/.cache/ofa/ofa_mbv3_d234_e346_k357_w1.0"
     size_bytes: 31011816
     sha256: "a7def36bb4e4c688c16d37eb60d5d34b2e6dcf6438c05bc86dea918fda04c6c7"
-    pinned_in: "ofa_extractor/download_ofa.py"
+    pinned_in: "supernet/download_ofa.py"
 notes: |
   Phase 0 (Jetson LUT), CP 1.1 (skeleton + deps), CP 1.2 (OFA
   checkpoint download + hash pin), and CP 1.3 (subnet sampler) are
-  complete. `python -m ofa_extractor.sampler` materialises a random
+  complete. `python -m supernet.sampler` materialises a random
   subnet from the cached MBv3-w1.0 checkpoint and forwards
   (1, 3, 224, 224) → (1, 1000); param counts span ~3.4M (min arch)
   to ~7.7M (max arch).
@@ -27,7 +31,7 @@ notes: |
   `ofa.utils.my_dataloader`). CP 1.2's "what's next" guess
   (gdown + Pillow) was wrong: gdown is only needed by
   `ofa.model_zoo`, which we deliberately bypass — see
-  `ofa_extractor/README.md`.
+  `supernet/README.md`.
 
   **Venv-refresh gotcha:** a plain
   `pip install -r requirements-nas.txt` lands on PyPI's CUDA-13
@@ -37,8 +41,43 @@ notes: |
   `--extra-index-url https://download.pytorch.org/whl/cu128` so the
   matching `torchvision==0.26.0+cu128` wheel is selected.
 
-  Next: CP 1.4 — ImageNet sanity (top-1 within 1.5 % of OFA's
-  published number for one published arch). Blocked on D1 (target
-  dataset choice) for the long-term harness, but the CP 1.4
-  smoke-test on a 2k-image ImageNet-val subset can run independently
-  of D1.
+  **CP 2.1 done (2026-06-06):** `search/arch_to_blocks.py` translates
+  an OFA arch_dict into the ordered `(mbconv, cfg, input_shape)` list
+  the LUT is keyed on. Found that the LUT's generic MBConv widths
+  didn't cover OFA's real blocks, so added `catalog/ofa_mbv3.py` (the
+  shared macro-topology + `reachable_mbconv_configs()` → 91 configs)
+  and unioned those into the catalog grid (mbconv 2016→2107).
+  Regenerated the dummy LUT (2710 rows). DoD passes for 10 random
+  archs and one real `supernet.sampler` arch (0 missing keys). See
+  `procedure.md` CP 2.1.
+
+  CP 1.4 — ImageNet sanity (top-1 within 1.5 % of OFA's published
+  number) — still OPEN, deferred. Blocked on D1 (target dataset) for
+  the long-term harness, but its 2k-image ImageNet-val smoke-test can
+  run independently of D1.
+
+  **Repo reorganized 2026-06-06** (LUT-only → full project):
+  `bench/`→`lut/bench/`, `export/`→`lut/export/`,
+  `orchestrate/`→`lut/orchestrate/`, `docs/`→`lut/docs/`, and
+  `ofa_extractor/`→`supernet/` (the latter renamed to avoid shadowing
+  the pip-installed `ofa` package). Added `CLAUDE.md`. Module
+  invocations are now `python -m lut.orchestrate.*` and
+  `python -m supernet.*`.
+
+  **Known blocker (CUDA):** `torch.cuda.is_available()` is False on
+  this machine and `nvidia-smi` is not on PATH (unchanged since
+  CP 1.1). Fine-tuning from CP 2.4 onward needs a working CUDA
+  driver. Near-term checkpoints (1.4 inference-only, 2.1, 2.2) do
+  NOT need CUDA. Deferred — resolve before CP 2.4.
+
+  **Plan extended 2026-06-10:** added **Phase 8 — Knowledge
+  Distillation** (distill the search winner α* against an external SOTA
+  teacher → final deployable weights); the former Phase 8 (Deployment
+  Packaging) is renumbered to **Phase 9**. Decisions taken via
+  AskUserQuestion: (1) distillation is a standalone phase placed
+  *before* deployment (ML-correct: deploy the distilled weights), not
+  after; (2) the teacher is an external SOTA pretrained model, chosen at
+  CP 8.1 to match D1. Roadmap change only — `current_checkpoint` /
+  `completed` are unchanged (still CP 2.1); the new phase is future work
+  gated on the same CUDA blocker as CP 2.4+. See `PROJECT_PLAN.md`
+  Phase 8 and the plan-amendment entry in `procedure.md`.

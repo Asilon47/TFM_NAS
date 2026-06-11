@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time Jetson bootstrap. Runs on the LAPTOP. Uses SSH to:
 #   1. verify docker + nvidia runtime on the Jetson
-#   2. rsync the bench/ directory over
+#   2. rsync the lut/bench/ directory over (lands at $REMOTE_DIR/bench/)
 #   3. build the lut-runner:latest image on the Jetson
 #   4. run a smoke test inside the image
 #
@@ -15,9 +15,9 @@ CFG="$ROOT/config.yaml"
 # Minimal YAML reader — expects simple `key: value` lines.
 yaml_get() { awk -v k="$1" '
   /^[[:space:]]*[a-z_]+:/ {
-    sub(/:/,"",$1); key=$1
     val=$0; sub(/^[^:]+:[[:space:]]*/,"",val)
     gsub(/^[[:space:]]+|[[:space:]]+$/,"",val)
+    key=$1; sub(/:/,"",key)
     if (key==k) { print val; exit }
   }' "$CFG"; }
 
@@ -44,8 +44,8 @@ ssh "$TARGET" 'docker --version && docker info --format "{{json .Runtimes}}" | g
 echo "[setup_jetson] Creating remote workdir..."
 ssh "$TARGET" "mkdir -p $REMOTE_DIR/bench $REMOTE_DIR/job $REMOTE_DIR/results"
 
-echo "[setup_jetson] Copying bench/ to Jetson..."
-rsync -az --delete "$ROOT/bench/" "$TARGET:$REMOTE_DIR/bench/"
+echo "[setup_jetson] Copying lut/bench/ to Jetson..."
+rsync -az --delete "$ROOT/lut/bench/" "$TARGET:$REMOTE_DIR/bench/"
 
 echo "[setup_jetson] Pulling base image (this can take a while)..."
 ssh "$TARGET" 'docker pull nvcr.io/nvidia/l4t-tensorrt:r36.3.0-runtime'

@@ -6,7 +6,9 @@ Sample a compact child architecture from a pretrained **Once-for-All (OFA)**
 supernet, score it against a **Jetson-measured latency lookup table** plus task
 accuracy, drive a **Bayesian Optimization (BO)** loop that proposes
 architectures, and use **Net2Net** function-preserving transforms to warm-start
-the weights of every proposal so each evaluation is cheap.
+the weights of every proposal so each evaluation is cheap. Finally, **distill**
+the winning architecture against a strong external teacher to realize its full
+accuracy at the same latency before deployment.
 
 ## Motivation
 
@@ -157,6 +159,19 @@ Role in this project:
 No component is load-bearing alone — together they make on-laptop NAS against
 a Jetson target realistic (days, not weeks).
 
+### Final stage — Knowledge distillation (post-search)
+
+The four pieces above are the *search engine*: they rank thousands of candidates
+cheaply, scoring each with a 5-epoch **proxy** accuracy. The winning
+architecture α* is never trained to convergence *during* search — so once the
+frontier is chosen, α* gets **one full-schedule training run**, distilled
+against a strong external teacher (a large pretrained model on the target
+dataset). The teacher's soft targets regularize the compact student better than
+hard labels alone, squeezing out the last accuracy points *at the same latency*
+— KD changes weights, not the graph, so the LUT-predicted cost is untouched.
+This distilled model is what gets exported and deployed. See `PROJECT_PLAN.md`
+Phase 8.
+
 ---
 
 ## Repository status
@@ -172,7 +187,8 @@ a Jetson target realistic (days, not weeks).
   BO proposal can be reached via Net2Net from the current best (and if so,
   applies the transform).
 - **`eval/` — planned.** Short fine-tuning harness (target dataset, 5 epochs,
-  fixed seed) plus a final "long-train" evaluator for the winning arch.
+  fixed seed) plus the plain "long-train" baseline for the winning arch. (The
+  *final* train is knowledge distillation — see `distill/` / Phase 8.)
 
 ## Milestones
 
@@ -188,6 +204,9 @@ a Jetson target realistic (days, not weeks).
    drops by ≥ 30% versus re-extracting every time.
 5. **M5 — Non-linear topology.** Add FPN-cross and ASPP-insertion choices;
    verify the LUT's additive-latency assumption still holds within 15%.
+6. **M6 — Distilled winner.** The search winner, distilled against an external
+   SOTA teacher, beats its plain long-train accuracy at the same latency; the
+   distilled weights are the deployment artifact.
 
 ## Open design questions (tracked here, resolved per-milestone)
 
@@ -215,6 +234,8 @@ a Jetson target realistic (days, not weeks).
   Cai et al., *ProxylessNAS* — ICLR 2019.
 - **BO for NAS**: Kandasamy et al., *Neural Architecture Search with Bayesian
   Optimization and Optimal Transport* — NeurIPS 2018.
+- **Knowledge distillation**: Hinton et al., *Distilling the Knowledge in a
+  Neural Network* — NeurIPS-W 2014. https://arxiv.org/abs/1503.02531
 
 ## Non-goals (for the whole project, not just v1)
 

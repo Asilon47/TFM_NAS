@@ -1,0 +1,437 @@
+<section class="module" id="module-2" style="background: var(--color-bg)">
+  <div class="module-content">
+
+    <!-- ═══════════════════════════════════════════════════════════
+         HEADER
+         ═══════════════════════════════════════════════════════════ -->
+    <header class="module-header animate-in">
+      <span class="module-number">02</span>
+      <h1 class="module-title">Meet the Cast</h1>
+      <p class="module-subtitle">Before we dive into the code, let&rsquo;s meet the cast. Every great project is a team effort&nbsp;&mdash; and this codebase has six distinct characters, each with a clear job.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ═══════════════════════════════════════════════════════
+           SCREEN 1 — The Project Map
+           ═══════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">🗂️ The Project Map</h2>
+        <p>Think of this like a film studio lot&nbsp;&mdash; each building houses a different department. Here is every folder in the project and what it does.</p>
+
+        <div class="file-tree animate-in">
+
+          <!-- catalog/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">catalog/</span>
+            <span class="ft-desc">Block registry &mdash; 13+ block types + sweep grids</span>
+            <div class="ft-children">
+              <div class="ft-file"><span class="ft-name">mbconv.py</span><span class="ft-desc">MBConv-family neural network building blocks</span></div>
+              <div class="ft-file"><span class="ft-name">seg_det.py</span><span class="ft-desc">Segmentation &amp; detection blocks (FPN, ASPP, heads)</span></div>
+              <div class="ft-file"><span class="ft-name">ofa_mbv3.py</span><span class="ft-desc">OFA-MobileNetV3 topology &mdash; shared source of truth</span></div>
+              <div class="ft-file"><span class="ft-name">blocks.py</span><span class="ft-desc">Central registry: maps names → builders + grids</span></div>
+              <div class="ft-file"><span class="ft-name">sweep.py</span><span class="ft-desc">Generates (block, cfg, shape, row_key) for every combo</span></div>
+            </div>
+          </div>
+
+          <!-- lut/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">lut/</span>
+            <span class="ft-desc">Latency lookup table pipeline</span>
+            <div class="ft-children">
+              <div class="ft-folder open">
+                <span class="ft-name">export/</span>
+                <span class="ft-desc">PyTorch → <span class="term" data-definition="Open Neural Network Exchange &mdash; a universal format for neural networks that lets you export from PyTorch and run in TensorRT">ONNX</span> conversion</span>
+              </div>
+              <div class="ft-folder open">
+                <span class="ft-name">bench/</span>
+                <span class="ft-desc"><span class="term" data-definition="NVIDIA&rsquo;s engine that optimizes neural networks to run as fast as possible on NVIDIA GPUs">TensorRT</span> benchmarking (runs on Jetson inside <span class="term" data-definition="A tool that packages software into containers &mdash; isolated environments that work the same everywhere, like shipping containers for code">Docker</span>)</span>
+              </div>
+              <div class="ft-folder open">
+                <span class="ft-name">orchestrate/</span>
+                <span class="ft-desc">Laptop-side sweep coordination via <span class="term" data-definition="Secure Shell &mdash; a way to remotely connect to and run commands on another computer over the network">SSH</span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- supernet/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">supernet/</span>
+            <span class="ft-desc">OFA wrapper &mdash; loads supernet, samples subnets</span>
+          </div>
+
+          <!-- search/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">search/</span>
+            <span class="ft-desc">Architecture search loop (BO, arch encoder, cost)</span>
+          </div>
+
+          <!-- eval/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">eval/</span>
+            <span class="ft-desc">Fine-tune harness (<span class="term" data-definition="A placeholder file or function that exists to mark where code will go later &mdash; the structure is ready, the implementation isn&rsquo;t">stub</span> &mdash; Phase 2+)</span>
+          </div>
+
+          <!-- net2net/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">net2net/</span>
+            <span class="ft-desc">Weight morphism operators (stub &mdash; Phase 4)</span>
+          </div>
+
+          <!-- expand/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">expand/</span>
+            <span class="ft-desc">Supernet expansion (stub &mdash; Phase 5)</span>
+          </div>
+
+          <!-- state/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">state/</span>
+            <span class="ft-desc">Checkpoint tracking (plan_state.yaml)</span>
+          </div>
+
+          <!-- data/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">data/</span>
+            <span class="ft-desc">lut.jsonl + device_info.json</span>
+          </div>
+
+          <!-- scripts/ -->
+          <div class="ft-folder open">
+            <span class="ft-name">scripts/</span>
+            <span class="ft-desc">Setup scripts for laptop + Jetson</span>
+          </div>
+
+        </div>
+
+        <div class="callout callout-accent animate-in">
+          <div class="callout-icon">🎯</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why this matters for AI coding</strong>
+            <p>Understanding which <span class="term" data-definition="A folder of Python files with an __init__.py &mdash; groups related modules together">package</span> owns which responsibility lets you tell AI exactly where to put new code&nbsp;&mdash; and where NOT to put it.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           SCREEN 2 — The Five Actors
+           ═══════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">🎬 The Five Actors</h2>
+        <p>Each department on the lot has a star player. Here are the five you will keep running into.</p>
+
+        <div class="icon-rows stagger-children">
+
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-1); color: white">📋</div>
+            <div>
+              <strong style="color: var(--color-actor-1)">Catalog</strong>
+              <p>The parts catalog&nbsp;&mdash; knows every type of neural network building block and all its possible configurations. Like a LEGO set&rsquo;s parts list.</p>
+            </div>
+          </div>
+
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2); color: white">⏱️</div>
+            <div>
+              <strong style="color: var(--color-actor-2)">LUT Pipeline</strong>
+              <p>The measurement lab&nbsp;&mdash; exports blocks, ships them to the Jetson, times them, and records the results. The source of truth for &ldquo;how fast is this block?&rdquo;</p>
+            </div>
+          </div>
+
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3); color: white">🧠</div>
+            <div>
+              <strong style="color: var(--color-actor-3)">Supernet</strong>
+              <p>The shape-shifter&nbsp;&mdash; a single mega-network that can morph into any of thousands of smaller networks on demand, each with pre-trained weights.</p>
+            </div>
+          </div>
+
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-4); color: white">🔍</div>
+            <div>
+              <strong style="color: var(--color-actor-4)">Search</strong>
+              <p>The strategist&nbsp;&mdash; translates architectures into LUT keys, computes costs, and (planned) runs the Bayesian Optimization loop.</p>
+            </div>
+          </div>
+
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-5); color: white">♻️</div>
+            <div>
+              <strong style="color: var(--color-actor-5)">Net2Net &amp; Expand</strong>
+              <p>The recyclers&nbsp;&mdash; (planned) reuse weights from similar architectures and inject new block types into the supernet.</p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           SCREEN 3 — How They're Connected (Group Chat)
+           ═══════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">💬 How They Connect: A Search Iteration</h2>
+        <p>Watch a single search iteration unfold as the actors talk to each other. Click <strong>Next Message</strong> to follow along.</p>
+
+        <div class="chat-window" id="chat-module2">
+          <div class="chat-messages">
+
+            <div class="chat-message" data-msg="0" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>Hey Supernet, I need to evaluate architecture #47&nbsp;&mdash; here&rsquo;s the <span class="term" data-definition="A Python dictionary describing a network architecture &mdash; in OFA format, it has three lists: kernel sizes (ks), expand ratios (e), and depths (d)">arch dict</span>: ks=[7,5,3,...], e=[6,4,3,...], d=[3,4,2,2,4]</p>
+              </div>
+            </div>
+
+            <div class="chat-message" data-msg="1" data-sender="supernet" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-3)">S</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-3)">Supernet</span>
+                <p>Got it. Setting active subnet&hellip; extracting weights&hellip; done. Here&rsquo;s your <span class="term" data-definition="PyTorch&rsquo;s base class for neural network layers &mdash; any building block you can train inherits from this">nn.Module</span> with 4.6M parameters.</p>
+              </div>
+            </div>
+
+            <div class="chat-message" data-msg="2" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>Thanks. Now I need the latency. Let me translate this arch into block configs&hellip;</p>
+              </div>
+            </div>
+
+            <div class="chat-message" data-msg="3" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>Catalog, I&rsquo;m using your ofa_mbv3 topology to walk the arch dict. 17 blocks total.</p>
+              </div>
+            </div>
+
+            <div class="chat-message" data-msg="4" data-sender="catalog" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-1)">C</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-1)">Catalog</span>
+                <p>Each block maps to a <span class="term" data-definition="A unique identifier (16-character hash) for a specific block configuration in the LUT &mdash; like a barcode for each building block">row_key</span> in the LUT. Here are your 17 keys.</p>
+              </div>
+            </div>
+
+            <div class="chat-message" data-msg="5" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>LUT, give me the latency for each of these row_keys.</p>
+              </div>
+            </div>
+
+            <div class="chat-message" data-msg="6" data-sender="lut" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">L</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">LUT</span>
+                <p>Looking up&hellip; sum of mean latencies = 12.3ms. You&rsquo;re within budget.</p>
+              </div>
+            </div>
+
+            <div class="chat-message" data-msg="7" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>Score: accuracy(82.1) - &lambda; &times; latency(12.3) = 78.5. Logging and moving to the next candidate.</p>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="chat-typing" style="display:none">
+            <div class="chat-avatar" style="background: var(--color-text-muted)">?</div>
+            <div class="chat-typing-dots"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>
+          </div>
+
+          <div class="chat-controls">
+            <button class="btn chat-next-btn">Next Message</button>
+            <button class="btn chat-all-btn">Play All</button>
+            <button class="btn chat-reset-btn">Replay</button>
+            <span class="chat-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           SCREEN 4 — Two Virtual Environments
+           ═══════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">🔧 Two Toolboxes, Two Rooms</h2>
+        <p>This project runs in two separate <span class="term" data-definition="An isolated Python installation with its own set of packages &mdash; like a separate toolbox for each project so tools don&rsquo;t clash">virtual environments</span>. Each one has exactly the tools its pipeline needs.</p>
+
+        <div class="pattern-cards animate-in">
+
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2); color: white">⏱️</div>
+            <h4 class="pattern-title">.venv &mdash; LUT Pipeline</h4>
+            <p class="pattern-desc">CPU-only PyTorch, Fabric (SSH), ONNX. For exporting blocks and orchestrating Jetson measurements from your laptop.</p>
+          </div>
+
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3); color: white">🧠</div>
+            <h4 class="pattern-title">.venv-nas &mdash; NAS Pipeline</h4>
+            <p class="pattern-desc">GPU PyTorch, OFA, Torchvision. For supernet operations, subnet sampling, and fine-tuning on your GPU workstation.</p>
+          </div>
+
+        </div>
+
+        <div class="callout callout-info animate-in">
+          <div class="callout-icon">🏗️</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why isolation matters</strong>
+            <p>In software, keeping separate environments for separate jobs is called <em>isolation</em>. It&rsquo;s like having a woodworking shop and an electronics lab in different rooms&nbsp;&mdash; sawdust and solder don&rsquo;t mix.</p>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">The vibe-coder takeaway</strong>
+            <p>When steering AI, saying &ldquo;put the latency logic in search/cost.py, not in the supernet&rdquo; is 10&times; more effective than &ldquo;add some speed stuff somewhere.&rdquo;</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           SCREEN 5 — Quiz
+           ═══════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">🧪 Check Your Understanding</h2>
+        <p>Three quick scenarios to test whether you know who does what.</p>
+
+        <div class="quiz-container" id="quiz-module2">
+
+          <!-- Q1 -->
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="The catalog is the single source of truth for block types. Once it&rsquo;s registered there, the LUT pipeline can measure it and the search can include it."
+               data-explanation-wrong="The catalog is always the first stop for new blocks. It defines the builder function and config grid. Only after the block exists in the catalog can the LUT measure it and the search use it.">
+            <h3 class="quiz-question">You want to add a new type of building block (say, a Transformer attention layer) to the system. Which <span class="term" data-definition="A single .py file &mdash; the smallest unit of Python code organization">module</span> do you add it to first?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>supernet/ &mdash; it&rsquo;s the neural network code</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>catalog/ &mdash; it&rsquo;s the block registry where all block types are defined</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>search/ &mdash; it needs to be searchable</span>
+              </button>
+              <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>lut/ &mdash; it needs to be benchmarked</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Q2 -->
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Correct! Latency numbers come from the bench scripts that run TensorRT on the Jetson. If the numbers look wrong, the measurement is the first suspect."
+               data-explanation-wrong="When latency numbers look wrong, start at the source &mdash; the bench scripts that actually measure timing on the Jetson hardware.">
+            <h3 class="quiz-question">A bug is causing the wrong latency numbers to appear for MBConv blocks. Which directory would you investigate first?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>catalog/ &mdash; maybe the block is built wrong</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>lut/bench/ &mdash; the TensorRT benchmarking might be misconfigured</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>supernet/ &mdash; the supernet might be producing wrong architectures</span>
+              </button>
+              <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>search/ &mdash; the cost function might be reading wrong values</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Q3 -->
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Exactly! The LUT pipeline uses CPU-only torch (it ships ONNX to the Jetson for GPU work), while the NAS pipeline needs GPU torch for training. Mixing them would break both."
+               data-explanation-wrong="It&rsquo;s about dependency isolation &mdash; the two pipelines need different versions of PyTorch (CPU vs GPU), and installing one overwrites the other.">
+            <h3 class="quiz-question">Why does this project use two separate Python virtual environments instead of one?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>One is for testing, one is for production</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>The LUT pipeline needs CPU-only PyTorch while the NAS pipeline needs GPU PyTorch &mdash; installing both in the same environment would cause conflicts</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div><span>One is for Windows, one is for Linux</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module2')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module2')">Try Again</button>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           SCREEN 5b — Drag-and-Drop: Who Does What?
+           ═══════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">🧩 Who Does What?</h2>
+        <p>Drag each module name to the description of its responsibility:</p>
+
+        <div class="dnd-container animate-in">
+          <div class="dnd-chips">
+            <div class="dnd-chip" draggable="true" data-answer="catalog">catalog/</div>
+            <div class="dnd-chip" draggable="true" data-answer="supernet">supernet/</div>
+            <div class="dnd-chip" draggable="true" data-answer="lut">lut/</div>
+            <div class="dnd-chip" draggable="true" data-answer="search">search/</div>
+          </div>
+          <div class="dnd-zones">
+            <div class="dnd-zone" data-correct="catalog">
+              <p class="dnd-zone-label">Registers block types, defines config grids, generates the sweep</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="lut">
+              <p class="dnd-zone-label">Exports ONNX, orchestrates Jetson benchmarks via SSH, records latency</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="supernet">
+              <p class="dnd-zone-label">Loads pretrained OFA weights, samples subnets from arch dicts</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="search">
+              <p class="dnd-zone-label">Translates arch dicts into block lists, computes LUT-based cost</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+          </div>
+          <div style="margin-top: var(--space-4); display: flex; gap: var(--space-3);">
+            <button class="btn" onclick="checkDnD(this)">Check Matches</button>
+            <button class="btn" onclick="resetDnD(this)">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           NAVIGATION FOOTER
+           ═══════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <div class="pattern-cards">
+          <div class="pattern-card" style="border-top: 3px solid var(--color-text-muted)">
+            <div class="pattern-icon" style="background: var(--color-text-muted); color: white">←</div>
+            <h4 class="pattern-title">Previous</h4>
+            <p class="pattern-desc">Module 1 &mdash; What This Machine Does</p>
+          </div>
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2); color: white">→</div>
+            <h4 class="pattern-title">Next</h4>
+            <p class="pattern-desc">Module 3 &mdash; The Measurement Machine</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>

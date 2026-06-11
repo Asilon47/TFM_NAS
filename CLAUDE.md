@@ -13,7 +13,9 @@ frontier, without training from scratch. The strategy: sample subnets from a
 pretrained **OFA supernet**, score them with a **Jetson-measured latency LUT**
 plus a short fine-tune accuracy, and let **Bayesian Optimization** guide the
 search. **Net2Net** transforms warm-start weights when BO proposes a nearby
-architecture, so each evaluation costs ~5 epochs instead of full training.
+architecture, so each evaluation costs ~5 epochs instead of full training. Once
+the search settles, the winning architecture is **distilled** against a strong
+external teacher for its final deployable weights (Phase 8).
 
 ---
 
@@ -27,16 +29,36 @@ architecture, so each evaluation costs ~5 epochs instead of full training.
 
 ---
 
-## Current state (as of last update: CP 1.3)
+## Current state (as of last update: CP 2.1)
 
 - **Phase 0 (LUT):** Complete. `data/lut.jsonl` has all catalog rows.
 - **CP 1.1:** Done — skeleton packages + state file.
 - **CP 1.2:** Done — OFA w1.0 checkpoint downloaded + SHA256 pinned.
 - **CP 1.3:** Done — `supernet/sampler.py` works; random subnet forwards
   `(1, 3, 224, 224) → (1, 1000)` without error.
-- **CP 1.4 (next):** ImageNet sanity — confirm a sampled subnet is within
-  1.5% top-1 of OFA's published number on a 2k-image ImageNet-val subset.
-- **Phases 2–8:** Planned (see `PROJECT_PLAN.md`).
+- **CP 1.4:** OPEN, deferred — ImageNet sanity (within 1.5% top-1 of OFA's
+  published number on a 2k ImageNet-val subset). Gated on an ImageNet download.
+- **CP 2.1:** Done — `search/arch_to_blocks.py` translates an OFA arch_dict to
+  the ordered `(mbconv, cfg, input_shape)` LUT-keyed list. Added
+  `catalog/ofa_mbv3.py` (shared OFA-MBv3 topology + `reachable_mbconv_configs()`
+  → 91 configs) and unioned those into the catalog grid (mbconv 2016→2107);
+  dummy LUT regenerated (2710 rows). DoD passes (10 random + 1 real arch).
+- **CP 2.2 (next):** `search/cost.py` — sum `LUT[row_key]` over
+  `arch_to_blocks(arch)` + constant stem/head offset → cost dict.
+- **Phases 2–9:** Planned (see `PROJECT_PLAN.md`).
+
+### Known blockers
+
+- **CUDA unavailable.** `torch.cuda.is_available()` is False here and
+  `nvidia-smi` is not on PATH. Fine-tuning (CP 2.4+) needs it; CP 1.4
+  (inference-only) and CP 2.2's summing logic do not. The CP 2.2 *additivity
+  validation* (measured-vs-summed) needs a Jetson. Resolve before CP 2.4.
+
+### Lowest-friction next build
+
+CP 2.2 (`search/cost.py`) builds directly on CP 2.1 — sum the LUT over an arch's
+block list. The cost API + unit tests run on the dummy LUT now; only the
+measured-vs-summed additivity check needs the Jetson.
 
 ### Open design decisions (do not resolve unilaterally)
 
@@ -64,6 +86,7 @@ search/       Phase 2–3: search loop stub
 eval/         Phase 2–3: fine-tune harness stub
 net2net/      Phase 4: Net2Net operators stub
 expand/       Phase 5–6: supernet expansion stub
+distill/      Phase 8: knowledge-distillation harness (external teacher) stub
 state/        Checkpoint tracking (plan_state.yaml)
 data/         lut.jsonl + device_info.json (gitignored)
 scripts/      Setup scripts (setup_laptop.sh, setup_laptop_nas.sh, etc.)

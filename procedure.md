@@ -657,3 +657,206 @@ Two preconditions to settle before CP 1.4 starts:
    subset with labels and a known iteration order. Likely path:
    download ILSVRC2012 val, hash-pin a deterministic 2k subset
    (e.g. first 2k filenames after sorted ordering).
+
+---
+
+## CP 2.1 — Arch → block list translator
+
+**Date:** 2026-06-06
+**Source spec:** `PROJECT_PLAN.md` CP 2.1 (Phase 2)
+**DoD:** 10 random archs — every emitted `(block, cfg, input_shape)`
+tuple has a matching `row_key` in `data/lut.jsonl`.
+
+### Ordering note: why 2.1 before 1.4
+
+CP 1.4 (ImageNet sanity) is the plan's literal next step but is gated
+on assembling an ImageNet-val 2k subset (a download + label plumbing)
+and is only meaningful once a target dataset (D1) is in view. CP 2.1
+needs nothing external — only the already-built sampler, catalog, and
+LUT — so it was taken first. CP 1.4 remains open.
+
+### What was done
+
+1. **Discovered a grid/search-space mismatch.** A faithful translator
+   must emit OFA-MBv3's *real* block configs, but the LUT's MBConv
+   grid (`catalog/blocks.py`) used generic widths `{16,32,64,96,160}`
+   at resolutions `{56,28,14,7}`. OFA-MBv3-w1.0 actually uses widths
+   `{16,24,40,80,112,160}` at resolutions `{112,56,28,14,7}`, plus an
+   `expand=1` first block. So **zero** emitted tuples would have
+   matched the LUT as it stood — the DoD was unreachable without a
+   grid change.
+2. Confirmed `data/lut.jsonl` was **dummy/roofline** data (all 2619
+   rows shared a single timestamp `2026-04-25T08:13:53Z`, the
+   signature of `gen_dummy_lut.py`, not per-row `run_sweep.py`
+   measurements), so regenerating it costs nothing real.
+3. **Created `catalog/ofa_mbv3.py`** — the single source of truth for
+   the OFA-MBv3-w1.0 macro-topology (stage widths/strides/SE/res, the
+   fixed first block, the `KS/E/D` choice sets). Exposes
+   `reachable_mbconv_configs()`, which enumerates the **91** unique
+   MBConv configs the search space can produce (1 fixed first block +
+   5 stages × {entry, repeat} × |KS|×|E|).
+4. **Augmented the catalog grid** (`catalog/blocks.py`): unioned those
+   91 configs into `_MBCONV_GRID` after the existing generic grid
+   (de-duplicated). The generic rows are untouched; mbconv rows went
+   2016 → 2107. (Per the user's "augment, don't replace" choice — the
+   directed union adds only the 91 reachable configs rather than
+   exploding the cartesian axes, which would have added ~11k rows
+   unreachable by OFA.)
+5. **Wrote `search/arch_to_blocks.py`** — the CP 2.1 deliverable:
+   - `arch_to_blocks(arch_dict) -> list[("mbconv", cfg, input_shape)]`
+     walks the shared topology, propagating channels/stride/resolution
+     (entry block at the stage stride and `res_in`; repeat blocks at
+     stride 1 and `res_in // stride`). Reuses `input_shape_for` so the
+     `input_shape` matches the LUT's exactly.
+   - `arch_to_keys()` maps each block through `catalog.sweep.row_key`.
+   - `__main__` runs the DoD smoke test, reusing
+     `lut.orchestrate.resume.completed_keys` to read the LUT's keys.
+6. **Regenerated the dummy LUT** with
+   `python -m lut.orchestrate.gen_dummy_lut --overwrite` (CPU roofline,
+   no Jetson/CUDA) — 2710 rows, mbconv 2107.
+
+### Why each piece
+
+#### Why a shared `catalog/ofa_mbv3.py` instead of topology in `search/`?
+
+Two consumers need the same fixed table: the **LUT grid** (catalog
+layer) must enumerate the reachable configs so every searchable block
+has a row, and the **translator** (search layer) must order them per
+arch. Putting the table in `catalog/` keeps the dependency direction
+clean (`search → catalog`, never the reverse) and guarantees the grid
+and the translator can never drift — they read the same constants.
+The translator owns only the *ordering* logic (arch_dict → sequence),
+which is genuinely search-space knowledge.
+
+#### Why emit only the MBConv backbone (not stem/head)?
+
+The stem (`3→16` s2), `final_expand` (`160→960`), `feature_mix`
+(`960→1280`), and the classifier are **identical for every arch** —
+search never varies them. They contribute a constant latency offset,
+not a per-arch lookup, so CP 2.2's cost function adds them once rather
+than the translator emitting them per arch. This also keeps every
+emitted tuple `block="mbconv"`, so the DoD is a clean LUT-coverage
+check over one block type.
+
+#### Why the `expand=1` first block is fine despite a structural quirk
+
+OFA skips the inverted-bottleneck 1×1 when `expand=1`; the catalog's
+`MBConv` builds a (redundant) 1×1 instead. For CP 2.1 this is
+irrelevant — the DoD checks `row_key` membership, not module
+structure — and the dummy LUT's roofline latency for that single
+fixed block doesn't change search *ranking*. If real Jetson
+measurement later cares, the first block is one row to special-case.
+
+### Verification (DoD)
+
+```
+$ python -c "from catalog.ofa_mbv3 import reachable_mbconv_configs as f; print(len(f()))"
+91
+
+$ python -m lut.orchestrate.gen_dummy_lut --overwrite
+Done. Wrote 2710 rows.   # mbconv 2107
+
+$ python -m search.arch_to_blocks
+LUT: 2710 row_keys in .../data/lut.jsonl
+  arch 0: d=[3, 4, 3, 2, 4] -> 17 blocks  [OK]
+  ...
+  arch 7: d=[4, 4, 4, 4, 3] -> 20 blocks  [OK]
+  arch 9: d=[4, 4, 2, 2, 4] -> 17 blocks  [OK]
+DoD PASS
+```
+
+Block counts span 15 (all stages min depth: 1 + 5×2 + ... ) to 20
+(near-max depth), matching `1 + Σ d[s]`.
+
+**Extra check — real sampler integration.** Translated an arch from
+the actual `supernet.sampler.random_arch(load_supernet())` (not just
+synthetic dicts): `len(ks)=20, len(e)=20, len(d)=5`, 15 blocks, **0**
+missing from the LUT. Confirms the translator consumes real OFA
+sampler output, not just the smoke test's format.
+
+**DoD satisfied:** every emitted tuple of 10 random archs (and one
+real sampled arch) matches a LUT `row_key`.
+
+### Decisions taken (via AskUserQuestion)
+
+| Question | Choice | Reason |
+|---|---|---|
+| LUT doesn't cover OFA blocks — realign, augment, or defer? | **Augment** (keep generic grid + add OFA configs) | Preserves the generic blocks for any future non-OFA use; the directed union keeps the bloat to +91 rows. |
+| CUDA missing (from prior session) | Note, defer | CP 2.1 needs no CUDA; resolve before CP 2.4. |
+
+### What's next
+
+CP 2.2 — LUT composite-cost function (`search/cost.py`):
+`cost(arch) → {latency_ms, peak_mem_mib, params, flops}` as the sum of
+`LUT[row_key]` over `arch_to_blocks(arch)`, plus the constant
+stem/head offset. The measured-vs-summed additivity validation (DoD:
+within 15% on 5 real subnets) needs a Jetson and is the one part of
+CP 2.2 that can't run on this machine yet — the summing + cost API can
+be built and unit-tested against the dummy LUT now.
+
+---
+
+## Plan amendment — Phase 8 Knowledge Distillation added (2026-06-10)
+
+**Type:** Scope / roadmap change (not a checkpoint). No code shipped; no
+checkpoint advance in `state/plan_state.yaml` (still at CP 2.1).
+**Source request:** "add a final step at the end, a distillation process;
+scan the whole project to modify the `.md`s and `state/` and anything needed."
+
+### What changed
+
+A new **Phase 8 — Knowledge Distillation** was inserted into the plan, and the
+former **Phase 8 — Deployment Packaging** was renumbered to **Phase 9**. The
+pipeline now reads: search → winner α* → **distill (teacher → student)** → TRT
+export.
+
+Phase 8 (CP 8.1–8.4): select & pin an external SOTA teacher (CP 8.1); implement
+the KD loss + training harness, reusing `eval/`'s data pipeline (CP 8.2); run
+the full-schedule distillation on the search winner, beating CP 7.3's plain
+long-train baseline at the same latency (CP 8.3); serialize the distilled winner
+to `state/winner_distilled/` as Phase 9's input (CP 8.4).
+
+### Why
+
+Every accuracy number the search produces is a 5-epoch **proxy** used only to
+*rank* candidates (CP 2.4 / 3.2 / 7.2) — α* is never trained to convergence
+during search. A dedicated final phase is the natural home for the project's one
+full-schedule training run, and KD against a strong teacher is the standard,
+highest-accuracy-per-epoch way to do it (OFA, BigNAS, AttentiveNAS all distill
+the final model). KD is **latency-invariant** — it changes weights, not the
+graph — so the entire LUT contract and Phase 9's ≤ 15 % export bar are
+untouched; only accuracy moves. Placing it *before* deployment (rather than
+literally last) is ML-correct: you export the distilled weights.
+
+### Decisions taken (via AskUserQuestion)
+
+| Question | Choice | Why |
+|---|---|---|
+| Placement of the distillation step | **New Phase 8; Deployment → Phase 9** | Distillation produces the model you deploy, so it must precede the TRT export. |
+| Distillation teacher | **External SOTA pretrained model** | Higher accuracy ceiling than self-distillation; the concrete model is chosen at CP 8.1 to match the D1 dataset/task (no new open decision — the approach is pinned). |
+
+### Files edited
+
+- `PROJECT_PLAN.md` — new Phase 8 section (CP 8.1–8.4, refs, risks, latency
+  note); pipeline diagram; Phase 8 → 9 deployment renumber (CP 9.1–9.3,
+  distilled-winner input, `model_card` records teacher + KD hyperparams);
+  timeline table (+Phase 8 row, total 18–28 → 20–31 sessions); D1 extended to
+  note it also selects the teacher.
+- `PROJECT.md` — one-line summary clause; new "Final stage — Knowledge
+  distillation" subsection; Milestone M6; Hinton KD reference; `eval/`
+  repository-status line clarified (its long-train is the *baseline*; KD is the
+  final train).
+- `README.md` — status table (KD = Phase 8, Deployment = Phase 9); module map
+  (+`distill/`, `eval/` tightened); "all 8 phases" → "all 9 phases".
+- `CLAUDE.md` — project paragraph (KD final stage); module-structure tree
+  (+`distill/`); "Phases 2–8" → "Phases 2–9".
+- `state/plan_state.yaml` — forward-looking note in `notes:` (no
+  checkpoint-state change).
+- `distill/` — new module stub (`__init__.py` + `README.md`) so the module map
+  has an honest target; the teacher pin is TBD until D1 resolves.
+
+### What's next (unchanged)
+
+CP 2.2 — `search/cost.py` (LUT composite-cost). The distillation phase is future
+work gated on the CUDA blocker (same as CP 2.4+); nothing in Phase 8 is
+actionable until D1 is resolved and a GPU is available.

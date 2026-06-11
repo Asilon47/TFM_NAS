@@ -1,0 +1,355 @@
+<section class="module" id="module-4" style="background: var(--color-bg)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">04</span>
+      <h1 class="module-title">The Shape-Shifter</h1>
+      <p class="module-subtitle">How one mega-network contains thousands of specialized sub-networks</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ═══════ SCREEN 1: The OFA Idea ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">One Network to Rule Them All</h2>
+        <p>Training a <span class="term" data-definition="A type of AI model inspired by the brain — layers of connected nodes that learn patterns from data.">neural network</span> from scratch takes days and costs hundreds of dollars in GPU time. What if you could train <strong>one</strong> network and then pull out thousands of specialized sub-networks for free?</p>
+        <p>That's exactly what <span class="term" data-definition="Once-for-All — a technique from MIT (ICLR 2020) that trains a single supernet once, then extracts specialized sub-networks instantly with no additional training.">OFA (Once-for-All)</span> does. Think of it like a walk-in closet where every shirt, jacket, and pair of pants was designed to go with every other piece.</p>
+
+        <div class="step-cards stagger-children" style="margin-top: var(--space-8)">
+          <div class="step-card animate-in">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <strong>Train one massive supernet</strong>
+              <p>A single network that supports every possible combination of depth, width, and kernel size</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <strong>Pick a specific configuration</strong>
+              <p>Choose the depth, kernel, and expand ratio for each layer — like selecting an outfit from the closet</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <strong>Extract a concrete sub-network</strong>
+              <p>Pull out a standalone model with the selected settings — instant, O(1) operation</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <strong>It already has pretrained weights!</strong>
+              <p>The sub-network inherits weights that were co-trained to work — within 1-2% of training from scratch</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Weight Sharing</strong>
+            <p>This technique is called <span class="term" data-definition="When multiple networks share the same trained parameters instead of each having their own — like a family sharing one Netflix account where each person has their own profile.">weight sharing</span>. Instead of training 10,000 separate networks, you train one that contains all of them. MIT's OFA paper uses a technique called <span class="term" data-definition="The training technique OFA uses — first train the largest network, then gradually train smaller and smaller sub-networks within it, forcing them all to share weights effectively.">progressive shrinking</span> to make this work.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 2: The Three Elastic Dimensions ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">What Can You Vary?</h2>
+        <p>The OFA supernet is <span class="term" data-definition="A network that can change its structure (depth, width, kernel size) while keeping its weights — like a rubber band that stretches to different sizes.">elastic</span> along three dimensions. Each one controls a different aspect of the network's shape:</p>
+
+        <div class="pattern-cards stagger-children" style="margin-top: var(--space-6)">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">🔑</div>
+            <h4 class="pattern-title">Kernel Size (ks)</h4>
+            <p class="pattern-desc"><strong>[3, 5, 7]</strong> — How wide the filter window is. Bigger kernels capture more spatial context but cost more computation.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">📈</div>
+            <h4 class="pattern-title">Expand Ratio (e)</h4>
+            <p class="pattern-desc"><strong>[3, 4, 6]</strong> — How wide the internal channel expansion is. Higher ratios give more capacity but more computation.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">📏</div>
+            <h4 class="pattern-title">Depth (d)</h4>
+            <p class="pattern-desc"><strong>[2, 3, 4]</strong> per stage — How many blocks in each of the 5 stages. Deeper = more layers of processing.</p>
+          </div>
+        </div>
+
+        <div class="callout callout-info animate-in" style="margin-top: var(--space-8)">
+          <div class="callout-icon">🔢</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Search Space is Enormous</strong>
+            <p>With 5 stages, 3 kernel choices, 3 expand choices, and 3 depth choices per stage, there are roughly <strong>2 × 10<sup>19</sup></strong> possible architectures. The supernet covers <em>all</em> of them with shared weights.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 3: How Sampling Works ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">How Sampling Works</h2>
+        <p>Here's the actual code that extracts a <span class="term" data-definition="A smaller network extracted from inside a supernet — like pulling a specific outfit out of a walk-in closet. It's a complete, independent model.">subnet</span> from the supernet. It's surprisingly simple — just 3 lines of real work:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE · supernet/sampler.py</span>
+            <pre><code>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">sample</span>(</span>
+<span class="code-line">    arch_dict: <span class="code-function">dict</span>,</span>
+<span class="code-line">    supernet: OFAMobileNetV3 | <span class="code-keyword">None</span> <span class="code-operator">=</span> <span class="code-keyword">None</span>,</span>
+<span class="code-line">) <span class="code-operator">-></span> nn.Module:</span>
+<span class="code-line">    <span class="code-string">"""Materialise a subnet from {"ks": [...], "e": [...], "d": [...]}.</span></span>
+<span class="code-line"><span class="code-string"></span></span>
+<span class="code-line"><span class="code-string">    Returns a freshly deep-copied MobileNetV3 that owns its weights;</span></span>
+<span class="code-line"><span class="code-string">    the caller may train it without touching the supernet's parameters.</span></span>
+<span class="code-line"><span class="code-string">    """</span></span>
+<span class="code-line">    sn <span class="code-operator">=</span> <span class="code-function">_get_or_load_supernet</span>(supernet)</span>
+<span class="code-line">    sn.<span class="code-function">set_active_subnet</span>(<span class="code-property">ks</span><span class="code-operator">=</span>arch_dict[<span class="code-string">"ks"</span>], <span class="code-property">e</span><span class="code-operator">=</span>arch_dict[<span class="code-string">"e"</span>], <span class="code-property">d</span><span class="code-operator">=</span>arch_dict[<span class="code-string">"d"</span>])</span>
+<span class="code-line">    <span class="code-keyword">return</span> sn.<span class="code-function">get_active_subnet</span>(<span class="code-property">preserve_weight</span><span class="code-operator">=</span><span class="code-keyword">True</span>)</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Take an architecture description — a dictionary with lists of kernel sizes, expand ratios, and depths</p>
+              <p class="tl">Optionally accept a pre-loaded supernet (or load one automatically)</p>
+              <p class="tl">Return a PyTorch neural network module</p>
+              <p class="tl">Returns a <span class="term" data-definition="Creating a completely independent copy of an object — changes to the copy don't affect the original. Like photocopying a document vs. sharing one copy.">deep-copied</span> standalone network that owns its own weights — safe to train without affecting the supernet</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">Get the supernet (loading it from the cached 31 MB checkpoint if needed — this load happens once)</p>
+              <p class="tl">Tell the supernet which configuration to activate: set the kernel, expand ratio, and depth for each block</p>
+              <p class="tl">Extract the active sub-network as a new, independent model with copied weights</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 4: The Architecture Dictionary ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Architecture Dictionary</h2>
+        <p>Every architecture is described by a simple Python dictionary called the <span class="term" data-definition="A Python dictionary describing a network architecture — in OFA format it has three lists: kernel sizes (ks), expand ratios (e), and depths (d).">arch dict</span>. Here's what the supernet configuration looks like:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE · supernet/sampler.py</span>
+            <pre><code>
+<span class="code-line">OFA_MBV3_W10_KWARGS: <span class="code-function">dict</span> <span class="code-operator">=</span> {</span>
+<span class="code-line">    <span class="code-string">"dropout_rate"</span>: <span class="code-number">0</span>,</span>
+<span class="code-line">    <span class="code-string">"width_mult"</span>: <span class="code-number">1.0</span>,</span>
+<span class="code-line">    <span class="code-string">"ks_list"</span>: [<span class="code-number">3</span>, <span class="code-number">5</span>, <span class="code-number">7</span>],</span>
+<span class="code-line">    <span class="code-string">"expand_ratio_list"</span>: [<span class="code-number">3</span>, <span class="code-number">4</span>, <span class="code-number">6</span>],</span>
+<span class="code-line">    <span class="code-string">"depth_list"</span>: [<span class="code-number">2</span>, <span class="code-number">3</span>, <span class="code-number">4</span>],</span>
+<span class="code-line">}</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Configuration for the OFA-MobileNetV3 supernet at <span class="term" data-definition="A scaling factor applied to all channel widths in a network — 1.0 means baseline width, 0.5 means half as wide, 1.5 means 50% wider.">width multiplier</span> 1.0</p>
+              <p class="tl">No dropout — the supernet was trained without it for weight-sharing compatibility</p>
+              <p class="tl">Width multiplier 1.0 — the baseline channel width (Phase 5 plans to try 1.4, 1.6)</p>
+              <p class="tl">Each block can choose from kernel sizes 3, 5, or 7</p>
+              <p class="tl">Each block can choose from expand ratios 3, 4, or 6</p>
+              <p class="tl">Each of the 5 stages can have 2, 3, or 4 blocks</p>
+              <p class="tl">&nbsp;</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-6)">And here's an example arch dict for a specific architecture:</p>
+
+        <div class="badge-list stagger-children" style="margin-top: var(--space-4)">
+          <div class="badge-item animate-in">
+            <code class="badge-code">ks</code>
+            <span class="badge-desc">[7, 5, 3, 5, 3, 7, 5, 7, 5, 3, 7, 3, 7, 5, 5, 3, 3, 7, 5, 7] — 20 slots (5 stages × 4 max blocks)</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">e</code>
+            <span class="badge-desc">[6, 4, 3, 6, 3, 6, 4, 4, 4, 6, 3, 4, 6, 3, 4, 6, 3, 4, 6, 3] — 20 slots of expand ratios</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">d</code>
+            <span class="badge-desc">[3, 4, 2, 2, 4] — 5 stages with depths from 2 to 4</span>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in" style="margin-top: var(--space-8)">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Not All Slots Are Active</strong>
+            <p>The ks and e arrays always have 20 entries (5 stages × 4 max blocks each), but only the first d[s] entries per stage are actually used. The rest are placeholders. With d=[3,4,2,2,4], only 1 + 3+4+2+2+4 = <strong>16 blocks</strong> are active.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 4b: How Extraction Flows ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Extraction Pipeline</h2>
+        <p>Watch how a subnet gets extracted from the supernet step by step:</p>
+
+        <div class="flow-animation animate-in" data-steps='[
+          {"highlight":"flow-actor-1","label":"BO proposes arch: ks=[7,5,3,...], e=[6,4,3,...], d=[3,4,2,2,4]"},
+          {"highlight":"flow-actor-2","label":"Sampler loads the 31 MB pretrained checkpoint (cached after first load)","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-2","label":"set_active_subnet() marks which weights to use for this exact configuration"},
+          {"highlight":"flow-actor-3","label":"get_active_subnet(preserve_weight=True) deep-copies the selected weights","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-3","label":"Result: a standalone 4.6M-param MobileNetV3 with pretrained weights"},
+          {"highlight":"flow-actor-3","label":"The subnet is independent — training it does not affect the supernet"}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon">🔍</div>
+              <span>Search / BO</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon">🧠</div>
+              <span>Supernet</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon">🎯</div>
+              <span>Subnet</span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-step-label" id="flow-label">Click "Next Step" to watch a subnet get extracted</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 5: The Smoke Test ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Seeing It in Action</h2>
+        <p>The sampler includes a built-in smoke test. Here's what happens when you run it:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE · supernet/sampler.py</span>
+            <pre><code>
+<span class="code-line"><span class="code-keyword">if</span> __name__ <span class="code-operator">==</span> <span class="code-string">"__main__"</span>:</span>
+<span class="code-line">    supernet <span class="code-operator">=</span> <span class="code-function">load_supernet</span>()</span>
+<span class="code-line">    arch <span class="code-operator">=</span> <span class="code-function">random_arch</span>(supernet)</span>
+<span class="code-line">    subnet <span class="code-operator">=</span> <span class="code-function">sample</span>(arch, supernet)</span>
+<span class="code-line">    <span class="code-keyword">with</span> torch.<span class="code-function">no_grad</span>():</span>
+<span class="code-line">        out <span class="code-operator">=</span> subnet(torch.<span class="code-function">randn</span>(<span class="code-number">1</span>, <span class="code-number">3</span>, <span class="code-number">224</span>, <span class="code-number">224</span>))</span>
+<span class="code-line">    <span class="code-function">print</span>(<span class="code-string">f"arch: </span>{arch}<span class="code-string">"</span>)</span>
+<span class="code-line">    <span class="code-function">print</span>(<span class="code-string">f"output shape: </span>{<span class="code-function">tuple</span>(out.shape)}<span class="code-string">"</span>)</span>
+<span class="code-line">    <span class="code-function">print</span>(<span class="code-string">f"params: </span>{<span class="code-function">sum</span>(p.<span class="code-function">numel</span>() <span class="code-keyword">for</span> p <span class="code-keyword">in</span> subnet.<span class="code-function">parameters</span>()):,}<span class="code-string">"</span>)</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">When this file is run directly (not imported)...</p>
+              <p class="tl">Load the supernet from the cached 31 MB <span class="term" data-definition="A saved snapshot of a model's weights at a specific point in training — like a save point in a video game.">checkpoint</span></p>
+              <p class="tl">Generate a random architecture from the supernet's options</p>
+              <p class="tl">Extract a concrete subnet with that architecture and pretrained weights</p>
+              <p class="tl">Disable gradient tracking (we're just testing, not training)</p>
+              <p class="tl">Feed a random 224×224 RGB image through the subnet</p>
+              <p class="tl">Print the architecture configuration</p>
+              <p class="tl">Print the output shape — should be (1, 1000) for ImageNet's 1000 classes</p>
+              <p class="tl">Count and print the total number of trainable parameters</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pattern-cards stagger-children" style="margin-top: var(--space-8)">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">📊</div>
+            <h4 class="pattern-title">Min Subnet</h4>
+            <p class="pattern-desc">d=[2,2,2,2,2], k=3, e=3<br><strong>3.4M params</strong></p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">📊</div>
+            <h4 class="pattern-title">Random Subnet</h4>
+            <p class="pattern-desc">Typical random sample<br><strong>~4.6M params</strong></p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">📊</div>
+            <h4 class="pattern-title">Max Subnet</h4>
+            <p class="pattern-desc">d=[4,4,4,4,4], k=7, e=6<br><strong>7.7M params</strong></p>
+          </div>
+        </div>
+        <p style="margin-top: var(--space-4); color: var(--color-text-secondary); font-size: var(--text-sm); text-align: center;">A <strong>2.25× range</strong> from a single shared supernet — all with inherited pretrained weights</p>
+      </section>
+
+      <!-- ═══════ SCREEN 6: Quiz ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Check Your Understanding</h2>
+
+        <div class="quiz-container" id="quiz-module4">
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Right! The minimum subnet (depth 2, small kernels, low expand) has about 3.4M parameters. The maximum has 7.7M — a 2.25× range from the same supernet."
+               data-explanation-wrong="The subnet is much smaller than the full supernet. With minimum depth, the extracted model has only 3.4M parameters vs the maximum of 7.7M.">
+            <h3 class="quiz-question">The supernet has 475 tensors in its <span class="term" data-definition="A Python dictionary containing all of a model's learned parameters (weights and biases) — like a save file for a neural network.">state_dict</span>. When you extract a subnet with minimum depth [2,2,2,2,2], approximately how many parameters does it have?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>~475 (same number as the supernet has tensors)</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>~3.4 million (the minimum subnet is much smaller)</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>~7.7 million (the maximum subnet)</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Exactly! preserve_weight=True deep-copies the supernet weights. Same arch_dict = same configuration = same weight values every time. This determinism is crucial for fair comparison during search."
+               data-explanation-wrong="With preserve_weight=True, the weights are copied from the supernet, not randomly initialized. Same arch = same weights. This determinism is crucial for fair comparison during search.">
+            <h3 class="quiz-question">You call sample() twice with the exact same arch_dict. Do you get the same model?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>No — each call produces random weights</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Yes — preserve_weight=True copies the same supernet weights each time</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It depends on the GPU state</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Smart thinking! The BO search loop calls sample() hundreds or thousands of times. Loading 31 MB from disk each time would be extremely slow. Caching means the load happens once and all subsequent calls are fast."
+               data-explanation-wrong="The cache is a performance optimization. Loading 31 MB from disk is slow; caching in memory means you only do it once. This pattern — lazy loading with a module-level cache — is very common in Python.">
+            <h3 class="quiz-question">Why does the project cache the supernet in a module-level variable instead of loading it fresh every time?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>To save disk space</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Because loading the 31 MB checkpoint takes time, and the search loop calls sample() thousands of times — you only want to pay the load cost once</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Because PyTorch requires it</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">Try Again</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>

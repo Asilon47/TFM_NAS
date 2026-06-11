@@ -40,7 +40,14 @@ supernet-expansion capability.
                         [P7] Search on expanded supernet
                                │
                                ▼
-                        [P8] TRT export for deployment
+                        winner subnet α* (expanded)
+                               │
+                               ▼
+                        [P8] Knowledge Distillation
+                             (external SOTA teacher → student α*)
+                               │
+                               ▼
+                        [P9] TRT export for deployment
 ```
 
 ---
@@ -376,25 +383,101 @@ Phase 3's winner.
 
 ---
 
-## Phase 8 — Deployment Packaging
+## Phase 8 — Knowledge Distillation
 
-**Goal:** Everything a deployment engineer needs to drop the winner on a
-Jetson.
+**Goal:** Train the search winner α* (the student) to its maximum accuracy
+against an external SOTA teacher, producing the final deployable weights. This
+is the project's **one full-schedule training run** — every accuracy number
+before this point is a 5-epoch *proxy* used only to *rank* candidates
+(CP 2.4 / 3.2 / 7.2). KD against a strong teacher is the standard,
+highest-accuracy-per-epoch way to do that final train (OFA, BigNAS, AttentiveNAS
+all distill the final model).
+
+> **Note on latency (mirrors Phase 4).** KD transfers *knowledge into weights*;
+> it never touches the graph. α*'s architecture — and therefore its LUT-summed
+> latency — is unchanged by distillation. The whole LUT contract and Phase 9's
+> ≤ 15 % export bar carry over untouched; only accuracy moves.
+
+> **Relationship to CP 7.3 (no redundancy).** CP 7.3's plain hard-label
+> long-train is the **baseline**; Phase 8's KD run is the definitive, shipped
+> train that must beat it. The two are a baseline/treatment pair, not duplicate
+> work.
 
 ### Checkpoints
 
-- **CP 8.1 — ONNX → TensorRT engine**
-  - Reuse `lut/export/to_onnx.py` + `lut/bench/build_engine.py` patterns.
+- **CP 8.1 — Teacher selection & caching**
+  - Choose the external SOTA teacher that matches the target task (open
+    decision **D1**): classification → e.g. ConvNeXt-L / EfficientNetV2-L
+    (`timm`); segmentation → e.g. SegFormer-B5; detection → a strong detector.
+  - `distill/teacher.py`: load it **frozen, eval-mode**; expose `teacher(x)`.
+  - Pin URL + SHA256 in `distill/README.md` — same discipline as the OFA
+    checkpoint pin in `supernet/download_ofa.py`.
+  - **DoD:** the teacher reproduces its published metric on a small val subset
+    within tolerance; its checkpoint hash is pinned.
+
+- **CP 8.2 — Distillation loss & harness**
+  - `distill/distill.py`: `L = α·T²·KL(softmax(z_s/T) ‖ softmax(z_t/T))
+    + (1−α)·CE(z_s, y)` (per-pixel KL for seg; logit/feature mimicking for det).
+  - Reuse `eval/`'s D1 data pipeline + metrics so splits/transforms match the
+    short-FT harness. Full cosine LR schedule, fixed seed, temperature `T`,
+    weight `α`.
+  - **DoD:** a tiny overfit run (a few hundred images) drives KD loss down
+    monotonically, with the KL and CE terms logged separately. (The loss/harness
+    is CPU-testable on tiny tensors; the real run needs CUDA.)
+
+- **CP 8.3 — Full distillation run on the winner**
+  - Load α* from `state/winner_v1/` (Phase 3) or the expanded winner
+    (Phase 7 CP 7.3); initialize the student from its searched / Net2Net
+    warm-started weights (**not** random); train the full schedule with the
+    teacher's soft targets.
+  - **DoD:** the distilled student beats the CP 7.3 plain long-train baseline by
+    a margin > noise (e.g. ≥ +0.3 % top-1 / mIoU / mAP) at the **same**
+    architecture and latency.
+
+- **CP 8.4 — Distilled-winner artifact**
+  - Serialize distilled weights + training log + teacher pin to
+    `state/winner_distilled/` (mirrors `state/winner_v1/`).
+  - **DoD:** reload in a clean session and reproduce the distilled accuracy
+    within noise. This artifact — not the plain winner — is the input to Phase 9.
+
+### References
+- Knowledge distillation: Hinton, Vinyals & Dean, *Distilling the Knowledge in
+  a Neural Network*, NeurIPS-W 2014. https://arxiv.org/abs/1503.02531
+- Dense-prediction KD (if D1 is seg/det): Liu et al., *Structured Knowledge
+  Distillation for Dense Prediction*, CVPR 2019.
+  https://arxiv.org/abs/1903.04197
+
+### Risks
+- **CUDA.** This is a real, full-length training run — it inherits the
+  documented CUDA blocker (resolve before CP 2.4 / this phase). The loss and
+  harness can be unit-tested on CPU; the run cannot.
+- **D1 coupling.** The teacher must exist for the chosen task/dataset — a
+  classification teacher won't transfer to seg/det. Pick the teacher *after* D1
+  is resolved.
+
+---
+
+## Phase 9 — Deployment Packaging
+
+**Goal:** Everything a deployment engineer needs to drop the **distilled**
+winner on a Jetson.
+
+### Checkpoints
+
+- **CP 9.1 — ONNX → TensorRT engine**
+  - Export the **distilled** winner (`state/winner_distilled/`, CP 8.4);
+    reuse `lut/export/to_onnx.py` + `lut/bench/build_engine.py` patterns.
   - **DoD:** TRT engine deserializes and runs on the Jetson.
 
-- **CP 8.2 — End-to-end latency validation**
+- **CP 9.2 — End-to-end latency validation**
   - Measure the deployed engine on the Jetson.
-  - Compare to LUT-summed prediction.
+  - Compare to LUT-summed prediction (unchanged by KD — same architecture).
   - **DoD:** Error ≤ 15 % (same bar as CP 2.2).
 
-- **CP 8.3 — Deployment bundle**
+- **CP 9.3 — Deployment bundle**
   - `deploy/<date>/engine.plan`, `model_card.md`, `device_info.json`,
-    `arch.json`, `training_log.md`.
+    `arch.json`, `training_log.md`. The `model_card.md` records the
+    distillation teacher + KD hyperparameters (T, α, schedule).
   - **DoD:** A colleague with zero context can run the engine from the
     bundle alone.
 
@@ -410,17 +493,20 @@ Jetson.
 - **Reproducibility.** Every training run pins seed, torch version, and
   OFA checkpoint hash in its log.
 - **Never re-measure on Jetson during search.** The LUT is the contract.
-  Only re-measure when validating CP 2.2 / CP 8.2 assumptions or adding a
+  Only re-measure when validating CP 2.2 / CP 9.2 assumptions or adding a
   new block.
 - **Idempotent scripts.** Same design as `run_sweep.py`: re-running picks
   up where it stopped.
 
 ## Open decisions (revisit at their phase)
 
-- **D1 — Target dataset** (blocks CP 2.4 onward).
+- **D1 — Target dataset** (blocks CP 2.4 onward; also selects the Phase 8
+  distillation teacher).
   Options: ImageNet (generic, well-aligned to OFA pretraining but doesn't
   match deployment workload); Cityscapes / ADE20K (seg, matches LUT's
   seg heads); COCO (det, matches LUT's det heads).
+  The chosen dataset/task also determines which external SOTA teacher is
+  available for CP 8.1 — a classification teacher won't transfer to seg/det.
   **Decide before CP 2.4.**
 
 - **D2 — Search-budget target** (blocks CP 3.2 / 7.2).
@@ -480,8 +566,9 @@ Rough, ~4 hours per session:
 | 5 | 4–6 | Cross-family injection, highest uncertainty |
 | 6 | 2–4 | Fine-tune compute |
 | 7 | 2–3 | Search + long-train |
-| 8 | 1–2 | TRT export, bundle |
-| **Total** | **18–28 sessions** | |
+| 8 | 2–3 | Distillation: teacher setup + full train |
+| 9 | 1–2 | TRT export, bundle |
+| **Total** | **20–31 sessions** | |
 
 ## Non-goals (whole project)
 

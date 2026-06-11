@@ -1,0 +1,339 @@
+<section class="module" id="module-3" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">03</span>
+      <h1 class="module-title">The Measurement Machine</h1>
+      <p class="module-subtitle">How the LUT pipeline benchmarks every building block on real hardware — so the search engine never has to guess.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ─── SCREEN 1: WHY MEASURE ON REAL HARDWARE? ─── -->
+      <section class="screen animate-in">
+        <h2>How fast is a 5×5 <span class="term" data-definition="A convolution where each input channel gets its own filter — much cheaper than regular convolution because channels don&apos;t mix">depthwise convolution</span> with 96 channels at 28×28 on a Jetson Orin Nano?</h2>
+        <p>You could <em>guess</em>. Or you could actually <em>measure</em> it. This module is about the system that actually measures it.</p>
+
+        <div class="pattern-cards">
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">🔬</div>
+            <h4 class="pattern-title">5×5 Depthwise Conv</h4>
+            <p class="pattern-desc">96 channels, 28×28 resolution</p>
+            <p class="pattern-desc"><strong>FLOPs: 3.6M</strong></p>
+            <p class="pattern-desc" style="color: var(--color-success)">⚡ 0.04 ms on Jetson</p>
+          </div>
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">🔬</div>
+            <h4 class="pattern-title">3×3 Regular Conv</h4>
+            <p class="pattern-desc">96→96 channels, 28×28 resolution</p>
+            <p class="pattern-desc"><strong>FLOPs: 3.5M</strong></p>
+            <p class="pattern-desc" style="color: var(--color-error)">🐢 0.08 ms on Jetson</p>
+          </div>
+        </div>
+
+        <p>Nearly the same FLOPs — but the depthwise conv is <strong>2× faster</strong> because it reads far less memory. <strong>FLOPs lie. Measurement doesn&apos;t.</strong></p>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">🧠</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Memory-Bandwidth Effect</strong>
+            <p>This mismatch between FLOPs and actual speed is called the <strong>memory-bandwidth effect</strong>. Most neural network operations on GPUs are limited by how fast they can <em>read data from memory</em>, not by how fast they can do math.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── SCREEN 2: THE BLOCK REGISTRY — MBConv ─── -->
+      <section class="screen animate-in">
+        <h2>The Block Registry: MBConv</h2>
+        <p>Think of a car testing facility: before an F1 team races, they test every component in a wind tunnel and record the results. The <span class="term" data-definition="A block design where channels are first expanded (made wider), then processed, then compressed back down — the opposite of a traditional bottleneck">inverted bottleneck</span> block (MBConv) is the most-tested component in our wind tunnel.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code>
+<span class="code-line"><span class="code-keyword">class</span> <span class="code-function">MBConv</span>(nn.Module):</span>
+<span class="code-line">    <span class="code-keyword">def</span> <span class="code-function">__init__</span>(self, in_c: int, out_c: int, kernel: int, stride: int,</span>
+<span class="code-line">                 expand: int, se: bool):</span>
+<span class="code-line">        <span class="code-function">super</span>().__init__()</span>
+<span class="code-line">        mid <span class="code-operator">=</span> in_c <span class="code-operator">*</span> expand</span>
+<span class="code-line">        layers <span class="code-operator">=</span> []</span>
+<span class="code-line">        <span class="code-keyword">if</span> expand <span class="code-operator">!=</span> <span class="code-number">1</span>:</span>
+<span class="code-line">            layers <span class="code-operator">+=</span> [nn.<span class="code-function">Conv2d</span>(in_c, mid, <span class="code-number">1</span>, <span class="code-number">1</span>, <span class="code-number">0</span>, bias<span class="code-operator">=</span><span class="code-keyword">False</span>),</span>
+<span class="code-line">                       nn.<span class="code-function">BatchNorm2d</span>(mid), nn.<span class="code-function">ReLU6</span>(inplace<span class="code-operator">=</span><span class="code-keyword">True</span>)]</span>
+<span class="code-line">        pad <span class="code-operator">=</span> kernel <span class="code-operator">//</span> <span class="code-number">2</span></span>
+<span class="code-line">        layers <span class="code-operator">+=</span> [nn.<span class="code-function">Conv2d</span>(mid, mid, kernel, stride, pad, groups<span class="code-operator">=</span>mid, bias<span class="code-operator">=</span><span class="code-keyword">False</span>),</span>
+<span class="code-line">                   nn.<span class="code-function">BatchNorm2d</span>(mid), nn.<span class="code-function">ReLU6</span>(inplace<span class="code-operator">=</span><span class="code-keyword">True</span>)]</span>
+<span class="code-line">        <span class="code-keyword">if</span> se:</span>
+<span class="code-line">            layers.<span class="code-function">append</span>(<span class="code-function">SEBlock</span>(mid))</span>
+<span class="code-line">        layers <span class="code-operator">+=</span> [nn.<span class="code-function">Conv2d</span>(mid, out_c, <span class="code-number">1</span>, <span class="code-number">1</span>, <span class="code-number">0</span>, bias<span class="code-operator">=</span><span class="code-keyword">False</span>),</span>
+<span class="code-line">                   nn.<span class="code-function">BatchNorm2d</span>(out_c)]</span>
+<span class="code-line">        self.op <span class="code-operator">=</span> nn.<span class="code-function">Sequential</span>(<span class="code-operator">*</span>layers)</span>
+<span class="code-line">        self.residual <span class="code-operator">=</span> (stride <span class="code-operator">==</span> <span class="code-number">1</span> <span class="code-keyword">and</span> in_c <span class="code-operator">==</span> out_c)</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">def</span> <span class="code-function">forward</span>(self, x):</span>
+<span class="code-line">        y <span class="code-operator">=</span> self.op(x)</span>
+<span class="code-line">        <span class="code-keyword">return</span> x <span class="code-operator">+</span> y <span class="code-keyword">if</span> self.residual <span class="code-keyword">else</span> y</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Create a mobile <span class="term" data-definition="A block design where channels are first expanded (made wider), then processed, then compressed back down — the opposite of a traditional bottleneck">inverted bottleneck</span> block — the workhorse of efficient neural networks.</p>
+              <p class="tl">The expanded width = input channels × expand ratio (e.g., 64 × 6 = 384).</p>
+              <p class="tl">If we&apos;re expanding (not 1:1), add a 1×1 conv to widen the channels + <span class="term" data-definition="Batch Normalization — a technique that stabilizes training by normalizing the output of each layer">BatchNorm</span> + <span class="term" data-definition="An activation function that clips values between 0 and 6 — like ReLU but prevents extremely large values">ReLU6</span> activation.</p>
+              <p class="tl">Add a <span class="term" data-definition="A convolution where each input channel gets its own filter — much cheaper than regular convolution because channels don&apos;t mix">depthwise conv</span> — each channel gets its own filter, very efficient on GPUs.</p>
+              <p class="tl">Optionally add <span class="term" data-definition="A lightweight attention mechanism that learns to emphasize important channels and suppress unimportant ones">Squeeze-and-Excitation (SE)</span>: a tiny attention mechanism that learns which channels matter.</p>
+              <p class="tl">Project back down to the output width with a 1×1 conv.</p>
+              <p class="tl">If input and output shapes match, add a <span class="term" data-definition="A shortcut that adds the original input to the output of a block — lets gradients flow more easily during training">residual connection</span> — helps gradients flow during training.</p>
+              <p class="tl">Forward pass: run through all layers. If residual, add the original input back in.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="text-align: center; margin-top: 1rem; color: var(--color-text-secondary)"><em>Source: catalog/mbconv.py lines 60–81</em></p>
+      </section>
+
+      <!-- ─── SCREEN 3: THE ASSEMBLY LINE ─── -->
+      <section class="screen animate-in">
+        <h2>The Assembly Line</h2>
+        <p>The LUT pipeline is a 4-stage factory. Each block travels from catalog to measurement to storage — fully automated.</p>
+
+        <div class="flow-animation" data-steps='[{"highlight":"flow-actor-1","label":"Catalog enumerates all 2,710 (block, config, shape) combos"},{"highlight":"flow-actor-2","label":"Each block is built in PyTorch and exported to ONNX format","packet":true,"from":"actor-1","to":"actor-2"},{"highlight":"flow-actor-3","label":"ONNX file is sent via SSH to the Jetson and compiled into a TensorRT engine","packet":true,"from":"actor-2","to":"actor-3"},{"highlight":"flow-actor-3","label":"TRT engine runs 50 warmup + 200 timed iterations with CUDA event timing"},{"highlight":"flow-actor-4","label":"Results appended to data/lut.jsonl: latency, memory, params, FLOPs","packet":true,"from":"actor-3","to":"actor-4"},{"highlight":"flow-actor-4","label":"Each row has a row_key (SHA-1 hash) — safe to resume if interrupted"}]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon" style="background: var(--color-actor-1)">📋</div>
+              <span>Catalog</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon" style="background: var(--color-actor-2)">📦</div>
+              <span>ONNX Export</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon" style="background: var(--color-actor-3)">🔧</div>
+              <span>Jetson / TRT</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon" style="background: var(--color-actor-4)">📊</div>
+              <span>lut.jsonl</span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-step-label" id="flow-label">Click Next Step to begin</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+
+        <div class="callout callout-accent" style="margin-top: 1.5rem">
+          <div class="callout-icon">🏎️</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Wind Tunnel Analogy</strong>
+            <p>Just like an F1 team tests every wing angle and tire compound in a wind tunnel and records the results in a massive spreadsheet — the LUT pipeline tests every neural network building block on the real Jetson hardware so the search engine never has to re-measure.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── SCREEN 4: THE ROW_KEY TRICK ─── -->
+      <section class="screen animate-in">
+        <h2>The row_key Trick</h2>
+        <p>Every wind tunnel test needs a serial number. The LUT uses a <span class="term" data-definition="A hash function that converts any input into a 40-character hex string — like a fingerprint for data. Always produces the same output for the same input">SHA-1</span> hash as a fingerprint for each measurement.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">row_key</span>(block: str, cfg: dict, input_shape) <span class="code-operator">-></span> str:</span>
+<span class="code-line">    <span class="code-string">"""Stable ID for a LUT row — used for resumability and engine filenames."""</span></span>
+<span class="code-line">    payload <span class="code-operator">=</span> json.<span class="code-function">dumps</span>({<span class="code-string">"b"</span>: block, <span class="code-string">"c"</span>: cfg, <span class="code-string">"s"</span>: <span class="code-function">list</span>(input_shape)},</span>
+<span class="code-line">                         sort_keys<span class="code-operator">=</span><span class="code-keyword">True</span>)</span>
+<span class="code-line">    <span class="code-keyword">return</span> hashlib.<span class="code-function">sha1</span>(payload.<span class="code-function">encode</span>()).<span class="code-function">hexdigest</span>()[:<span class="code-number">16</span>]</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Given a block type, its configuration, and the input tensor shape...</p>
+              <p class="tl">Pack them into a single JSON string with sorted keys (so the same config always produces the same string).</p>
+              <p class="tl">Hash it with <span class="term" data-definition="A hash function that converts any input into a 40-character hex string — like a fingerprint for data. Always produces the same output for the same input">SHA-1</span> and take the first 16 characters — that&apos;s your unique row_key.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="text-align: center; margin-top: 1rem; color: var(--color-text-secondary)"><em>Source: catalog/sweep.py lines 8–12</em></p>
+
+        <div class="callout callout-accent" style="margin-top: 1.5rem">
+          <div class="callout-icon">🔑</div>
+          <div class="callout-content">
+            <strong class="callout-title">Content-Addressing</strong>
+            <p>This pattern — hashing inputs to create a stable, unique ID — is called <span class="term" data-definition="A system where data is identified by its contents (hash) rather than by name or position — used in Git, Docker, and this LUT">content-addressing</span>. Git uses the same idea: every file gets an ID based on its <em>contents</em>, not its name. If two different runs produce the same block config, they get the same row_key and the LUT only stores it once.</p>
+          </div>
+        </div>
+
+        <div class="step-cards" style="margin-top: 1.5rem">
+          <div class="step-card">
+            <div class="step-num">1</div>
+            <div class="step-body"><strong>Same input → Same hash</strong><p>MBConv with kernel=3, expand=6, 96 channels always produces the same row_key.</p></div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">2</div>
+            <div class="step-body"><strong>Crash? No problem.</strong><p>On restart, the sweep reads existing keys from lut.jsonl and skips any already measured. This is <span class="term" data-definition="An operation that produces the same result whether you run it once or many times — safe to re-run after interruption">idempotent</span> design.</p></div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">3</div>
+            <div class="step-body"><strong>16 chars is enough</strong><p>With 16 hex characters there are 2<sup>64</sup> possible keys — collision is astronomically unlikely for 2,710 rows.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── SCREEN 5: THE EXPORT STEP ─── -->
+      <section class="screen animate-in">
+        <h2>The Export Step: PyTorch → ONNX</h2>
+        <p>The laptop builds each block in PyTorch. Then it needs to hand off a blueprint to the Jetson. That blueprint format is <span class="term" data-definition="Open Neural Network Exchange — a universal format for representing neural network computation graphs, readable by TensorRT, CoreML, and other runtimes">ONNX</span>.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">export_block</span>(block: str, cfg: dict, input_shape, out_path: Path,</span>
+<span class="code-line">                 opset: int <span class="code-operator">=</span> <span class="code-number">17</span>) <span class="code-operator">-></span> dict:</span>
+<span class="code-line">    model <span class="code-operator">=</span> <span class="code-function">build_block</span>(block, cfg).<span class="code-function">eval</span>()</span>
+<span class="code-line">    dummy <span class="code-operator">=</span> torch.<span class="code-function">randn</span>(<span class="code-operator">*</span>input_shape)</span>
+<span class="code-line"></span>
+<span class="code-line">    out_path.parent.<span class="code-function">mkdir</span>(parents<span class="code-operator">=</span><span class="code-keyword">True</span>, exist_ok<span class="code-operator">=</span><span class="code-keyword">True</span>)</span>
+<span class="code-line">    torch.onnx.<span class="code-function">export</span>(</span>
+<span class="code-line">        model, dummy, out_path.<span class="code-function">as_posix</span>(),</span>
+<span class="code-line">        input_names<span class="code-operator">=</span>[<span class="code-string">"input"</span>], output_names<span class="code-operator">=</span>[<span class="code-string">"output"</span>],</span>
+<span class="code-line">        opset_version<span class="code-operator">=</span>opset, do_constant_folding<span class="code-operator">=</span><span class="code-keyword">True</span>,</span>
+<span class="code-line">        dynamic_axes<span class="code-operator">=</span><span class="code-keyword">None</span>,  <span class="code-comment"># Static shapes — matches how NAS queries the LUT.</span></span>
+<span class="code-line">    )</span>
+<span class="code-line">    <span class="code-keyword">return</span> {<span class="code-string">"params"</span>: <span class="code-function">count_params</span>(model), <span class="code-string">"onnx_path"</span>: <span class="code-function">str</span>(out_path)}</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Build the PyTorch module from the block registry and set it to evaluation mode (no training behavior).</p>
+              <p class="tl">Create a random tensor with the right shape — the model never sees this data; it just needs the shape to trace the <span class="term" data-definition="A data structure that records all the mathematical operations a neural network performs — PyTorch traces this to export to ONNX">computation graph</span>.</p>
+              <p class="tl">Export the computation graph to ONNX format — a universal format that TensorRT can read.</p>
+              <p class="tl">Use <span class="term" data-definition="An optimization that pre-computes operations that always produce the same result, removing them from the runtime graph">constant folding</span> and static shapes (no dynamic axes) — matching the exact deployment scenario for accurate latency numbers.</p>
+              <p class="tl">Return the parameter count and the path to the ONNX file.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="text-align: center; margin-top: 1rem; color: var(--color-text-secondary)"><em>Source: lut/export/to_onnx.py lines 9–21</em></p>
+
+        <div class="pattern-cards" style="margin-top: 1.5rem">
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">💻</div>
+            <h4 class="pattern-title">Laptop</h4>
+            <p class="pattern-desc">Runs PyTorch. Builds blocks, exports ONNX files. Has plenty of RAM.</p>
+          </div>
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">🤖</div>
+            <h4 class="pattern-title">Jetson</h4>
+            <p class="pattern-desc">Runs TensorRT only. 8 GB shared RAM — no PyTorch overhead means clean measurements.</p>
+          </div>
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">📄</div>
+            <h4 class="pattern-title">ONNX</h4>
+            <p class="pattern-desc">The bridge format. Lightweight file that encodes the computation graph without needing PyTorch installed.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── SCREEN 6: QUIZ ─── -->
+      <section class="screen animate-in">
+        <h2>Check Your Understanding</h2>
+        <p>Three scenarios to make sure the measurement machine clicked.</p>
+
+        <div class="quiz-container" id="quiz-module3">
+          <!-- Question 1 -->
+          <div class="quiz-question-block" data-correct="option-b" data-explanation-right="That&apos;s the beauty of idempotent design! The sweep reads existing row_keys from lut.jsonl and skips any that are already recorded. You can Ctrl-C and resume without losing work." data-explanation-wrong="The sweep is designed to be resumable (idempotent). It checks which row_keys already exist in lut.jsonl and skips them. This is why every row has a stable hash-based ID.">
+            <h3 class="quiz-question">The LUT sweep was interrupted at row 1,500 out of 2,710. When you re-run it, what happens?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It starts over from row 1</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It picks up at row 1,501 because each row has a unique row_key and the sweep skips keys already in the file</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It crashes because the file is incomplete</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Question 2 -->
+          <div class="quiz-question-block" data-correct="option-a" data-explanation-right="Right! The catalog needs three things: the nn.Module implementation (what the block actually does), a grid of configurations to sweep, and a builder function that maps configs to modules. The LUT pipeline handles the rest automatically." data-explanation-wrong="Adding a block starts in the catalog: define the nn.Module, its config grid, and register it in BLOCK_REGISTRY. The LUT pipeline will then automatically export, benchmark, and record it.">
+            <h3 class="quiz-question">You want to add a new block type called ConvNeXt to the catalog. What&apos;s the minimum set of things you need to define?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>A PyTorch nn.Module, a config grid, and a builder function in catalog/blocks.py</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>A TensorRT engine and a measurement script</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>An OFA checkpoint and a sampler function</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Question 3 -->
+          <div class="quiz-question-block" data-correct="option-b" data-explanation-right="Exactly! Installing PyTorch on the Jetson would eat into its 8 GB RAM and distort the memory measurements. The system keeps PyTorch on the laptop and only sends lightweight ONNX files to the Jetson, where TensorRT compiles them into optimized engines." data-explanation-wrong="The key insight is that PyTorch on the Jetson would consume precious RAM and skew measurements. ONNX serves as a lightweight bridge — export on the laptop, optimize on the Jetson with TensorRT.">
+            <h3 class="quiz-question">Why does the system export blocks to ONNX instead of running PyTorch directly on the Jetson?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>ONNX is faster than PyTorch</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The Jetson runs TensorRT (not PyTorch) to save its 8 GB RAM for accurate measurements, and ONNX is the bridge format between them</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>ONNX files are smaller than PyTorch files</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module3')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module3')">Try Again</button>
+        </div>
+
+        <div class="callout callout-accent" style="margin-top: 2rem">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Bigger Lesson</strong>
+            <p>Pre-computation into lookup tables is a universal engineering pattern. Whenever AI suggests "just compute it on the fly," you now know to ask: <strong>"Could we pre-compute this into a lookup table?"</strong></p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ─── NAVIGATION ─── -->
+    <nav class="module-nav animate-in">
+      <a href="02-meet-the-cast.html" class="nav-arrow nav-prev" aria-label="Previous module">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><polyline points="12,4 6,10 12,16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Meet the Cast</span>
+      </a>
+      <a href="04-shape-shifter.html" class="nav-arrow nav-next" aria-label="Next module">
+        <span>The Shape-Shifter</span>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><polyline points="8,4 14,10 8,16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </nav>
+  </div>
+</section>

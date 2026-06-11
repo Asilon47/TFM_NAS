@@ -1,0 +1,295 @@
+<section class="module" id="module-5" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">05</span>
+      <h1 class="module-title">The Translator</h1>
+      <p class="module-subtitle">Bridging the supernet's language to the LUT's language</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ═══════ SCREEN 1: The Translation Problem ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Two Systems, Two Languages</h2>
+        <p>The supernet speaks one language. The LUT speaks another. Like a <span class="term" data-definition="A person or system that translates a shipping manifest (one format) into a domestic import system (another format) so goods can be processed.">customs broker</span> at a port, someone has to translate between them.</p>
+
+        <div class="pattern-cards" style="margin-top: var(--space-6); grid-template-columns: 1fr auto 1fr;">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">🧠</div>
+            <h4 class="pattern-title">Supernet Language</h4>
+            <p class="pattern-desc" style="font-family: var(--font-mono); font-size: var(--text-xs);">{"ks": [7,5,3,...],<br>"e": [6,4,3,...],<br>"d": [3,4,2,2,4]}</p>
+          </div>
+          <div class="pattern-card animate-in" style="border: none; box-shadow: none; display: flex; align-items: center; justify-content: center; font-size: var(--text-3xl); background: transparent;">
+            →
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">⏱️</div>
+            <h4 class="pattern-title">LUT Language</h4>
+            <p class="pattern-desc" style="font-family: var(--font-mono); font-size: var(--text-xs);">("mbconv",<br>{"in_c":16, "out_c":24, "kernel":7, ...},<br>(1,16,112,112))</p>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in" style="margin-top: var(--space-8)">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Impedance Mismatch</strong>
+            <p>When two systems that need to work together use different data formats, engineers call it an <span class="term" data-definition="When two systems that need to work together use different formats or protocols — the data is there but the systems can't directly understand each other.">impedance mismatch</span>. The solution is always an <span class="term" data-definition="A software design pattern where a piece of code translates between two incompatible interfaces — like a power plug adapter between US and European outlets.">adapter</span> that converts one format to the other.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 2: The Shared Topology Table ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Shared Topology Table</h2>
+        <p>Both the LUT grid and the translator need to agree on the OFA network's fixed structure. That structure lives in one shared file — the <span class="term" data-definition="A design principle where each piece of information is defined in exactly one place, and everything else references it — prevents inconsistencies when the data changes.">single source of truth</span>:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE · catalog/ofa_mbv3.py</span>
+            <pre><code>
+<span class="code-line">STAGES <span class="code-operator">=</span> [</span>
+<span class="code-line">    {<span class="code-string">"out_c"</span>: <span class="code-number">24</span>,  <span class="code-string">"stride"</span>: <span class="code-number">2</span>, <span class="code-string">"se"</span>: <span class="code-keyword">False</span>, <span class="code-string">"res_in"</span>: <span class="code-number">112</span>},</span>
+<span class="code-line">    {<span class="code-string">"out_c"</span>: <span class="code-number">40</span>,  <span class="code-string">"stride"</span>: <span class="code-number">2</span>, <span class="code-string">"se"</span>: <span class="code-keyword">True</span>,  <span class="code-string">"res_in"</span>: <span class="code-number">56</span>},</span>
+<span class="code-line">    {<span class="code-string">"out_c"</span>: <span class="code-number">80</span>,  <span class="code-string">"stride"</span>: <span class="code-number">2</span>, <span class="code-string">"se"</span>: <span class="code-keyword">False</span>, <span class="code-string">"res_in"</span>: <span class="code-number">28</span>},</span>
+<span class="code-line">    {<span class="code-string">"out_c"</span>: <span class="code-number">112</span>, <span class="code-string">"stride"</span>: <span class="code-number">1</span>, <span class="code-string">"se"</span>: <span class="code-keyword">True</span>,  <span class="code-string">"res_in"</span>: <span class="code-number">14</span>},</span>
+<span class="code-line">    {<span class="code-string">"out_c"</span>: <span class="code-number">160</span>, <span class="code-string">"stride"</span>: <span class="code-number">2</span>, <span class="code-string">"se"</span>: <span class="code-keyword">True</span>,  <span class="code-string">"res_in"</span>: <span class="code-number">14</span>},</span>
+<span class="code-line">]</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">The five searchable stages of the OFA-MobileNetV3 backbone:</p>
+              <p class="tl">Stage 0: Output 24 channels, stride 2 (halves resolution: 112→56), no SE attention</p>
+              <p class="tl">Stage 1: Output 40 channels, stride 2 (56→28), with <span class="term" data-definition="Squeeze-and-Excitation — a lightweight attention mechanism that learns to emphasize important channels and suppress unimportant ones.">SE</span> attention</p>
+              <p class="tl">Stage 2: Output 80 channels, stride 2 (28→14), no SE</p>
+              <p class="tl">Stage 3: Output 112 channels, stride 1 (stays at 14×14), with SE</p>
+              <p class="tl">Stage 4: Output 160 channels, stride 2 (14→7), with SE</p>
+              <p class="tl">&nbsp;</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info animate-in" style="margin-top: var(--space-6)">
+          <div class="callout-icon">📁</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why catalog/, not search/?</strong>
+            <p>This table lives in <code>catalog/ofa_mbv3.py</code> because <strong>two consumers</strong> need it: the LUT grid generator and the translator. Putting it in the shared catalog layer guarantees they can never drift apart.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 3: How the Walk Works ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">How the Walk Works</h2>
+        <p>The translator walks through the <span class="term" data-definition="The fixed structure of a network — which stages exist, their channel widths, strides, and connections. The search varies what goes INTO each stage, not the stage structure itself.">topology</span> and emits one LUT-keyed tuple per block:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE · search/arch_to_blocks.py</span>
+            <pre><code>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">arch_to_blocks</span>(arch_dict: <span class="code-function">dict</span>) <span class="code-operator">-></span> list[Block]:</span>
+<span class="code-line">    ks, e, d <span class="code-operator">=</span> arch_dict[<span class="code-string">"ks"</span>], arch_dict[<span class="code-string">"e"</span>], arch_dict[<span class="code-string">"d"</span>]</span>
+<span class="code-line">    blocks: list[Block] <span class="code-operator">=</span> []</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">def</span> <span class="code-function">emit</span>(cfg: <span class="code-function">dict</span>) <span class="code-operator">-></span> <span class="code-keyword">None</span>:</span>
+<span class="code-line">        blocks.<span class="code-function">append</span>((<span class="code-string">"mbconv"</span>, cfg, <span class="code-function">input_shape_for</span>(<span class="code-string">"mbconv"</span>, cfg)))</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-function">emit</span>(<span class="code-function">dict</span>(FIRST_BLOCK))  <span class="code-comment"># fixed, non-elastic</span></span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">for</span> s, stage <span class="code-keyword">in</span> <span class="code-function">enumerate</span>(STAGES):</span>
+<span class="code-line">        out_c, se <span class="code-operator">=</span> stage[<span class="code-string">"out_c"</span>], stage[<span class="code-string">"se"</span>]</span>
+<span class="code-line">        res_in <span class="code-operator">=</span> stage[<span class="code-string">"res_in"</span>]</span>
+<span class="code-line">        res_out <span class="code-operator">=</span> res_in <span class="code-operator">//</span> stage[<span class="code-string">"stride"</span>]</span>
+<span class="code-line">        <span class="code-keyword">for</span> j <span class="code-keyword">in</span> <span class="code-function">range</span>(d[s]):</span>
+<span class="code-line">            slot <span class="code-operator">=</span> MAX_DEPTH <span class="code-operator">*</span> s <span class="code-operator">+</span> j</span>
+<span class="code-line">            <span class="code-keyword">if</span> j <span class="code-operator">==</span> <span class="code-number">0</span>:</span>
+<span class="code-line">                <span class="code-function">emit</span>({<span class="code-string">"in_c"</span>: <span class="code-function">stage_in_c</span>(s), <span class="code-string">"out_c"</span>: out_c, <span class="code-string">"kernel"</span>: ks[slot],</span>
+<span class="code-line">                      <span class="code-string">"stride"</span>: stage[<span class="code-string">"stride"</span>], <span class="code-string">"expand"</span>: e[slot], <span class="code-string">"se"</span>: se,</span>
+<span class="code-line">                      <span class="code-string">"res"</span>: res_in})</span>
+<span class="code-line">            <span class="code-keyword">else</span>:</span>
+<span class="code-line">                <span class="code-function">emit</span>({<span class="code-string">"in_c"</span>: out_c, <span class="code-string">"out_c"</span>: out_c, <span class="code-string">"kernel"</span>: ks[slot],</span>
+<span class="code-line">                      <span class="code-string">"stride"</span>: <span class="code-number">1</span>, <span class="code-string">"expand"</span>: e[slot], <span class="code-string">"se"</span>: se, <span class="code-string">"res"</span>: res_out})</span>
+<span class="code-line">    <span class="code-keyword">return</span> blocks</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Take the arch dict and unpack its three arrays: kernel sizes, expand ratios, per-stage depths</p>
+              <p class="tl">Start with an empty list of blocks</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">Helper: given a block config, compute its input shape and add the (block, cfg, shape) tuple to the list</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">First, emit the fixed first block (16→16, k=3, stride=1) — this one never changes</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">For each of the 5 stages...</p>
+              <p class="tl">Read this stage's output channels and SE flag</p>
+              <p class="tl">Read the input resolution</p>
+              <p class="tl">Compute output resolution: input ÷ stride</p>
+              <p class="tl">For each active block in the stage (d[s] blocks)...</p>
+              <p class="tl">Calculate the <span class="term" data-definition="A position in the 20-element ks/e arrays — calculated as stage_index × 4 + block_index. Not all slots are active; only the first d[s] per stage.">slot index</span>: stage × 4 + block</p>
+              <p class="tl"><span class="term" data-definition="The first block in a stage — it changes the resolution (via stride) and channel count. Like a staircase landing between floors.">Entry block</span> (j=0): prev stage → this stage, at stage stride</p>
+              <p class="tl">Uses previous stage's output channels as input, this stage's output as target</p>
+              <p class="tl">Reads kernel and expand from the arch dict at this slot position</p>
+              <p class="tl"><span class="term" data-definition="Blocks after the first in a stage — they keep the same resolution and channels, just adding more processing depth.">Repeat blocks</span> (j>0): same channels in and out, stride 1</p>
+              <p class="tl">Uses the stage's own output channels for both input and output</p>
+              <p class="tl">Operates at the reduced resolution (after stride was applied by the entry block)</p>
+              <p class="tl">Return the complete ordered list of blocks</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 4: Concrete Example (Group Chat) ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">A Walk-Through Example</h2>
+        <p>Watch the translator walk through an architecture with d=[2,3,2,2,3]. The actors discuss each step:</p>
+
+        <div class="chat-window" id="chat-module5">
+          <div class="chat-messages">
+            <div class="chat-message" data-msg="0" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>I have arch d=[2,3,2,2,3]. Let me walk the topology.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="1" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>Block 0: fixed first block. in_c=16, out_c=16, k=3, stride=1, expand=1, res=112.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="2" data-sender="catalog" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-1)">C</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-1)">Catalog</span>
+                <p>That maps to row_key a3f8b21e... in the LUT.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="3" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>Stage 0, depth=2. Entry block: in_c=16, out_c=24, k=ks[0]=7, stride=2, res=112. Repeat: in_c=24, out_c=24, k=ks[1]=5, stride=1, res=56.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="4" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>Stage 1, depth=3. Three blocks at 40 channels, starting at res=56...</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="5" data-sender="search" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Search</span>
+                <p>...continuing through stages 2-4. Total: 1 + 2+3+2+2+3 = 14 blocks. All row_keys found in the LUT!</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="6" data-sender="lut" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">L</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">LUT</span>
+                <p>Sum of mean latencies for 14 blocks: 11.7ms. You are under the 15ms budget. 👍</p>
+              </div>
+            </div>
+          </div>
+          <div class="chat-typing" style="display:none">
+            <div class="chat-avatar">?</div>
+            <div class="chat-typing-dots">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+            </div>
+          </div>
+          <div class="chat-controls">
+            <button class="btn chat-next-btn">Next Message</button>
+            <button class="btn chat-all-btn">Play All</button>
+            <button class="btn chat-reset-btn">Replay</button>
+            <span class="chat-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 5: Quiz ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Check Your Understanding</h2>
+
+        <div class="quiz-container" id="quiz-module5">
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Right! There are 5 stages × 4 blocks each = 20, plus the fixed first block that never changes = 21 total."
+               data-explanation-wrong="Remember: the architecture has 5 stages with d blocks each, PLUS one fixed first block that is always present. So it is 1 + sum(d).">
+            <h3 class="quiz-question">An arch dict has d=[4,4,4,4,4] (maximum depth everywhere). How many total MBConv blocks does this architecture have?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>20 (5 stages × 4 blocks)</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>21 (5 stages × 4 blocks + 1 fixed first block)</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>25 (5 stages × 5 blocks)</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Exactly! If each module maintained its own copy of the topology table, they could get out of sync. A single source of truth in catalog/ prevents this."
+               data-explanation-wrong="The key reason is preventing drift. Two consumers (LUT grid and translator) both depend on the same topology. Putting it in one shared location guarantees they always agree.">
+            <h3 class="quiz-question">The STAGES table lives in catalog/ofa_mbv3.py, not in search/arch_to_blocks.py. Why?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>catalog/ is for data, search/ is for code</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Both the LUT grid and the translator need the same table, so it lives in the shared layer to prevent drift</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It was just a random organizational choice</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-c"
+               data-explanation-right="Spot on! Because arch_to_blocks reads STAGES with a for loop, it automatically picks up new stages. But the LUT needs new measurements for any new block configurations."
+               data-explanation-wrong="The translator loops over STAGES dynamically, so it auto-adapts. But the LUT needs new measurements for any new block configurations the new stage introduces.">
+            <h3 class="quiz-question">You add a sixth stage to the OFA topology. Which files need updates?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Only search/arch_to_blocks.py</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Only catalog/ofa_mbv3.py</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>catalog/ofa_mbv3.py (add the stage) + regenerate the LUT. arch_to_blocks needs no changes — it reads STAGES dynamically</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module5')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module5')">Try Again</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>

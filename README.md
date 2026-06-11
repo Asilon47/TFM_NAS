@@ -24,7 +24,8 @@ For the full motivation and design: [`PROJECT.md`](PROJECT.md).
 | Supernet expansion | Phase 5 | 🔲 Planned |
 | Expanded supernet fine-tune | Phase 6 | 🔲 Planned |
 | Search on expanded supernet | Phase 7 | 🔲 Planned |
-| Deployment packaging | Phase 8 | 🔲 Planned |
+| Knowledge distillation | Phase 8 | 🔲 Planned |
+| Deployment packaging | Phase 9 | 🔲 Planned |
 
 Exact checkpoint: `state/plan_state.yaml`.
 
@@ -38,9 +39,10 @@ Exact checkpoint: `state/plan_state.yaml`.
 | `lut/` | Jetson latency LUT pipeline (export → Jetson → TRT bench → jsonl) | ✅ Done |
 | `supernet/` | OFA-MBv3-w1.0 supernet wrapper + subnet sampler | ✅ CP 1.3 done |
 | `search/` | BO/NSGA-II search loop, arch encoder, cost function | 🔲 Phase 2–3 |
-| `eval/` | Short fine-tune harness + final long-train evaluator | 🔲 Phase 2–3 |
+| `eval/` | Short fine-tune harness + long-train baseline evaluator | 🔲 Phase 2–3 |
 | `net2net/` | Function-preserving widen/deepen operators + graph diff | 🔲 Phase 4 |
 | `expand/` | Cross-family block injection + LUT pre-screen | 🔲 Phase 5–6 |
+| `distill/` | KD harness — external teacher + distillation-loss final train of the winner | 🔲 Phase 8 |
 
 ---
 
@@ -77,7 +79,7 @@ python -m lut.orchestrate.gen_dummy_lut
 | Document | What it is |
 |---|---|
 | [`PROJECT.md`](PROJECT.md) | Vision — why this project exists, the four-piece design |
-| [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Phase plan — all 8 phases, checkpoints, DoDs, open decisions |
+| [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Phase plan — all 9 phases, checkpoints, DoDs, open decisions |
 | [`procedure.md`](procedure.md) | Checkpoint journal — every decision, command, and justification |
 | [`state/plan_state.yaml`](state/plan_state.yaml) | Machine-readable resume state |
 | [`lut/README.md`](lut/README.md) | LUT pipeline guide — hardware setup, sweep, schema |

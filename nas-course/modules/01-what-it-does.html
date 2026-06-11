@@ -1,0 +1,287 @@
+<section class="module" id="module-1" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+
+    <!-- ═══════════════════════════════════════════════════════════
+         HEADER
+         ═══════════════════════════════════════════════════════════ -->
+    <header class="module-header animate-in">
+      <span class="module-number">01</span>
+      <h1 class="module-title">What This Machine Does</h1>
+      <p class="module-subtitle">Imagine you could design a brain for a tiny robot — not by guessing, but by measuring exactly what fits inside its skull. That&rsquo;s what this project does for AI.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ═══════════════════════════════════════════════════════════
+           SCREEN 1 — THE PROBLEM
+           ═══════════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Problem: One Size Does NOT Fit All</h2>
+        <p>A <span class="term" data-definition="A type of AI model inspired by the brain — layers of connected nodes that learn patterns from data">neural network</span> that runs fine on a powerful cloud server will choke on a tiny <span class="term" data-definition="A small, low-power computer that runs AI locally (like a robot&rsquo;s onboard computer) rather than in the cloud">edge device</span>. It&rsquo;s like forcing a size-14 shoe onto a size-8 foot.</p>
+
+        <div class="pattern-cards animate-in">
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">☁️</div>
+            <h4 class="pattern-title">Cloud GPU Server</h4>
+            <p class="pattern-desc">80 GB RAM &bull; 300+ TFLOPS &bull; No power limit &bull; Runs any model easily &mdash; but costs $10,000+</p>
+          </div>
+          <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">🤖</div>
+            <h4 class="pattern-title">Edge Device (Jetson)</h4>
+            <p class="pattern-desc">8 GB RAM &bull; 17 TFLOPS &bull; 15W power limit &bull; Must run AI locally, in real time, on a $199 board</p>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in">
+          <div class="callout-icon">🪡</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Tailor Metaphor</strong>
+            <p>Think of a master tailor. Instead of making one suit that sort-of fits everyone, the tailor measures the exact body (the hardware), consults a fabric catalog (the building blocks), and creates the perfect pattern (<span class="term" data-definition="The structure of a neural network — how many layers, what type, how wide, in what order">architecture</span>) that fits perfectly &mdash; not too big (slow), not too small (inaccurate).</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           SCREEN 2 — THE JETSON ORIN NANO
+           ═══════════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Meet the Target: Jetson Orin Nano</h2>
+        <p>The <span class="term" data-definition="A credit-card-sized computer made by NVIDIA, designed to run AI models at low power (8GB RAM, ~$199)">Jetson Orin Nano</span> is a credit-card-sized computer that costs $199 and runs real AI. But it&rsquo;s roughly 100&times; less powerful than a cloud GPU &mdash; every millisecond counts.</p>
+
+        <div class="pattern-cards animate-in stagger-children">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">💾</div>
+            <h4 class="pattern-title">8 GB RAM</h4>
+            <p class="pattern-desc">Shared between CPU and GPU &mdash; the model, data, and OS all compete for the same 8 GB</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">⚡</div>
+            <h4 class="pattern-title">17 TFLOPS FP16</h4>
+            <p class="pattern-desc">Serious math power for its size &mdash; but still a fraction of a full data-center GPU</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-5)">
+            <div class="pattern-icon" style="background: var(--color-actor-5)">🎮</div>
+            <h4 class="pattern-title">Ampere GPU</h4>
+            <p class="pattern-desc">NVIDIA&rsquo;s modern architecture with Tensor Cores &mdash; great for AI inference at low power</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">🔋</div>
+            <h4 class="pattern-title">15W Power</h4>
+            <p class="pattern-desc">Runs on 15 watts &mdash; less than a lightbulb. Critical for robots, drones, and embedded systems</p>
+          </div>
+        </div>
+
+        <div class="callout callout-info animate-in">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why not just use a smaller model?</strong>
+            <p>You could shrink a big model, but that&rsquo;s like hemming a size-14 suit to fit a size-8 body &mdash; it&rsquo;ll look bad. This project designs the suit from scratch, tailored to the exact measurements of the Jetson.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           SCREEN 3 — THE FOUR-PIECE STRATEGY
+           ═══════════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Four-Piece Strategy</h2>
+        <p>This project uses four interlocking strategies to find the perfect architecture. Each one handles a different part of the tailoring process.</p>
+
+        <div class="step-cards animate-in stagger-children">
+          <div class="step-card animate-in" style="border-left: 3px solid var(--color-actor-2)">
+            <div class="step-num" style="background: var(--color-actor-2)">1</div>
+            <div class="step-body">
+              <strong>Latency LUT &mdash; The Measuring Tape</strong>
+              <p>Measures every building block on the real Jetson device. Instead of guessing speed from <span class="term" data-definition="Floating-point operations — a rough count of how many math calculations a model needs. Often used as a proxy for speed, but not always accurate">FLOPs</span>, it records actual <span class="term" data-definition="How long a model takes to process one input — measured in milliseconds. Lower is better for real-time applications">latency</span> in milliseconds.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in" style="border-left: 3px solid var(--color-actor-3)">
+            <div class="step-num" style="background: var(--color-actor-3)">2</div>
+            <div class="step-body">
+              <strong>OFA Supernet &mdash; The Fabric Catalog</strong>
+              <p>A single large <span class="term" data-definition="A single large neural network trained so that any sub-network inside it can be extracted and immediately works well">supernet</span> pre-trained so that any <span class="term" data-definition="A smaller network extracted from inside a supernet — like pulling a specific outfit out of a walk-in closet">subnet</span> inside it can be extracted and immediately works well &mdash; like a walk-in closet full of ready-to-wear outfits.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in" style="border-left: 3px solid var(--color-actor-4)">
+            <div class="step-num" style="background: var(--color-actor-4)">3</div>
+            <div class="step-body">
+              <strong>Bayesian Optimization &mdash; The Expert Eye</strong>
+              <p><span class="term" data-definition="A smart search method that builds a mental model of what works and uses it to pick the next thing to try — much more efficient than random guessing">Bayesian Optimization</span> learns from each attempt to pick the next architecture to try &mdash; far smarter than random guessing.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in" style="border-left: 3px solid var(--color-actor-5)">
+            <div class="step-num" style="background: var(--color-actor-5)">4</div>
+            <div class="step-body">
+              <strong>Net2Net &mdash; The Alterations Expert</strong>
+              <p>Recycles trained weights from a similar previous architecture so each new evaluation starts from a good place (<span class="term" data-definition="Starting training from weights that already work (from a similar model) instead of from random noise">warm-start</span>) instead of from random noise.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           SCREEN 4 — DATA FLOW ANIMATION
+           ═══════════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Trace a Search: What Happens When You Run the Pipeline</h2>
+        <p>Click &ldquo;Next Step&rdquo; to watch one round of <span class="term" data-definition="An automated process that designs neural network structures instead of a human doing it manually">NAS</span> play out. Each actor hands off work to the next.</p>
+
+        <div class="flow-animation animate-in" data-steps='[{"highlight":"flow-actor-4","label":"BO proposes a new architecture to evaluate"},{"highlight":"flow-actor-3","label":"Supernet extracts a subnet with pretrained weights","packet":true,"from":"actor-4","to":"actor-3"},{"highlight":"flow-actor-2","label":"LUT looks up latency for each block in the architecture","packet":true,"from":"actor-3","to":"actor-2"},{"highlight":"flow-actor-5","label":"Net2Net warm-starts weights from a similar previous architecture","packet":true,"from":"actor-2","to":"actor-5"},{"highlight":"flow-actor-4","label":"Score = accuracy minus latency penalty goes back to BO","packet":true,"from":"actor-5","to":"actor-4"}]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon" style="border-color: var(--color-actor-1)">📋</div>
+              <span>Catalog</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon" style="border-color: var(--color-actor-2)">⏱️</div>
+              <span>LUT</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon" style="border-color: var(--color-actor-3)">🧠</div>
+              <span>Supernet</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon" style="border-color: var(--color-actor-4)">🔍</div>
+              <span>Search / BO</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-5">
+              <div class="flow-actor-icon" style="border-color: var(--color-actor-5)">♻️</div>
+              <span>Net2Net</span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-step-label" id="flow-label">Click &ldquo;Next Step&rdquo; to begin</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in">
+          <div class="callout-icon">🔄</div>
+          <div class="callout-content">
+            <strong class="callout-title">This loop repeats hundreds of times</strong>
+            <p>Each round, BO gets smarter about which architectures are worth trying. After enough rounds, it converges on the <span class="term" data-definition="The set of best tradeoffs — every point on it is optimal because you can&rsquo;t improve one metric without worsening another">Pareto frontier</span> &mdash; the set of best possible tradeoffs between accuracy and speed.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           SCREEN 5 — THE OBJECTIVE FUNCTION + QUIZ
+           ═══════════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Objective Function: How Architectures Are Scored</h2>
+        <p>Every candidate architecture gets a single score. The search maximizes this formula &mdash; balancing accuracy against hardware constraints.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code>
+<span class="code-line"><span class="code-function">J</span>(<span class="code-property">α</span>) <span class="code-operator">=</span> <span class="code-function">accuracy</span>(<span class="code-property">α</span>) <span class="code-operator">−</span> <span class="code-property">λ</span> <span class="code-operator">·</span> <span class="code-function">latency_ms</span>(<span class="code-property">α</span>) <span class="code-operator">−</span> <span class="code-property">μ</span> <span class="code-operator">·</span> <span class="code-function">max</span>(<span class="code-number">0</span>, <span class="code-function">mem</span>(<span class="code-property">α</span>) <span class="code-operator">−</span> <span class="code-property">mem_budget</span>)<span class="code-operator">²</span></span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl"><strong>J(&alpha;)</strong> = the score of architecture &alpha;</p>
+              <p class="tl"><strong>accuracy(&alpha;)</strong> = how accurate the model is (higher is better)</p>
+              <p class="tl"><strong>&minus; &lambda; &middot; latency_ms(&alpha;)</strong> = MINUS a penalty for being slow</p>
+              <p class="tl"><strong>&minus; &mu; &middot; max(0, mem &minus; budget)&sup2;</strong> = MINUS a big penalty if it uses too much memory</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info animate-in">
+          <div class="callout-icon">🎯</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why &ldquo;squared&rdquo; for memory?</strong>
+            <p>The squared penalty means going slightly over budget is a small hit, but going way over budget is devastating. It&rsquo;s a hard wall: stay within 8 GB or the score tanks.</p>
+          </div>
+        </div>
+
+        <!-- QUIZ -->
+        <div class="quiz-container animate-in" id="quiz-module1">
+
+          <!-- Q1 -->
+          <div class="quiz-question-block" data-correct="option-b" data-explanation-right="Architecture A is more accurate, but it is too slow for the 10ms budget. This is the core tradeoff hardware-aware NAS optimizes." data-explanation-wrong="Think about it — if the robot needs to react within 10ms, a 15ms model simply will not work, no matter how accurate it is.">
+            <h3 class="quiz-question">You have two architectures: A gets 82% accuracy at 15ms latency, B gets 79% accuracy at 8ms latency. If your robot needs to react within 10ms, which would you pick?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Architecture A &mdash; it is more accurate</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Architecture B &mdash; it meets the latency budget</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Neither &mdash; you need at least 85% accuracy</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Q2 -->
+          <div class="quiz-question-block" data-correct="option-b" data-explanation-right="A 5x5 depthwise conv and a 3x3 regular conv can have similar FLOPs but wildly different latency on a GPU because of memory access patterns." data-explanation-wrong="FLOPs are easy to count, and the Jetson does support them. The real issue is that FLOPs do not predict real-world speed — two operations with the same FLOPs can take very different amounts of time.">
+            <h3 class="quiz-question">Why does this project measure latency on the actual Jetson instead of just counting FLOPs?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>FLOPs are too hard to count</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Because the same number of FLOPs can run at very different speeds depending on the hardware memory bandwidth and architecture</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The Jetson does not support FLOPs</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Q3 -->
+          <div class="quiz-question-block" data-correct="option-c" data-explanation-right="Net2Net lets you start from weights that already work instead of training from scratch — like remodeling a house instead of building from the ground up." data-explanation-wrong="Net2Net is specifically about weight transfer — it takes trained weights from one architecture and adapts them to a slightly different architecture, so you do not have to retrain from scratch.">
+            <h3 class="quiz-question">What does Net2Net do in this pipeline?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It designs new network architectures</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It transfers data between networks</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It reuses trained weights from a similar previous architecture so each new evaluation starts from a good place instead of random</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module1')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module1')">Try Again</button>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           WHY SHOULD I CARE? (closing callout)
+           ═══════════════════════════════════════════════════════════ -->
+      <section class="screen animate-in">
+        <div class="callout callout-accent">
+          <div class="callout-icon">🚀</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why should I care?</strong>
+            <p>Understanding this system teaches you how real AI deployment works. It is not just about accuracy &mdash; it is about running fast on real hardware within real constraints. Every self-driving car, every drone, every smart camera faces this exact problem. You can <span class="term" data-definition="Additional training on a model that already works, to adapt it to a specific task or improve it slightly">fine-tune</span> a model all day, but if it does not fit the device, it is useless.</p>
+          </div>
+        </div>
+        <p style="text-align: center; color: var(--color-text-muted); margin-top: var(--space-8);">Next up: <strong>Module 2 &mdash; Meet the Cast</strong> &rarr; where we introduce the major code modules that make this all work.</p>
+      </section>
+
+    </div>
+  </div>
+</section>

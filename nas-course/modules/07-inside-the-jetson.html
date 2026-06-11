@@ -1,0 +1,378 @@
+<section class="module" id="module-7" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">07</span>
+      <h1 class="module-title">Inside the Jetson</h1>
+      <p class="module-subtitle">How Docker, SSH, and CUDA events work together to measure real hardware speed</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ═══════ SCREEN 1: The Physical Setup ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Two Machines, One Pipeline</h2>
+        <p>The LUT pipeline spans two physical devices connected by a USB-C cable. Your laptop does the brains; the <span class="term" data-definition="A credit-card-sized computer made by NVIDIA with 8GB shared RAM, designed to run AI models at very low power (8-15W). Costs about $199.">Jetson</span> does the muscle.</p>
+
+        <div class="arch-diagram animate-in">
+          <div class="arch-zone" style="flex: 1; border: 2px solid var(--color-actor-1); border-radius: var(--radius-md); padding: var(--space-4);">
+            <h4 class="arch-zone-label" style="color: var(--color-actor-1); margin-bottom: var(--space-3);">💻 Laptop</h4>
+            <div class="arch-component" data-desc="Knows every block type and its configuration grid. Generates 2,710 (block, cfg, shape) combos." onclick="showArchDesc(this)" style="cursor: pointer;">
+              <div class="arch-icon">📋</div>
+              <span>Catalog</span>
+            </div>
+            <div class="arch-component" data-desc="Builds PyTorch modules and exports them to ONNX format. No GPU needed — just CPU." onclick="showArchDesc(this)" style="cursor: pointer;">
+              <div class="arch-icon">📦</div>
+              <span>ONNX Export</span>
+            </div>
+            <div class="arch-component" data-desc="Manages the SSH connection, uploads ONNX files, triggers Docker runs, collects JSON results." onclick="showArchDesc(this)" style="cursor: pointer;">
+              <div class="arch-icon">🎛️</div>
+              <span>Orchestrator</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; padding: 0 var(--space-4); font-size: var(--text-2xl); color: var(--color-accent);">
+            ⇄<br><span style="font-size: var(--text-xs); color: var(--color-text-secondary);">USB-C<br>SSH</span>
+          </div>
+          <div class="arch-zone" style="flex: 1; border: 2px solid var(--color-actor-2); border-radius: var(--radius-md); padding: var(--space-4);">
+            <h4 class="arch-zone-label" style="color: var(--color-actor-2); margin-bottom: var(--space-3);">🤖 Jetson Orin Nano</h4>
+            <div class="arch-component" data-desc="The lut-runner container based on nvcr.io/nvidia/l4t-tensorrt. Isolates TensorRT + PyCUDA from the host OS." onclick="showArchDesc(this)" style="cursor: pointer;">
+              <div class="arch-icon">🐳</div>
+              <span>Docker</span>
+            </div>
+            <div class="arch-component" data-desc="trtexec compiles ONNX into an optimized FP16 engine. Fuses layers, chooses kernels, preallocates memory." onclick="showArchDesc(this)" style="cursor: pointer;">
+              <div class="arch-icon">🔧</div>
+              <span>TRT Engine Build</span>
+            </div>
+            <div class="arch-component" data-desc="Runs 50 warmup + 200 timed iterations using CUDA events. Reports mean, std, p50, p95, and peak memory." onclick="showArchDesc(this)" style="cursor: pointer;">
+              <div class="arch-icon">⏱️</div>
+              <span>Benchmark</span>
+            </div>
+          </div>
+          <div class="arch-description" id="arch-desc" style="grid-column: 1 / -1; margin-top: var(--space-4);">Click any component to learn what it does</div>
+        </div>
+
+        <div class="callout callout-info animate-in" style="margin-top: var(--space-6);">
+          <div class="callout-icon">🧠</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why Not Run PyTorch on the Jetson?</strong>
+            <p>PyTorch needs ~2 GB of RAM just to load. On a device with 8 GB total (shared between CPU and GPU), that would eat into the very memory you're trying to measure. ONNX files are lightweight — the Jetson only needs TensorRT.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 2: The Docker Container ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Docker Container</h2>
+        <p>The Jetson runs benchmarks inside a <span class="term" data-definition="A tool that packages software into containers — isolated environments that work the same everywhere, like shipping containers for code.">Docker</span> container called <code>lut-runner</code>. Here's why that matters:</p>
+
+        <div class="pattern-cards stagger-children" style="margin-top: var(--space-6);">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">🔒</div>
+            <h4 class="pattern-title">Isolation</h4>
+            <p class="pattern-desc">Each benchmark runs in a fresh container. No state leaks between runs — measurements are clean and reproducible.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">📦</div>
+            <h4 class="pattern-title">Dependency Pinning</h4>
+            <p class="pattern-desc">The container pins TensorRT 8.6.2 + CUDA 12.2 + PyCUDA. Host OS updates won't change measurement results.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">🚀</div>
+            <h4 class="pattern-title">GPU Passthrough</h4>
+            <p class="pattern-desc">The <code>--runtime nvidia</code> flag gives the container direct access to the GPU. No performance penalty from containerization.</p>
+          </div>
+        </div>
+
+        <div class="translation-block animate-in" style="margin-top: var(--space-8)">
+          <div class="translation-code">
+            <span class="translation-label">CODE · lut/orchestrate/run_sweep.py</span>
+            <pre><code>
+<span class="code-line">cmd <span class="code-operator">=</span> (</span>
+<span class="code-line">    <span class="code-string">f"docker run --rm --runtime nvidia "</span></span>
+<span class="code-line">    <span class="code-string">f"-v {remote_job}:/job "</span></span>
+<span class="code-line">    <span class="code-string">f"-v {cfg.remote_workdir}/bench:/bench "</span></span>
+<span class="code-line">    <span class="code-string">f"{cfg.docker_image} bash -c "</span></span>
+<span class="code-line">    <span class="code-string">f"'python3 /bench/build_engine.py "</span></span>
+<span class="code-line">    <span class="code-string">f"--onnx /job/model.onnx --engine /job/model.plan "</span></span>
+<span class="code-line">    <span class="code-string">f"--precision {precision} "</span></span>
+<span class="code-line">    <span class="code-string">f"&amp;&amp; python3 /bench/run_bench.py "</span></span>
+<span class="code-line">    <span class="code-string">f"--engine /job/model.plan --warmup {warmup} "</span></span>
+<span class="code-line">    <span class="code-string">f"--iters {iters}'"</span></span>
+<span class="code-line">)</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Build a Docker command that...</p>
+              <p class="tl">Runs a temporary container with NVIDIA GPU access</p>
+              <p class="tl">Mounts the per-row working directory (ONNX file goes here)</p>
+              <p class="tl">Mounts the bench/ scripts so the container can run them</p>
+              <p class="tl">Uses the lut-runner image and runs two Python scripts back-to-back:</p>
+              <p class="tl">First: compile the ONNX file into a TensorRT engine</p>
+              <p class="tl">Save it as model.plan in FP16 precision</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">Then: benchmark the compiled engine</p>
+              <p class="tl">With warmup iterations (default 50) and timed iterations (default 200)</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">&nbsp;</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 3: CUDA Event Timing ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">CUDA Event Timing</h2>
+        <p>Python's <code>time.perf_counter()</code> adds ~100µs of jitter. On operations that take 0.05ms, that's a 200% error. Instead, the bench uses <span class="term" data-definition="Hardware timestamps recorded directly by the GPU — they measure time with nanosecond precision, completely independent of the CPU clock.">CUDA events</span> for timing:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE · lut/bench/run_bench.py</span>
+            <pre><code>
+<span class="code-line">samples_ms <span class="code-operator">=</span> []</span>
+<span class="code-line">start_evt <span class="code-operator">=</span> cuda.<span class="code-function">Event</span>()</span>
+<span class="code-line">end_evt <span class="code-operator">=</span> cuda.<span class="code-function">Event</span>()</span>
+<span class="code-line"><span class="code-keyword">for</span> _ <span class="code-keyword">in</span> <span class="code-function">range</span>(iters):</span>
+<span class="code-line">    start_evt.<span class="code-function">record</span>(stream)</span>
+<span class="code-line">    ctx.<span class="code-function">execute_async_v3</span>(stream.handle)</span>
+<span class="code-line">    end_evt.<span class="code-function">record</span>(stream)</span>
+<span class="code-line">    end_evt.<span class="code-function">synchronize</span>()</span>
+<span class="code-line">    samples_ms.<span class="code-function">append</span>(end_evt.<span class="code-function">time_since</span>(start_evt))</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Create an empty list to collect timing samples</p>
+              <p class="tl">Create two GPU-side timestamp markers (like start/stop on a stopwatch)</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">Run the inference 200 times...</p>
+              <p class="tl">Record the GPU timestamp BEFORE running inference</p>
+              <p class="tl">Run one inference on the TensorRT engine (asynchronously on the GPU)</p>
+              <p class="tl">Record the GPU timestamp AFTER the inference</p>
+              <p class="tl">Wait for the GPU to finish (so the timestamps are final)</p>
+              <p class="tl">Calculate elapsed time in milliseconds and save it</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in" style="margin-top: var(--space-6);">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why 50 Warmup Iterations?</strong>
+            <p>The first few GPU runs are slow — the <span class="term" data-definition="An optimizing compiler built into TensorRT that selects the fastest algorithm (kernel) for each operation based on the specific GPU hardware.">kernel auto-tuner</span> is still picking the fastest algorithm, caches are cold, and clock frequencies haven't ramped up. After ~50 runs, the GPU reaches its steady state and measurements become stable.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 4: The Roofline Model ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Roofline Model (for Offline Dev)</h2>
+        <p>When you don't have a Jetson handy, the dummy LUT generator uses a <span class="term" data-definition="A performance model that says: an operation is either limited by compute speed (how fast you can do math) or memory bandwidth (how fast you can move data). The slower one determines the total time.">roofline model</span> to synthesize realistic latency numbers:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE · lut/orchestrate/gen_dummy_lut.py</span>
+            <pre><code>
+<span class="code-line"><span class="code-keyword">def</span> <span class="code-function">roofline_latency_ms</span>(flops: <span class="code-function">int</span>, io_bytes: <span class="code-function">int</span>,</span>
+<span class="code-line">                        rng: random.Random) <span class="code-operator">-></span> <span class="code-function">float</span>:</span>
+<span class="code-line">    compute_s <span class="code-operator">=</span> flops <span class="code-operator">/</span> (PEAK_FLOPS <span class="code-operator">*</span> EFFICIENCY)</span>
+<span class="code-line">    mem_s <span class="code-operator">=</span> io_bytes <span class="code-operator">/</span> (PEAK_BW <span class="code-operator">*</span> EFFICIENCY)</span>
+<span class="code-line">    base_ms <span class="code-operator">=</span> <span class="code-function">max</span>(compute_s, mem_s) <span class="code-operator">*</span> <span class="code-number">1000.0</span> <span class="code-operator">+</span> OVERHEAD_MS</span>
+<span class="code-line">    jittered <span class="code-operator">=</span> base_ms <span class="code-operator">*</span> (<span class="code-number">1.0</span> <span class="code-operator">+</span> rng.<span class="code-function">gauss</span>(<span class="code-number">0.0</span>, <span class="code-number">0.02</span>))</span>
+<span class="code-line">    <span class="code-keyword">return</span> <span class="code-function">max</span>(jittered, OVERHEAD_MS)</span>
+            </code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Given the number of math operations and bytes to move...</p>
+              <p class="tl">&nbsp;</p>
+              <p class="tl">How long would the <em>math</em> take? FLOPs ÷ (peak compute × 30% efficiency)</p>
+              <p class="tl">How long would the <em>memory transfers</em> take? Bytes ÷ (peak bandwidth × 30%)</p>
+              <p class="tl">The bottleneck is whichever is slower, plus a 0.02ms kernel launch overhead</p>
+              <p class="tl">Add ±2% random jitter to simulate real measurement noise</p>
+              <p class="tl">Never return less than the overhead floor (even a skip costs something)</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pattern-cards stagger-children" style="margin-top: var(--space-8);">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">⚡</div>
+            <h4 class="pattern-title">Compute Bound</h4>
+            <p class="pattern-desc">Large convolutions with many FLOPs. The GPU spends most of its time doing math. Example: 7×7 conv at 112×112.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">🚌</div>
+            <h4 class="pattern-title">Memory Bound</h4>
+            <p class="pattern-desc">Depthwise convs and 1×1 convs that read lots of data but do little math. The GPU waits on memory. This is most neural net ops!</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 5: The Sweep Orchestrator ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Complete Sweep Flow</h2>
+        <p>The orchestrator ties everything together. Follow one block's journey from catalog to LUT row:</p>
+
+        <div class="flow-animation animate-in" data-steps='[
+          {"highlight":"flow-actor-1","label":"Orchestrator reads completed row_keys from lut.jsonl (skip what we already have)"},
+          {"highlight":"flow-actor-1","label":"Picks the next (block, cfg, shape) from the catalog sweep"},
+          {"highlight":"flow-actor-2","label":"Builds the PyTorch module and exports it to ONNX","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-3","label":"Uploads the ONNX file to the Jetson via SSH (rsync)","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-3","label":"Runs Docker container: build_engine.py compiles ONNX to TRT engine (FP16)"},
+          {"highlight":"flow-actor-3","label":"Runs run_bench.py: 50 warmup + 200 timed iterations with CUDA events"},
+          {"highlight":"flow-actor-4","label":"Docker prints JSON result on stdout. Orchestrator parses it","packet":true,"from":"actor-3","to":"actor-4"},
+          {"highlight":"flow-actor-4","label":"Enriches with FLOPs, params, bandwidth. Appends to lut.jsonl with fsync"},
+          {"highlight":"flow-actor-1","label":"Cleans up remote files. Moves to the next block","packet":true,"from":"actor-4","to":"actor-1"}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon">🎛️</div>
+              <span>Orchestrator</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon">📦</div>
+              <span>ONNX Export</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon">🤖</div>
+              <span>Jetson Docker</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon">📊</div>
+              <span>lut.jsonl</span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-step-label" id="flow-label">Click "Next Step" to trace one block through the pipeline</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 6: Spot the Bug ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">🐛 Spot the Bug</h2>
+        <p>This benchmark code has a subtle timing bug. Can you find which line would give <strong>wrong</strong> measurements?</p>
+
+        <div class="bug-challenge animate-in">
+          <div class="bug-code">
+            <div class="bug-line" data-line="1" onclick="checkBugLine(this, false)">
+              <span class="line-num">1</span>
+              <code>samples_ms = []</code>
+            </div>
+            <div class="bug-line" data-line="2" onclick="checkBugLine(this, false)">
+              <span class="line-num">2</span>
+              <code>start_evt = cuda.Event()</code>
+            </div>
+            <div class="bug-line" data-line="3" onclick="checkBugLine(this, false)">
+              <span class="line-num">3</span>
+              <code>end_evt = cuda.Event()</code>
+            </div>
+            <div class="bug-line" data-line="4" onclick="checkBugLine(this, false)">
+              <span class="line-num">4</span>
+              <code>for _ in range(iters):</code>
+            </div>
+            <div class="bug-line" data-line="5" onclick="checkBugLine(this, false)">
+              <span class="line-num">5</span>
+              <code>    start_evt.record(stream)</code>
+            </div>
+            <div class="bug-line" data-line="6" onclick="checkBugLine(this, false)">
+              <span class="line-num">6</span>
+              <code>    ctx.execute_async_v3(stream.handle)</code>
+            </div>
+            <div class="bug-line bug-target" data-line="7" onclick="checkBugLine(this, true)">
+              <span class="line-num">7</span>
+              <code>    elapsed = time.perf_counter() - start_time  # ← bug</code>
+            </div>
+            <div class="bug-line" data-line="8" onclick="checkBugLine(this, false)">
+              <span class="line-num">8</span>
+              <code>    samples_ms.append(elapsed * 1000)</code>
+            </div>
+          </div>
+          <div class="bug-feedback" id="bug-feedback"></div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 7: Quiz ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Check Your Understanding</h2>
+
+        <div class="quiz-container" id="quiz-module7">
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Exactly! The GPU runs asynchronously — execute_async_v3 returns immediately while the GPU is still working. time.perf_counter() would measure how fast the CPU can LAUNCH the work, not how fast the GPU can FINISH it. CUDA events measure the GPU directly."
+               data-explanation-wrong="The key issue is that GPU operations are asynchronous. The CPU returns from execute_async_v3() before the GPU finishes. Only CUDA events can measure the actual GPU execution time.">
+            <h3 class="quiz-question">Why does the bench use CUDA events instead of Python's time.perf_counter()?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>CUDA events are easier to use</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>GPU operations run asynchronously — the CPU returns before the GPU finishes, so CPU-side timing measures the wrong thing</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Python clocks are not available inside Docker</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-c"
+               data-explanation-right="Right! The --rm flag means the container is deleted when it exits. Each block gets a pristine environment — no cached TRT engines, no warmed-up memory from the previous block. This is crucial for fair, independent measurements."
+               data-explanation-wrong="The --rm flag tells Docker to remove the container after it exits. This ensures each benchmark starts fresh, preventing state leakage between measurements.">
+            <h3 class="quiz-question">The Docker command uses <code>--rm</code>. What does that mean for measurements?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It removes the ONNX file after benchmarking</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It restarts the Docker daemon</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The container is auto-deleted after exit — each block gets a pristine environment with no leftover state</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-a"
+               data-explanation-right="Exactly! In the roofline model, the bottleneck is always the slower of compute vs. memory. Most neural network operations (especially depthwise and 1×1 convolutions) are memory-bound — they spend more time moving data than doing math."
+               data-explanation-wrong="The roofline model says: latency = max(compute_time, memory_time). Whichever takes longer determines the total time. For most NN operations, memory bandwidth is the bottleneck.">
+            <h3 class="quiz-question">A depthwise 3×3 conv has 50K FLOPs but needs to read 200KB of data. On the Jetson (17 TFLOPS, 51 GB/s), what determines its latency?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Memory bandwidth — 200KB at 51 GB/s takes 0.004ms, while 50K FLOPs at 17 TFLOPS takes 0.000003ms. Memory is 1000× slower</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Compute — the FLOPs dominate</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>They contribute equally</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module7')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module7')">Try Again</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>

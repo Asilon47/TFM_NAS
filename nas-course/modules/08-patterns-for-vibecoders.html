@@ -1,0 +1,403 @@
+<section class="module" id="module-8" style="background: var(--color-bg)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">08</span>
+      <h1 class="module-title">Patterns for Vibe Coders</h1>
+      <p class="module-subtitle">Universal engineering patterns you can apply to any project</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ═══════ SCREEN 1: Pattern Matching Exercise ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Match the Pattern</h2>
+        <p>Throughout this codebase, you've seen engineering patterns that show up everywhere in software. Drag each concept to its matching description:</p>
+
+        <div class="dnd-container animate-in">
+          <div class="dnd-chips">
+            <div class="dnd-chip" draggable="true" data-answer="lut">Lookup Table</div>
+            <div class="dnd-chip" draggable="true" data-answer="idempotent">Idempotent Ops</div>
+            <div class="dnd-chip" draggable="true" data-answer="adapter">Adapter Pattern</div>
+            <div class="dnd-chip" draggable="true" data-answer="ssot">Single Source of Truth</div>
+            <div class="dnd-chip" draggable="true" data-answer="cache">Lazy Cache</div>
+          </div>
+          <div class="dnd-zones">
+            <div class="dnd-zone" data-correct="lut">
+              <p class="dnd-zone-label">Pre-compute expensive results once, look them up forever after. Like <code>data/lut.jsonl</code>.</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="idempotent">
+              <p class="dnd-zone-label">Operations that produce the same result whether you run them once or many times. Like the sweep's <code>row_key</code> skip logic.</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="adapter">
+              <p class="dnd-zone-label">Translates between two systems with different data formats. Like <code>arch_to_blocks.py</code>.</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="ssot">
+              <p class="dnd-zone-label">Each piece of information is defined in exactly one place. Like <code>catalog/ofa_mbv3.py</code> STAGES table.</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="cache">
+              <p class="dnd-zone-label">Load expensive data once and reuse it. Like the <code>_supernet_cache</code> module-level variable.</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+          </div>
+          <div style="margin-top: var(--space-4); display: flex; gap: var(--space-3);">
+            <button class="btn" onclick="checkDnD(this)">Check Matches</button>
+            <button class="btn" onclick="resetDnD(this)">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 2: What to Tell Your AI ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">How to Steer AI with What You've Learned</h2>
+        <p>Now that you understand how this system works, here are the kinds of precise instructions you can give an AI coding assistant:</p>
+
+        <div class="chat-window" id="chat-module8">
+          <div class="chat-messages">
+            <div class="chat-message" data-msg="0" data-sender="human" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">👤</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">You (Vague)</span>
+                <p>Add some speed stuff to the NAS code.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="1" data-sender="ai" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-text-muted)">🤖</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-text-muted)">AI (Confused)</span>
+                <p>I'm not sure where to add speed optimization. Could you be more specific?</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="2" data-sender="human" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">👤</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">You (Precise)</span>
+                <p>Create search/cost.py with a function total_latency(arch_dict) that calls arch_to_blocks() to get the block list, looks up each row_key in data/lut.jsonl, and returns the sum of mean latencies in milliseconds. Add a 2.1ms constant for the fixed stem and head blocks.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="3" data-sender="ai" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-text-muted)">🤖</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-text-muted)">AI (Productive)</span>
+                <p>Got it! Creating search/cost.py with total_latency(). I'll import arch_to_blocks from search.arch_to_blocks and completed_keys from lut.orchestrate.resume for the LUT lookup. Should I also add a memory budget check?</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="4" data-sender="human" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">👤</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">You (Expert)</span>
+                <p>Yes — add peak_mem_mib too. And make total_latency() cache the LUT dict on first call using the same lazy-cache pattern as supernet/sampler.py._supernet_cache.</p>
+              </div>
+            </div>
+          </div>
+          <div class="chat-typing" style="display:none">
+            <div class="chat-avatar">?</div>
+            <div class="chat-typing-dots">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+            </div>
+          </div>
+          <div class="chat-controls">
+            <button class="btn chat-next-btn">Next Message</button>
+            <button class="btn chat-all-btn">Play All</button>
+            <button class="btn chat-reset-btn">Replay</button>
+            <span class="chat-progress"></span>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in" style="margin-top: var(--space-6);">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Vocabulary Advantage</strong>
+            <p>Notice the difference: the precise prompt names exact files, functions, data formats, and patterns. It even references a specific pattern from another file. This is what "vibe coding" with understanding looks like — you set the direction, the AI writes the code.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 3: Spot the Bug 2 ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">🐛 Spot the Bug: Registry Edition</h2>
+        <p>Someone added a new block type but the LUT sweep crashes. Find the line with the bug:</p>
+
+        <div class="bug-challenge animate-in">
+          <div class="bug-code">
+            <div class="bug-line" data-line="1" onclick="checkBugLine(this, false)">
+              <span class="line-num">1</span>
+              <code>def _b_attention(cfg):</code>
+            </div>
+            <div class="bug-line" data-line="2" onclick="checkBugLine(this, false)">
+              <span class="line-num">2</span>
+              <code>    return AttentionBlock(cfg["in_c"], cfg["heads"])</code>
+            </div>
+            <div class="bug-line" data-line="3" onclick="checkBugLine(this, false)">
+              <span class="line-num">3</span>
+              <code></code>
+            </div>
+            <div class="bug-line" data-line="4" onclick="checkBugLine(this, false)">
+              <span class="line-num">4</span>
+              <code>_ATTENTION_GRID = _grid(in_c=[64, 128], heads=[4, 8],</code>
+            </div>
+            <div class="bug-line bug-target" data-line="5" onclick="checkBugLine(this, true)">
+              <span class="line-num">5</span>
+              <code>                        res=[28, 14])  # ← bug: no "c" key</code>
+            </div>
+            <div class="bug-line" data-line="6" onclick="checkBugLine(this, false)">
+              <span class="line-num">6</span>
+              <code></code>
+            </div>
+            <div class="bug-line" data-line="7" onclick="checkBugLine(this, false)">
+              <span class="line-num">7</span>
+              <code>BLOCK_REGISTRY["attention"] = {</code>
+            </div>
+            <div class="bug-line" data-line="8" onclick="checkBugLine(this, false)">
+              <span class="line-num">8</span>
+              <code>    "builder": _b_attention,</code>
+            </div>
+            <div class="bug-line" data-line="9" onclick="checkBugLine(this, false)">
+              <span class="line-num">9</span>
+              <code>    "input_shape": _in_single,  # expects "c" key</code>
+            </div>
+            <div class="bug-line" data-line="10" onclick="checkBugLine(this, false)">
+              <span class="line-num">10</span>
+              <code>    "grid": _ATTENTION_GRID,</code>
+            </div>
+            <div class="bug-line" data-line="11" onclick="checkBugLine(this, false)">
+              <span class="line-num">11</span>
+              <code>}</code>
+            </div>
+          </div>
+          <div class="bug-feedback" id="bug-feedback"></div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 4: The LUT Row Anatomy ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Anatomy of a LUT Row</h2>
+        <p>Every row in <code>data/lut.jsonl</code> tells a complete story about one block's performance. Here's what each field means:</p>
+
+        <div class="badge-list stagger-children" style="margin-top: var(--space-4);">
+          <div class="badge-item animate-in">
+            <code class="badge-code">row_key</code>
+            <span class="badge-desc">16-char SHA-1 hash that uniquely identifies this (block, config, shape) combo</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">block</code>
+            <span class="badge-desc">Block type name (e.g., "mbconv", "conv3x3", "dwconv")</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">cfg</code>
+            <span class="badge-desc">Full configuration dict — channels, kernel, stride, expand ratio, SE flag, resolution</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">latency_ms</code>
+            <span class="badge-desc">Timing stats from 200 iterations — mean, std, p50 (median), p95 (worst-case)</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">peak_mem_mib</code>
+            <span class="badge-desc">GPU memory consumed during inference — important for fitting in the Jetson's 8 GB budget</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">flops</code>
+            <span class="badge-desc">Static FLOPs count — useful for analysis but NOT used for latency prediction (real measurements are better)</span>
+          </div>
+          <div class="badge-item animate-in">
+            <code class="badge-code">achieved_bw_gbps</code>
+            <span class="badge-desc">How much bandwidth this block actually uses — helps identify memory-bound vs. compute-bound blocks</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 5: Decision Scenarios ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Real-World Decision Scenarios</h2>
+
+        <div class="quiz-container" id="quiz-module8">
+
+          <div class="scenario-block" style="background: var(--color-surface); padding: var(--space-5); border-radius: var(--radius-md); margin-bottom: var(--space-4);">
+            <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
+              <span style="background: var(--color-accent); color: white; padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: 600;">SCENARIO</span>
+            </div>
+            <p style="color: var(--color-text-secondary); margin: 0;">You're adding MobileViT blocks to the catalog (Phase 5). You've registered them in BLOCK_REGISTRY, generated the ONNX files, and measured latency on the Jetson. Now you need to decide: should you inject them into the OFA supernet?</p>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Perfect! The LUT pre-screen compares MobileViT latency vs MBConv at every position. If MobileViT is slower AND has more parameters at every single position, there is no point paying the expensive fine-tuning cost to inject it."
+               data-explanation-wrong="Before investing in expensive supernet fine-tuning, you should check if MobileViT actually offers any advantage. If it loses to MBConv everywhere in the LUT, injection would waste compute.">
+            <h3 class="quiz-question">MobileViT blocks are 3× slower than MBConv at early stages (high resolution) but 20% faster at late stages (low resolution). What do you do?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Reject MobileViT entirely — it is slower at some positions</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Inject MobileViT only at late-stage positions where it offers a Pareto improvement. The search will discover the best mix</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Replace all MBConv blocks with MobileViT</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="scenario-block" style="background: var(--color-surface); padding: var(--space-5); border-radius: var(--radius-md); margin-bottom: var(--space-4);">
+            <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
+              <span style="background: var(--color-accent); color: white; padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: 600;">SCENARIO</span>
+            </div>
+            <p style="color: var(--color-text-secondary); margin: 0;">The BO search has been running for 80 iterations. You notice the last 20 candidates all score within 0.3% of each other. The search seems stuck.</p>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-c"
+               data-explanation-right="Right! Convergence is usually a sign of success, not failure. The Pareto frontier has stabilized. You can either stop and pick the best candidate, or increase the exploration weight in the acquisition function to push into unexplored regions."
+               data-explanation-wrong="When scores converge, it usually means the search has found a good region. The right response is to check the Pareto frontier quality and decide whether to stop or push for more exploration.">
+            <h3 class="quiz-question">What should you do?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Restart from scratch with random candidates</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Double the number of iterations</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The search is likely converging — check the Pareto frontier quality. If it is good, stop and select the winner. If not, increase the exploration parameter</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="scenario-block" style="background: var(--color-surface); padding: var(--space-5); border-radius: var(--radius-md); margin-bottom: var(--space-4);">
+            <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
+              <span style="background: var(--color-accent); color: white; padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: 600;">SCENARIO</span>
+            </div>
+            <p style="color: var(--color-text-secondary); margin: 0;">A colleague suggests replacing the LUT (pre-computed table) with a neural latency predictor trained on the 2,710 measurements. "ML predicting ML — so meta!" they say.</p>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Exactly! The LUT has zero prediction error — it uses real measurements. A neural predictor adds another source of uncertainty. The only case for a predictor is when you need to estimate latency for block configs NOT in the LUT (like new block types before measuring them)."
+               data-explanation-wrong="The LUT gives exact real measurements with zero prediction error. A learned predictor would add uncertainty for no gain — unless you need to predict latency for new, unmeasured configurations.">
+            <h3 class="quiz-question">Is this a good idea?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Yes — neural predictors are always better than tables</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>No for existing blocks — the LUT has zero prediction error. But a predictor could help estimate latency for NEW block types before measuring them</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>No — neural predictors are always worse than tables</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module8')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module8')">Try Again</button>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 6: Cheat Sheet ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Your Cheat Sheet</h2>
+        <p>Keep this handy when working with the codebase or talking to AI assistants:</p>
+
+        <div class="step-cards stagger-children" style="margin-top: var(--space-6);">
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-actor-1);">📋</div>
+            <div class="step-body">
+              <strong>"Add a new block type"</strong>
+              <p>→ catalog/mbconv.py (nn.Module) → catalog/blocks.py (register in BLOCK_REGISTRY) → run LUT sweep</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-actor-2);">⏱️</div>
+            <div class="step-body">
+              <strong>"Get latency for an architecture"</strong>
+              <p>→ search/arch_to_blocks.py (arch_dict → block list) → catalog/sweep.py (row_key) → data/lut.jsonl (lookup)</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-actor-3);">🧠</div>
+            <div class="step-body">
+              <strong>"Sample a random subnet"</strong>
+              <p>→ supernet/sampler.py: random_arch() → sample(arch, supernet) → nn.Module with pretrained weights</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-actor-4);">🔍</div>
+            <div class="step-body">
+              <strong>"Debug wrong latency numbers"</strong>
+              <p>→ lut/bench/run_bench.py (CUDA timing) → lut/orchestrate/run_sweep.py (orchestration) → data/device_info.json (device settings)</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-actor-5);">♻️</div>
+            <div class="step-body">
+              <strong>"Where's the project status?"</strong>
+              <p>→ state/plan_state.yaml (checkpoints + notes) → procedure.md (human-readable journal)</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 7: Graduation ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">You Did It! 🎓</h2>
+
+        <div class="callout callout-accent animate-in">
+          <div class="callout-icon">🏆</div>
+          <div class="callout-content">
+            <strong class="callout-title">Course Complete</strong>
+            <p>You've now traced the full architecture of a hardware-aware NAS system — from measuring individual blocks on real hardware, through training a shape-shifting supernet, translating architectures into cost estimates, and searching intelligently for the best design.</p>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-8);">You can now confidently:</p>
+
+        <div class="icon-rows stagger-children" style="margin-top: var(--space-4);">
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-1)">✅</div>
+            <div>
+              <strong>Navigate the codebase</strong>
+              <p>Know which file to look in for any question</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2)">✅</div>
+            <div>
+              <strong>Steer AI effectively</strong>
+              <p>Give precise instructions using the right terminology</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-3)">✅</div>
+            <div>
+              <strong>Recognize universal patterns</strong>
+              <p>Lookup tables, weight sharing, adapters, content addressing, idempotency</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-4)">✅</div>
+            <div>
+              <strong>Debug intelligently</strong>
+              <p>Trace problems to their source module using the architecture map</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-8); text-align: center; color: var(--color-text-secondary); font-size: var(--text-lg);">Now go build something amazing. 🚀</p>
+      </section>
+
+    </div>
+  </div>
+</section>

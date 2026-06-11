@@ -1,0 +1,343 @@
+<section class="module" id="module-6" style="background: var(--color-bg)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">06</span>
+      <h1 class="module-title">The Grand Strategy</h1>
+      <p class="module-subtitle">How smart search, weight recycling, and expansion find the perfect architecture</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ═══════ SCREEN 1: The Search Loop ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Planned Search Loop</h2>
+        <p>With 2 × 10<sup>19</sup> possible architectures, you can't try them all. Like a <span class="term" data-definition="Bayesian Optimization — a search strategy that builds an internal model (surrogate) of what works and uses it to decide what to try next, much more efficient than random search.">chess grandmaster</span> who doesn't evaluate every possible move, the search builds intuition and explores smartly.</p>
+
+        <div class="step-cards stagger-children" style="margin-top: var(--space-6)">
+          <div class="step-card animate-in">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <strong>🔍 BO Proposes</strong>
+              <p><span class="term" data-definition="Bayesian Optimization — a search strategy that builds an internal model (surrogate) of what works and uses it to decide what to try next.">Bayesian Optimization</span> suggests a new architecture based on what it has learned so far</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <strong>🧠 Supernet Extracts</strong>
+              <p>OFA materializes a subnet with pretrained weights — instant and free</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <strong>⏱️ LUT Scores</strong>
+              <p>Sum latency from the lookup table for each block — microseconds, not minutes</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <strong>♻️ Net2Net Adapts</strong>
+              <p>If the new arch is close to a previous one, reuse and transform weights</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <strong>🎯 Eval Fine-tunes</strong>
+              <p>Short 5-epoch <span class="term" data-definition="Additional training on a model that already works, to adapt it to a specific task or improve it slightly — much cheaper than training from scratch.">fine-tune</span> on the target task to get accuracy</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num">6</div>
+            <div class="step-body">
+              <strong>📊 Score Recorded</strong>
+              <p>J(α) goes back to BO, which updates its model and proposes the next candidate</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 2: Bayesian Optimization Explained ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Bayesian Optimization: The Smart Search</h2>
+        <p>Instead of guessing randomly, BO builds an internal model of what works and uses it to decide what to try next. It typically finds better architectures in 30-100 tries than random search finds in 1,000.</p>
+
+        <div class="pattern-cards stagger-children" style="margin-top: var(--space-6)">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">🧠</div>
+            <h4 class="pattern-title">The Surrogate</h4>
+            <p class="pattern-desc">BO builds an internal model (a <span class="term" data-definition="A probabilistic model used as a surrogate in BO — it provides not just predictions but uncertainty estimates, which help decide where to explore next.">Gaussian Process</span>) that predicts how good each architecture will be. Like a grandmaster's intuition about board positions.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">🎯</div>
+            <h4 class="pattern-title">Acquisition</h4>
+            <p class="pattern-desc">The <span class="term" data-definition="The strategy BO uses to pick the next candidate — Expected Improvement balances exploiting known-good regions vs. exploring unknown ones.">acquisition function</span> finds the architecture with the best expected improvement. It balances exploring unknowns vs. exploiting what's already known to be good.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-5)">
+            <div class="pattern-icon" style="background: var(--color-actor-5)">📈</div>
+            <h4 class="pattern-title">Learning</h4>
+            <p class="pattern-desc">After each evaluation, the surrogate gets smarter. It uses a <span class="term" data-definition="A way to measure distance between two architectures by counting how many choices differ — if 3 out of 20 kernel sizes differ, the Hamming distance is 3.">Hamming kernel</span> to understand which architectures are similar.</p>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in" style="margin-top: var(--space-8)">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Objective Function</strong>
+            <p>Every candidate is scored by: <code style="background: var(--color-bg-code); color: #CDD6F4; padding: 2px 6px; border-radius: 4px;">J(α) = accuracy(α) − λ · latency_ms(α) − μ · max(0, mem(α) − budget)²</code><br>Translation: <em>Score = how accurate it is, MINUS a penalty for being slow, MINUS a big penalty if it uses too much memory.</em></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 3: Net2Net ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Net2Net: Recycle, Don't Retrain</h2>
+        <p><span class="term" data-definition="A technique from Chen et al. (2015) that provides function-preserving operators to widen or deepen neural networks while keeping exactly the same output.">Net2Net</span> provides two <span class="term" data-definition="An operation that changes the structure of a network without changing its output — the larger network produces exactly the same results as the smaller one.">function-preserving</span> operators that let you grow a network without losing what it already learned:</p>
+
+        <div class="pattern-cards stagger-children" style="margin-top: var(--space-6)">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">↔️</div>
+            <h4 class="pattern-title">Net2WiderNet</h4>
+            <p class="pattern-desc">Make a layer wider (more channels) while keeping exactly the same function. Copies neurons and splits them so the output is identical despite the layer being larger.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-5)">
+            <div class="pattern-icon" style="background: var(--color-actor-5)">↕️</div>
+            <h4 class="pattern-title">Net2DeeperNet</h4>
+            <p class="pattern-desc">Insert a new layer initialized to identity (passes input through unchanged). The network is deeper but functionally identical — then training specializes the new layer.</p>
+          </div>
+        </div>
+
+        <div class="callout callout-info animate-in" style="margin-top: var(--space-8)">
+          <div class="callout-icon">♻️</div>
+          <div class="callout-content">
+            <strong class="callout-title">The Architecture Cache</strong>
+            <p>When BO proposes architecture α_new that differs from a recent α_prev only by a widen or deepen step, Net2Net applies the transform instead of re-extracting from OFA. When the difference is something Net2Net can't handle (kernel change, SE toggle), it falls back to extracting fresh from the supernet. This cuts fine-tuning cost by 2× or more.</p>
+          </div>
+        </div>
+
+        <div class="flow-animation animate-in" data-steps='[
+          {"highlight":"flow-actor-1","label":"BO proposes architecture #51"},
+          {"highlight":"flow-actor-2","label":"Graph diff compares #51 to recent #48","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-2","label":"Difference: one layer is wider. Net2Net can handle this!"},
+          {"highlight":"flow-actor-3","label":"Net2WiderNet copies and splits neurons","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-3","label":"New model produces EXACTLY the same output as #48"},
+          {"highlight":"flow-actor-1","label":"Fine-tune converges in half the epochs","packet":true,"from":"actor-3","to":"actor-1"}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon">🔍</div>
+              <span>BO Search</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon">📐</div>
+              <span>Graph Diff</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon">♻️</div>
+              <span>Net2Net</span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-step-label" id="flow-label">Click "Next Step" to see how Net2Net recycles weights</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 4: The Expansion Roadmap ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The 8-Phase Roadmap</h2>
+        <p>The project follows a methodical 8-phase plan. Each phase builds on the last, with clear checkpoints and definitions of done:</p>
+
+        <div class="step-cards stagger-children" style="margin-top: var(--space-6)">
+          <div class="step-card animate-in" style="border-left-color: var(--color-success);">
+            <div class="step-num" style="background: var(--color-success);">✓</div>
+            <div class="step-body">
+              <strong>Phase 0 — Latency LUT</strong>
+              <p>Measure every block on the Jetson. 2,710 rows in lut.jsonl.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in" style="border-left-color: var(--color-success);">
+            <div class="step-num" style="background: var(--color-success);">✓</div>
+            <div class="step-body">
+              <strong>Phase 1 — Base Supernet</strong>
+              <p>OFA wrapper + subnet sampler. CP 1.1-1.3 done, CP 1.4 (ImageNet sanity) pending.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in" style="border-left-color: #D4A843;">
+            <div class="step-num" style="background: #D4A843;">→</div>
+            <div class="step-body">
+              <strong>Phase 2 — Subnet Extraction + LUT Scoring</strong>
+              <p>Arch-to-blocks translator (done). Cost function + additivity validation (next).</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-text-muted);">3</div>
+            <div class="step-body">
+              <strong>Phase 3 — Device-Aware Search</strong>
+              <p><span class="term" data-definition="Non-dominated Sorting Genetic Algorithm II — an evolutionary search method used as a baseline. Maintains a population of architectures and evolves them through crossover and mutation.">NSGA-II</span> baseline + BO search loop. 100 candidates, <span class="term" data-definition="The set of best tradeoffs — every point is optimal because you can't improve one metric without worsening another.">Pareto frontier</span> of accuracy vs. latency.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-text-muted);">4</div>
+            <div class="step-body">
+              <strong>Phase 4 — Net2Net Operators</strong>
+              <p>Net2Wider, Net2Deeper, BatchNorm handling, graph diff.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-text-muted);">5</div>
+            <div class="step-body">
+              <strong>Phase 5 — Supernet Expansion</strong>
+              <p>Inject <span class="term" data-definition="A variant of MBConv from EfficientNetV2 that fuses the expansion and depthwise conv into a single regular conv — often faster at early, high-resolution stages.">FusedMBConv</span>, <span class="term" data-definition="A modern convolution architecture from Meta AI (2022) that borrows ideas from Transformers — large kernels, Layer Normalization, GELU activation.">ConvNeXt</span>, <span class="term" data-definition="A hybrid block from Apple Research that combines local convolution with tiny Transformer self-attention — captures both local and global patterns.">MobileViT</span>. LUT pre-screen first.</p>
+            </div>
+          </div>
+          <div class="step-card animate-in">
+            <div class="step-num" style="background: var(--color-text-muted);">6-8</div>
+            <div class="step-body">
+              <strong>Phases 6-8 — Fine-tune, Re-search, Deploy</strong>
+              <p>Fine-tune expanded supernet, search again on the richer space, package winner as a TRT engine for the Jetson.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in" style="margin-top: var(--space-8)">
+          <div class="callout-icon">🎯</div>
+          <div class="callout-content">
+            <strong class="callout-title">Phase 5 is the Moonshot</strong>
+            <p>Injecting blocks from completely different neural network families into the OFA supernet. Each candidate block is first screened by the LUT — if it's slower than what already exists at every position, it gets rejected before any expensive fine-tuning.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 5: Quiz ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Final Quiz</h2>
+
+        <div class="quiz-container" id="quiz-module6">
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Perfect! Net2WiderNet was designed for exactly this case. The function-preserving property means the starting point is just as good as the original, but with more capacity."
+               data-explanation-wrong="When the change is just widening, Net2WiderNet can transfer weights exactly. This saves fine-tuning time because the model starts from a better initialization.">
+            <h3 class="quiz-question">BO has evaluated 50 architectures. Architecture #51 differs from #48 only in that one layer is wider. Should the system use Net2Net or extract fresh from OFA?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Extract fresh from OFA — always safer</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Use Net2Net — widening is exactly what Net2WiderNet handles, and it saves training time</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Skip evaluation — similar architectures have similar performance</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-a"
+               data-explanation-right="Exactly! The LUT lookup takes microseconds per block. A full on-device measurement takes 10-30 seconds (engine build + timing). Over 100+ candidates, the LUT saves hours."
+               data-explanation-wrong="The speed advantage is massive: LUT lookups are near-instant, while on-device measurements require building a TRT engine and running timed iterations.">
+            <h3 class="quiz-question">Why does the search use an additive latency model (sum of per-block latencies) instead of measuring each full architecture on the Jetson?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Running each architecture on the Jetson would take 10-30 seconds per candidate, making a 100-candidate search take hours instead of seconds</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Additive latency is always perfectly accurate</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The Jetson cannot run full architectures</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="Right! The LUT pre-screen queries the LUT at every position the new block would occupy. If it is Pareto-dominated everywhere, it gets rejected before any expensive fine-tuning."
+               data-explanation-wrong="The LUT pre-screen is a lightweight check. It compares the new block latency and params against incumbents at each position to avoid wasting fine-tuning budget.">
+            <h3 class="quiz-question">Before injecting FusedMBConv blocks in Phase 5, what check does the system perform?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Verify the new block has published research papers</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Run the LUT pre-screen to check if FusedMBConv offers a Pareto improvement over existing MBConv at any position</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Train the block from scratch to verify accuracy</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block" data-correct="option-b"
+               data-explanation-right="That is the whole point! OFA eliminates training from scratch. The LUT eliminates re-measuring on hardware. BO eliminates random guessing. Net2Net eliminates redundant fine-tuning. Together: days instead of GPU-years."
+               data-explanation-wrong="The magic is in combining efficiency tricks: pretrained weights, pre-computed latency, smart search, and weight recycling. Together they compress GPU-years into days.">
+            <h3 class="quiz-question">What is the main advantage of this NAS approach over training many models from scratch?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>This approach finds more creative architectures</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It is dramatically cheaper — reuses pretrained weights, pre-computed latency, and smart search. Days instead of GPU-years</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>This approach is more accurate</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module6')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module6')">Try Again</button>
+        </div>
+      </section>
+
+      <!-- ═══════ SCREEN 6: What's Next ═══════ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Strategy is Set — Now Let's Go Deeper</h2>
+
+        <p>You now understand the full pipeline — from block measurement to intelligent search. But two questions remain:</p>
+
+        <div class="pattern-cards stagger-children" style="margin-top: var(--space-6)">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">🤖</div>
+            <h4 class="pattern-title">Module 7: Inside the Jetson</h4>
+            <p class="pattern-desc">How does Docker, SSH, and CUDA event timing work together to produce reliable measurements? What's a roofline model?</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">🧩</div>
+            <h4 class="pattern-title">Module 8: Patterns for Vibe Coders</h4>
+            <p class="pattern-desc">Drag-and-drop challenges, spot-the-bug exercises, real decision scenarios, and a cheat sheet for steering AI with precision.</p>
+          </div>
+        </div>
+
+        <div class="callout callout-accent animate-in" style="margin-top: var(--space-8)">
+          <div class="callout-icon">⚡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Keep Going</strong>
+            <p>The next two modules are hands-on — less reading, more doing. They'll solidify everything you've learned into skills you can actually use.</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>

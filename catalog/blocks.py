@@ -15,6 +15,7 @@ from .mbconv import Conv3x3, Conv1x1, DWConv, MBConv, Skip, SEBlock
 from .seg_det import (Upsample, Deconv, PixelShuffleBlock, FPNLateral,
                       FPNTopDown, DilatedConv3x3, ASPP, SegHead, DetHead)
 from .shapes import BATCH
+from .ofa_mbv3 import reachable_mbconv_configs
 
 
 def _grid(**axes):
@@ -64,6 +65,13 @@ _MBCONV_GRID = _grid(
 )
 # Prune: only keep cfgs where in_c<=out_c makes sense for the NAS search
 _MBCONV_GRID = [c for c in _MBCONV_GRID if c["out_c"] >= c["in_c"]]
+
+# Augment with the exact MBConv configs the OFA-MBv3-w1.0 search space can reach
+# (CP 2.1). The generic grid above is kept; OFA's real widths (24/40/80/112),
+# the 112 resolution, and the expand=1 first block live only here, so
+# search.arch_to_blocks emits only LUT-covered rows. Unioned in, de-duplicated.
+_MBCONV_GRID = _MBCONV_GRID + [c for c in reachable_mbconv_configs()
+                               if c not in _MBCONV_GRID]
 
 _CONV3X3_GRID = _grid(in_c=[16, 32, 64, 96, 160], out_c=[16, 32, 64, 96, 160],
                       stride=[1, 2], res=[112, 56, 28, 14])
