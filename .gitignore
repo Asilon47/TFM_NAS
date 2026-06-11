@@ -29,11 +29,21 @@ data/
 # Claude AI — session memory and local settings (personal, not project config)
 .claude/
 
+# Secrets — never track credentials of any kind
+*credential*
+*secret*
+*.pem
+.env
+.env.*
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+
 # Editor / IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 *.swo
 
 # OS
