@@ -35,6 +35,9 @@ data/
 *.pem
 .env
 .env.*
+# Real Jetson endpoint (host/port/user) — merged over config.yaml by
+# lut/orchestrate/ssh_client.py and scripts/{setup,teardown}_jetson.sh
+config.local.yaml
 
 # Tool caches
 .ruff_cache/

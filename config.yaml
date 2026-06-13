@@ -1,19 +1,26 @@
-# Edit this to match your Jetson. Used by orchestrate/ssh_client.py.
+# Committed TEMPLATE — real endpoint values live in config.local.yaml
+# (gitignored), which overrides this file key-by-key. Consumed by
+# lut/orchestrate/ssh_client.py and scripts/{setup,teardown}_jetson.sh.
 jetson:
-  host: 192.168.55.1
-  user: CVAR           
+  host: 192.168.55.1            # placeholder (USB-gadget default) — set yours in config.local.yaml
+  port: 22                      # set yours in config.local.yaml
+  user: jetson                  # set yours in config.local.yaml
   ssh_key: ~/.ssh/id_ed25519
-  remote_workdir: /home/CVAR/lut_runner
+  remote_workdir: /home/jetson/lut_runner   # set yours in config.local.yaml
   docker_image: lut-runner:latest
-  power_mode: 0      # read by scripts/setup_jetson.sh (nvpmodel -m), not Python
-  lock_clocks: true  # read by scripts/setup_jetson.sh (jetson_clocks), not Python
+  power_mode: 0       # applied by scripts/setup_jetson.sh, verified by the run_sweep preflight
+  lock_clocks: true   # ditto — preflight refuses to measure unlocked unless set to false
+  idle_power_mode: 1  # what scripts/teardown_jetson.sh restores after benchmarking
 
 sweep:
   # precision is NOT part of row_key (lut/docs/schema.md): rows of different
   # precisions coexist under the same key, and resume is precision-aware —
   # changing this value re-measures every row rather than skipping.
+  # NOTE: fp32 = TRT default fp32, which allows TF32 tensor-core math on the
+  # Orin (deliberate, 2026-06-12 — see lut/docs/schema.md).
   precision: fp32
   warmup_iters: 50
   timed_iters: 200
+  min_window_s: 0.5   # keep sampling past timed_iters until the timed window spans this wall time
   output_jsonl: data/lut.jsonl
   device_info_json: data/device_info.json

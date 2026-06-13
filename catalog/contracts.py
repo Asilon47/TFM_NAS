@@ -59,7 +59,12 @@ class LutRow(TypedDict):
     power_mode: str | None
     jetpack: str | None
     timestamp: str
-    source: NotRequired[str]  # "roofline_dummy" on dummy rows; absent on real ones
+    # "jetson_trt" on measured rows, "roofline_dummy" on dummy rows; absent
+    # on rows written before 2026-06-12 (treat absent as real).
+    source: NotRequired[str]
+    # True when the sweep preflight verified jetson_clocks at measurement
+    # time; None/absent when unknown (--skip-preflight, older rows).
+    clocks_locked: NotRequired[bool | None]
 
 
 # A LUT-keyed block as emitted by search.arch_to_blocks:

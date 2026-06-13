@@ -95,3 +95,16 @@ notes: |
   source=roofline_dummy). TODO(user): the load_device_info failure
   policy in lut/orchestrate/run_sweep.py. See procedure.md
   "Hardening pass".
+
+  **Measurement audit 2026-06-12:** no checkpoint change (still CP 2.1), but
+  Phase 0's artifact status changed: REAL Jetson collection started —
+  data/lut.jsonl now holds measured fp32/TRT-10.3 rows (3 so far), the
+  complete dummy moved to data/lut.jsonl.dummy.bak. Collection hardening:
+  sweep-start preflight (re-probe + clocks_locked/power-mode verification;
+  --skip-preflight bypass), min_window_s duration-based sampling, persistent
+  TRT timing cache, config.local.yaml overlay for the real endpoint
+  (config.yaml is now a placeholder template). Decisions recorded in
+  procedure.md "Measurement audit": fp32 rows deliberately allow TF32;
+  peak_mem_mib = TRT scratch + IO (non-additive across blocks). The full
+  sweep (~2710 rows) is the next Phase-0 action; run it before the CP 2.2
+  additivity validation.

@@ -29,6 +29,7 @@ from catalog.blocks import build_block
 from catalog.flops import count_flops
 from catalog.sweep import iter_sweep, sweep_size
 from lut.export.to_onnx import export_block
+from lut.orchestrate.probe_device import probe, write_device_info
 from lut.orchestrate.resume import completed_keys
 from lut.orchestrate.ssh_client import connect, load_config
 
@@ -36,22 +37,27 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_remote_bench(conn, cfg, row_key: str, local_onnx: Path,
-                     precision: str, warmup: int, iters: int) -> dict:
+                     precision: str, warmup: int, iters: int,
+                     min_window_s: float) -> dict:
     remote_job = f"{cfg.remote_workdir}/job/{row_key}"
     conn.run(f"mkdir -p {remote_job}", hide=True)
     try:
         conn.put(str(local_onnx), remote=f"{remote_job}/model.onnx")
         # /job mounts the per-row dir; bench/ rides in via an explicit second
-        # mount because `..` traversal in container paths is brittle.
+        # mount because `..` traversal in container paths is brittle. /cache
+        # persists the trtexec timing cache across rows AND sweeps.
         cmd = (
             f"docker run --rm --runtime nvidia "
             f"-v {remote_job}:/job "
             f"-v {cfg.remote_workdir}/bench:/bench "
+            f"-v {cfg.remote_workdir}/cache:/cache "
             f"{cfg.docker_image} bash -c "
             f"'python3 /bench/build_engine.py "
             f"--onnx /job/model.onnx --engine /job/model.plan --precision {precision} "
+            f"--timing-cache /cache/trt_timing.cache "
             f"&& python3 /bench/run_bench.py "
-            f"--engine /job/model.plan --warmup {warmup} --iters {iters}'"
+            f"--engine /job/model.plan --warmup {warmup} --iters {iters} "
+            f"--min-window-s {min_window_s}'"
         )
         res = conn.run(cmd, hide=True, warn=True)
         if res.return_code != 0:
@@ -87,8 +93,54 @@ def _parse_bench_stdout(stdout: str) -> dict:
     return result
 
 
+def preflight_verdict(device_info: dict, expected_power_mode: int | None,
+                      require_locked_clocks: bool = True) -> str | None:
+    """Is the device state fit to measure? None = proceed; a string aborts.
+
+    Called on a FRESH probe at sweep start. This function is policy, not
+    plumbing: it owns the call on which device-state mismatches invalidate a
+    measurement session. The two hard conditions ship fail-fast because they
+    silently corrupt rows otherwise:
+
+      * unlocked clocks — jetson_clocks does not survive a reboot, so a
+        post-reboot sweep would measure with DVFS active while still
+        stamping the configured power mode into every row;
+      * power-mode mismatch — rows are only comparable within one mode.
+
+    TODO(user): own/extend this policy. Open decisions left to you:
+      - should a failed bandwidth probe (peak_dram_gbps_measured == 0) abort
+        instead of warn? (it only affects sanity checks, not latencies)
+      - should a trt_version/jetpack change vs. the previous
+        data/device_info.json abort, to keep one LUT per software stack?
+    """
+    if require_locked_clocks and device_info.get("clocks_locked") is not True:
+        return (
+            "GPU clocks are not locked (jetson_clocks does not survive "
+            "reboots). Run scripts/setup_jetson.sh, or set "
+            "jetson.lock_clocks: false to knowingly measure with DVFS active."
+        )
+    if expected_power_mode is not None:
+        actual = device_info.get("power_mode")
+        if actual is None or str(actual) != str(expected_power_mode):
+            return (
+                f"power mode mismatch: device reports {actual!r}, config "
+                f"expects {expected_power_mode!r}. Run scripts/setup_jetson.sh "
+                "or update jetson.power_mode in config.yaml."
+            )
+    if not device_info.get("peak_dram_gbps_measured"):
+        sys.stderr.write(
+            "[preflight] WARN: bandwidthTest probe failed "
+            "(peak_dram_gbps_measured is 0/absent) — achieved_bw sanity "
+            "checks against DRAM peak will be meaningless.\n"
+        )
+    return None
+
+
 def load_device_info(path: Path) -> dict:
     """Device metadata stamped into every LUT row (power_mode, jetpack, ...).
+
+    Only consulted with ``--skip-preflight`` — the default path re-probes the
+    device and never reads a stale file (see preflight_verdict).
 
     PROJECT_PLAN Phase 0's DoD requires data/device_info.json to exist for
     the locked power mode: rows stamped ``power_mode: None`` are ambiguous
@@ -118,6 +170,10 @@ def main():
                     help="Only sweep these block names (default: all).")
     ap.add_argument("--limit", type=int, default=0,
                     help="Stop after N new rows. 0 = unlimited.")
+    ap.add_argument("--skip-preflight", action="store_true",
+                    help="Trust data/device_info.json instead of re-probing "
+                         "the device at sweep start (bring-up/debug only — "
+                         "clock-lock state will NOT be verified).")
     ap.add_argument("--config", default=str(ROOT / "config.yaml"))
     args = ap.parse_args()
 
@@ -125,11 +181,28 @@ def main():
     precision = sweep_cfg.get("precision", "fp16")
     warmup = int(sweep_cfg.get("warmup_iters", 50))
     iters = int(sweep_cfg.get("timed_iters", 200))
+    min_window_s = float(sweep_cfg.get("min_window_s", 0.5))
     out_jsonl = ROOT / sweep_cfg.get("output_jsonl", "data/lut.jsonl")
     dev_info_path = ROOT / sweep_cfg.get("device_info_json", "data/device_info.json")
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
 
-    device_info = load_device_info(dev_info_path)
+    conn = connect(cfg)
+    if args.skip_preflight:
+        device_info = load_device_info(dev_info_path)
+    else:
+        # Fresh state at every sweep start: jetson_clocks does not survive a
+        # reboot and device_info.json may be days stale. Re-probe, persist,
+        # and refuse to measure in a state that would corrupt rows.
+        device_info = probe(conn, cfg)
+        write_device_info(device_info, dev_info_path)
+        reason = preflight_verdict(device_info, cfg.power_mode,
+                                   require_locked_clocks=cfg.lock_clocks)
+        if reason is not None:
+            raise SystemExit(f"[preflight] {reason}")
+        print(f"Preflight OK: power_mode={device_info.get('power_mode')!r} "
+              f"clocks_locked={device_info.get('clocks_locked')} "
+              f"gpu={device_info.get('gpu_clock_mhz_cur')} MHz", flush=True)
+
     # Precision-aware: row_key does not encode precision, so resuming under a
     # different precision must re-measure, not skip (see lut/docs/schema.md).
     done = completed_keys(out_jsonl, precision=precision)
@@ -138,8 +211,8 @@ def main():
     print(f"Sweep size: {total} rows (catalog). Already complete: {len(done)}. "
           f"Pending: ~{max(0, total - len(done))}.", flush=True)
 
-    conn = connect(cfg)
-    conn.run(f"mkdir -p {cfg.remote_workdir}/job", hide=True)
+    conn.run(f"mkdir -p {cfg.remote_workdir}/job {cfg.remote_workdir}/cache",
+             hide=True)
 
     n_new = 0
     failures: list[tuple[str, str, str]] = []
@@ -157,6 +230,7 @@ def main():
                 bench_result = run_remote_bench(
                     conn, cfg, row_key, onnx_path,
                     precision=precision, warmup=warmup, iters=iters,
+                    min_window_s=min_window_s,
                 )
             except Exception as e:
                 # One bad row must not kill an overnight sweep: log, record,
@@ -184,6 +258,10 @@ def main():
                 "trt_version": bench_result.get("trt_version"),
                 "power_mode": device_info.get("power_mode"),
                 "jetpack": device_info.get("jetpack"),
+                # None (not False) when unknown, e.g. --skip-preflight with an
+                # old device_info.json that predates the clocks_locked probe.
+                "clocks_locked": device_info.get("clocks_locked"),
+                "source": "jetson_trt",
                 "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
             out_f.write(json.dumps(row) + "\n")

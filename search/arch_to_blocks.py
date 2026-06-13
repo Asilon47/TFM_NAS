@@ -107,14 +107,18 @@ def _random_arch_dict(rng: random.Random) -> ArchDict:
 
 
 def _dod_smoke_test(n_archs: int = 10, seed: int = 0) -> None:
-    """CP 2.1 DoD: every emitted tuple of N random archs matches a LUT row_key."""
-    from pathlib import Path
+    """CP 2.1 DoD: every emitted tuple of N random archs is a catalog row_key.
 
-    from lut.orchestrate.resume import completed_keys
+    Checks against the CATALOG (iter_sweep), not data/lut.jsonl: since real
+    collection started (2026-06-12) the file is legitimately partial, and
+    file-vs-catalog coverage is tests/test_lut_keydrift.py's job. The
+    translation contract this guards is unchanged — the dummy artifact it
+    originally checked against was exactly the catalog key set.
+    """
+    from catalog.sweep import iter_sweep
 
-    lut_path = Path(__file__).resolve().parents[1] / "data" / "lut.jsonl"
-    known = completed_keys(lut_path)
-    print(f"LUT: {len(known)} row_keys in {lut_path}")
+    known = {k for *_, k in iter_sweep()}
+    print(f"Catalog: {len(known)} row_keys")
 
     rng = random.Random(seed)
     all_ok = True

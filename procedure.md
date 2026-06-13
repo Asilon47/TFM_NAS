@@ -952,3 +952,107 @@ recommended shape is fail-fast + `--allow-missing-device-info` escape hatch.
 
 CP 2.2 — `search/cost.py`, now consuming `lut.loader.load_lut` and covered by
 the existing test scaffolding. The CUDA blocker (CP 2.4+) is unchanged.
+
+---
+
+## Measurement audit — LUT collection methodology (2026-06-12)
+
+Not a checkpoint. The first REAL Jetson rows landed today (3 conv3x3 rows,
+fp32, TRT 10.3.0, container `l4t-tensorrt:r10.3.0-devel`, ~7 s/row); this
+entry records the audit of the collection path and the hardening that
+followed. Trigger: user request to verify "the way data is collected /
+measured is correct" before committing to the full 2710-row sweep.
+
+### Verdict
+
+The measurement core was confirmed sound:
+
+- **CUDA-event timing, per-iteration, queue depth 1** (`lut/bench/run_bench.py`)
+  — correct semantic for blocks that execute sequentially in a net. Evidence
+  it is live: every p50 in the measured rows is an exact multiple of 32 ns
+  (Orin's 31.25 MHz globaltimer tick).
+- 50 warmup + 200 timed iters; sorted samples; p50/p95/mean/std/n persisted;
+  H2D/D2H excluded (input uploaded once before the loop).
+- Engines built on-device by trtexec; `trt_version`/`power_mode`/`jetpack`
+  stamped per row; `nvpmodel` before `jetson_clocks` in setup (correct order);
+  `--store`/`--restore` pairing with the new teardown script.
+- The user's `peak_mem_mib` rework (TRT `device_memory_size_v2` + IO bytes,
+  replacing the `cuda.mem_get_info()` free-delta) is correct: the free-delta
+  produced 0.0 / 86.7 MiB garbage on unified memory (preserved in
+  `data/lut.jsonl.stale3.bak`); the TRT-reported scratch is deterministic.
+- Physical sanity: 339 GFLOPS achieved on conv3x3@res112 (~26% of fp32 peak
+  at 612 MHz); probed DRAM BW 62.8 GB/s vs 68 theoretical.
+
+### Decisions (user, via AskUserQuestion)
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| fp32 rows are TF32-allowed (TRT default on Ampere; no `--noTF32`) | **Keep TF32, document** | LUT should predict what a default TRT deployment does; documented in `lut/docs/schema.md` + `config.yaml` |
+| Jetson public endpoint (host/port/user) was about to be committed in `config.yaml` | **`config.local.yaml` overlay** | Real endpoint now lives in gitignored `config.local.yaml`, merged over the committed placeholder template by `load_config` and both jetson scripts |
+
+### Gaps found and fixed
+
+1. **`tests/test_lut_keydrift.py` failed** once `lut.jsonl` became a partial
+   real LUT (it asserted catalog ⊆ file, valid only for the complete dummy
+   artifact). Split into: hard orphan check (file ⊆ catalog, always) +
+   completeness gate that skips with a coverage count until collection
+   finishes.
+2. **No device-state verification at sweep time** (the structural risk):
+   `jetson_clocks` does not survive reboots and `device_info.json` could be
+   stale, so a post-reboot sweep would silently measure with DVFS active.
+   `run_sweep` now re-probes at start (shared `probe_device.probe()`),
+   rewrites `data/device_info.json`, and aborts on unlocked clocks or
+   power-mode mismatch (`preflight_verdict`; `--skip-preflight` bypasses).
+   `device_probe.sh` now reports `gpu_clock_mhz_cur` + `clocks_locked`
+   (devfreq `min_freq == max_freq`). Rows stamp `clocks_locked` and
+   `source: "jetson_trt"`.
+3. **~9% inter-run p50 drift on ~40 µs blocks** (evidence: 15:49 vs 15:57
+   runs of the same 3 rows). `run_bench.py` now samples until BOTH
+   `n >= timed_iters` AND the timed window spans `min_window_s` wall time
+   (default 0.5 s; trtexec uses 3 s duration-based sampling for the same
+   reason). `latency_ms.n` records the actual count.
+4. **No TRT timing cache** across 2710 builds: added persistent
+   `--timingCacheFile` at `{remote_workdir}/cache/trt_timing.cache` — faster
+   builds and identical layers resolve to identical tactics across rows.
+5. **`peak_mem_mib` semantics were stale in `schema.md`** (still described
+   the abandoned free-delta). Rewritten: TRT scratch + IO buffers, excludes
+   weights (reconstruct via `params`); explicitly documented as
+   NON-additive across blocks (inter-block tensors double-count) — the
+   whole-net memory model is a CP 2.2+ decision.
+6. Small script fixes: clock sync now uses UTC on both ends (`date -u`,
+   `sudo date -u -s` — a TZ mismatch skewed the Jetson clock otherwise);
+   teardown restores clocks BEFORE switching power mode and reads
+   `jetson.idle_power_mode` (default 1) instead of hardcoding; both scripts'
+   minimal YAML reader now strips inline `#` comments (the old reader broke
+   on commented values — the reason config.yaml's comments had been deleted).
+
+### Contracts kept
+
+- `row_key` untouched; golden hashes untouched; all new row fields
+  (`source`, `clocks_locked`) are additive payload. The 3 measured rows
+  remain valid (they predate the new fields; schema documents that).
+- `JetsonConfig` gained `power_mode`/`lock_clocks` — the old "awk-only"
+  rationale lapsed because the Python preflight now consumes them too.
+
+### Pending (user contribution)
+
+`preflight_verdict` in `lut/orchestrate/run_sweep.py` ships the recommended
+fail-fast policy (abort on unlocked clocks / power-mode mismatch, warn on a
+failed bandwidth probe) but the policy is TODO(user)-owned: open calls are
+whether bandwidth-0 should abort, and whether a TRT/JetPack version change
+vs. the previous device_info.json should abort to keep one LUT per software
+stack. The older `load_device_info` TODO(user) (now only the
+`--skip-preflight` path) still stands.
+
+### What's next
+
+Run the full sweep: `bash scripts/setup_jetson.sh`, then
+`python -m lut.orchestrate.run_sweep` (resumable; ~6 h optimistic at the
+observed 7 s/row — mbconv engine builds will dominate; the timing cache
+amortizes them), then `bash scripts/teardown_jetson.sh`. CP 2.2 unchanged.
+
+**Addendum (same day):** `search/arch_to_blocks.py`'s `_dod_smoke_test` had the
+same partial-file assumption as the keydrift test — it resolved emitted keys
+against `data/lut.jsonl`. Retargeted at the catalog key set (`iter_sweep`),
+which is what the dummy artifact materialized anyway; the translation DoD is
+unchanged and `python -m search.arch_to_blocks` prints `DoD PASS` again.

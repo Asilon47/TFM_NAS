@@ -29,9 +29,16 @@ external teacher for its final deployable weights (Phase 8).
 
 ---
 
-## Current state (as of last update: CP 2.1 + hardening pass 2026-06-11)
+## Current state (as of last update: measurement audit 2026-06-12)
 
-- **Phase 0 (LUT):** Complete. `data/lut.jsonl` has all catalog rows.
+- **Phase 0 (LUT):** Pipeline DONE; **real Jetson collection IN PROGRESS**
+  (since 2026-06-12). `data/lut.jsonl` now holds *measured* rows (fp32,
+  TRT 10.3.0, ~7 s/row observed); the complete 2710-row dummy lives in
+  `data/lut.jsonl.dummy.bak`. Full sweep: `python -m lut.orchestrate.run_sweep`
+  (idempotent; a device-state preflight re-probes the Jetson and refuses to
+  measure with unlocked clocks / wrong power mode — `--skip-preflight` to
+  bypass). `scripts/setup_jetson.sh` before, `scripts/teardown_jetson.sh`
+  after.
 - **CP 1.1:** Done — skeleton packages + state file.
 - **CP 1.2:** Done — OFA w1.0 checkpoint downloaded + SHA256 pinned.
 - **CP 1.3:** Done — `supernet/sampler.py` works; random subnet forwards
@@ -52,6 +59,19 @@ external teacher for its final deployable weights (Phase 8).
   history (history rewritten + force-pushed — stale clones must re-clone).
   One TODO(user) remains: the `load_device_info` failure policy in
   `lut/orchestrate/run_sweep.py`. See `procedure.md` "Hardening pass".
+- **Measurement audit (2026-06-12):** not a checkpoint. Audited the LUT
+  collection path after the first real rows landed; methodology confirmed
+  sound (CUDA-event timing, queue depth 1, warmup, locked clocks). Added:
+  sweep-start **preflight** (re-probes device, verifies `clocks_locked` +
+  power mode; policy in `run_sweep.preflight_verdict` — TODO(user) owns it),
+  **min timed window** (`sweep.min_window_s`, default 0.5 s — kills the ~9%
+  p50 drift seen on ~40 µs blocks), **TRT timing cache** (persistent at
+  `{remote_workdir}/cache`), `config.local.yaml` overlay (gitignored real
+  endpoint; `config.yaml` is a placeholder template). Decisions: fp32 rows
+  deliberately allow TF32 (deployment-realistic; see `lut/docs/schema.md`);
+  `peak_mem_mib` = TRT scratch + IO (excludes weights; do NOT sum across
+  blocks). Rows now stamp `source`/`clocks_locked`. See `procedure.md`
+  "Measurement audit".
 - **CP 2.2 (next):** `search/cost.py` — sum `LUT[row_key]` over
   `arch_to_blocks(arch)` + constant stem/head offset → cost dict.
   Consume the LUT via `lut.loader.load_lut` (precision-filtered).
@@ -133,7 +153,8 @@ CUDA variant from PyPI).
   failing golden means the change re-keys every measured Jetson row. Never
   update them without recording the decision in `procedure.md`.
 - ofa-dependent tests auto-skip outside `.venv-nas`; LUT-file tests skip when
-  `data/lut.jsonl` is absent (e.g. CI).
+  `data/lut.jsonl` is absent (e.g. CI), and the catalog-coverage gate skips
+  (with a coverage count) while real collection is still partial.
 - Invoke venv tools as `python -m <tool>`, never via `bin/` entry points —
   the venvs' script shebangs went stale when the repo directory moved.
   `check.sh` also unsets `PYTHONPATH` (ROS's setup.bash leaks pytest plugins

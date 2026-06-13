@@ -3,6 +3,10 @@
 # We only add the Python glue we need.
 FROM nvcr.io/nvidia/l4t-tensorrt:r10.3.0-devel
 
+# trtexec ships under /usr/src/tensorrt/bin, which the base image leaves off
+# PATH. Put it on PATH so `trtexec` resolves for both build_engine.py and
+# interactive use. (build_engine.py also resolves it explicitly as a fallback.)
+ENV PATH=/usr/src/tensorrt/bin:${PATH}
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

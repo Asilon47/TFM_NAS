@@ -26,6 +26,20 @@ def load_engine(path: Path) -> trt.ICudaEngine:
         return runtime.deserialize_cuda_engine(f.read())
 
 
+def _engine_scratch_bytes(engine: trt.ICudaEngine) -> int:
+    """TensorRT execution scratch (device workspace) for this engine, in bytes.
+
+    Deterministic — reported by TRT itself, unlike a cuda.mem_get_info() free
+    delta (system-wide on Jetson's unified memory, noisy, and silently clamped
+    to 0.0). Prefer the TRT 10 `_v2` property; fall back to the deprecated one
+    for older runtimes. Excludes IO buffers — the caller adds those.
+    """
+    size = getattr(engine, "device_memory_size_v2", None)
+    if size is None:
+        size = engine.device_memory_size
+    return int(size)
+
+
 def allocate_io(engine: trt.ICudaEngine):
     """Allocate host+device buffers for every binding. Returns (inputs, outputs, bindings)."""
     inputs, outputs, bindings = [], [], []
@@ -46,7 +60,8 @@ def allocate_io(engine: trt.ICudaEngine):
     return inputs, outputs, bindings
 
 
-def bench(engine_path: Path, warmup: int, iters: int) -> dict:
+def bench(engine_path: Path, warmup: int, iters: int,
+          min_window_s: float = 0.5) -> dict:
     engine = load_engine(engine_path)
     ctx = engine.create_execution_context()
 
@@ -63,24 +78,25 @@ def bench(engine_path: Path, warmup: int, iters: int) -> dict:
             cuda.memcpy_htod_async(x["dev"], x["host"], stream)
     stream.synchronize()
 
-    free_before, _ = cuda.mem_get_info()
-
     for _ in range(warmup):
         ctx.execute_async_v3(stream.handle)
     stream.synchronize()
 
+    # Keep sampling until we have BOTH >= iters samples AND >= min_window_s of
+    # wall time. For tiny blocks (~40 us), `iters` alone gives a milliseconds-
+    # long observation window — far below thermal/OS time constants — and we
+    # observed ~9% p50 drift between back-to-back runs. Duration-based
+    # sampling is what trtexec does for the same reason (its default: 3 s).
     samples_ms = []
     start_evt = cuda.Event()
     end_evt = cuda.Event()
-    for _ in range(iters):
+    window_t0 = time.perf_counter()
+    while len(samples_ms) < iters or (time.perf_counter() - window_t0) < min_window_s:
         start_evt.record(stream)
         ctx.execute_async_v3(stream.handle)
         end_evt.record(stream)
         end_evt.synchronize()
         samples_ms.append(end_evt.time_since(start_evt))
-
-    free_after, _ = cuda.mem_get_info()
-    peak_mem_mib = max(0.0, (free_before - free_after) / (1024 * 1024))
 
     samples_ms.sort()
     n = len(samples_ms)
@@ -90,6 +106,11 @@ def bench(engine_path: Path, warmup: int, iters: int) -> dict:
     # Compute bytes moved (rough: sum of all IO tensor byte sizes). Enables a
     # derived achieved_bw_gbps in the orchestrator.
     io_bytes = sum(e["bytes"] for e in inputs + outputs)
+
+    # Device memory to run this block in isolation: TRT execution scratch plus
+    # the resident IO activation buffers. Deterministic, and non-zero even when
+    # TRT's chosen tactic needs no scratch.
+    peak_mem_mib = (_engine_scratch_bytes(engine) + io_bytes) / (1024 * 1024)
 
     return {
         "latency_ms": {
@@ -110,7 +131,10 @@ if __name__ == "__main__":
     ap.add_argument("--engine", required=True)
     ap.add_argument("--warmup", type=int, default=50)
     ap.add_argument("--iters",  type=int, default=200)
+    ap.add_argument("--min-window-s", type=float, default=0.5,
+                    help="Keep sampling past --iters until the timed window "
+                         "spans this much wall time (0 disables).")
     args = ap.parse_args()
 
-    result = bench(Path(args.engine), args.warmup, args.iters)
+    result = bench(Path(args.engine), args.warmup, args.iters, args.min_window_s)
     sys.stdout.write(json.dumps(result) + "\n")
