@@ -125,21 +125,39 @@ flops)` **without** re-measuring on the Jetson during search.
 
 - **CP 2.2 — LUT composite-cost function**
   - `search/cost.py`: `cost(arch) → {latency_ms, peak_mem_mib, params, flops}`.
-  - Latency = Σ LUT[block].latency_ms.mean.
+  - Latency = Σ LUT[block].latency_ms.mean; `peak_mem_mib` = **max** over blocks
+    (not the sum — schema.md); deployable memory adds resident weights via
+    `search.cost.resident_mem_mib` (weights are precision-scaled).
   - Document the additivity assumption + known error range.
-  - **DoD:** Measured vs. summed latency for 5 random full subnets within
-    15 %. If not, go to CP 2.3.
+  - **DoD (depth-binned, not a single aggregate — peer-review R4.2):** measure
+    full-net latency for ≥5 subnets **spanning the depth range**; report
+    `(summed − measured)/measured` **binned by depth** via
+    `search/validate_additivity.py`, plus the aggregate. **Pass = no depth bin
+    exceeds 15 %.** A single averaged number would mask fusion error that grows
+    with depth, so it is not the gate. If any bin breaches → CP 2.3.
 
 - **CP 2.3 — Additivity correction (conditional)**
-  - Only if CP 2.2 fails: fit a residual GP,
-    `δ = measured − summed` as a function of `(depth, total_flops, n_dw)`.
+  - **Trigger (pre-registered — peer-review R4.2 / P1.8):** CP 2.2's by-depth
+    report breaches the 15 % bar in **any** depth bin, **or** the residual trends
+    upward with depth (the cross-block-fusion signature). Do not wait for the
+    aggregate to miss — by then the deep regime is already mispriced.
+  - Then: fit a residual GP, `δ = measured − summed` as a function of
+    `(depth, total_flops, n_dw)`.
   - **DoD:** Corrected error < 10 % on held-out nets.
 
 - **CP 2.4 — Eval harness (short fine-tune)**
   - `eval/shortft.py`: 5-epoch fine-tune on the target task
     (see open decision D1), fixed seed, fixed LR schedule.
   - Returns top-1 / mIoU / mAP depending on the task.
-  - **DoD:** Running twice on the same arch gives results within 0.5 %.
+  - **DoD — reproducibility:** running twice on the same arch gives results
+    within 0.5 %.
+  - **DoD — proxy-rank fidelity (gates the whole search — peer-review R2.1 /
+    P0.2):** fully train ≈8–12 architectures spanning the space; the 5-epoch
+    proxy ranking must agree with the full-train ranking at **Kendall-τ ≥ 0.7**
+    (also report Spearman). The 0.5 % check is *precision*, not *rank
+    correctness*: if the proxy mis-ranks, BO climbs the wrong surface efficiently.
+    Below threshold, repair the proxy (epochs / LR / resolution) **before**
+    spending search compute. CUDA- and D1-dependent.
 
 ---
 
@@ -147,6 +165,16 @@ flops)` **without** re-measuring on the Jetson during search.
 
 **Goal:** End-to-end search using the **unmodified** OFA supernet. Produces
 a Pareto frontier of `(accuracy, latency_ms)` for the Jetson.
+
+> **Statistical protocol (peer-review R2.2 / P0.3 — lock before spending search
+> compute).** Every method comparison runs **≥5 seeds** for *both* BO and the
+> same-budget random-search control. Report Pareto **hypervolume** (fixed
+> reference point) with across-seed dispersion + an explicit
+> **dominance-across-seeds** statement — never a single-run "the front
+> dominates". Seed the GP with the random-search evaluations; for batch-EI use an
+> explicit diversification (local penalisation / Kriging-believer) so a batch of 4
+> doesn't collapse to near-duplicates (R2.3). The candidate budgets (open decision
+> **D2**) must be justified against this protocol, not assumed.
 
 ### Checkpoints
 
@@ -163,9 +191,10 @@ a Pareto frontier of `(accuracy, latency_ms)` for the Jetson.
 - **CP 3.3 — Bayesian Optimization**
   - `search/bo.py`: GP surrogate with a structured kernel
     (Hamming + Matérn), Expected Improvement acquisition.
-  - **DoD:** Over 60 candidates, BO's best-so-far
-    (`accuracy − λ·latency`) strictly dominates random search at the same
-    budget.
+  - **DoD:** over ≥5 seeds at a fixed budget, BO's Pareto **hypervolume**
+    exceeds the same-budget random-search control's with non-overlapping
+    across-seed dispersion (dominance-across-seeds, per the protocol above) —
+    not a single-run `accuracy − λ·latency` comparison.
 
 - **CP 3.4 — TPE fallback (Optuna)**
   - `search/tpe.py`: Optuna wrapper for conditional parameters.

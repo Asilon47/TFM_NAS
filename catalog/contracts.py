@@ -70,3 +70,38 @@ class LutRow(TypedDict):
 # A LUT-keyed block as emitted by search.arch_to_blocks:
 # (block_name, cfg, input_shape).
 Block = tuple[str, dict, tuple]
+
+
+class CostDict(TypedDict):
+    """Predicted cost of a whole subnet, composed from per-block LUT rows (CP 2.2).
+
+    Aggregation is deliberately *heterogeneous* (see search/cost.py): latency,
+    params and flops are summed (additive across a sequential network);
+    ``peak_mem_mib`` is the **max** over blocks, never the sum — blocks run one
+    at a time and free their scratch, so summing would massively overestimate
+    (lut/docs/schema.md: peak_mem is per-block scratch+IO, not additive).
+
+    ``peak_mem_mib`` here keeps the LutRow meaning: the peak single-block working
+    set, which **excludes resident weights**. The deployable memory figure is
+    ``sum(weights) + max working set``; compose it with
+    ``search.cost.resident_mem_mib(cost, bytes_per_param)``, not from this field
+    alone (which would undercount by the often-dominant weight bytes).
+    """
+    latency_ms: float
+    peak_mem_mib: float
+    params: int
+    flops: int
+
+
+class CostOffset(TypedDict):
+    """A constant cost-shaped delta added to every subnet's composed cost.
+
+    Holds the fixed, non-searchable stem (3->16) + head (final-expand,
+    feature-mix) contribution: identical for every arch in the OFA-MBv3-w1.0
+    space, so it never changes arch *ranking* — only absolute cost. Sourced
+    later (CP 2.2 offset is parameterized, default no-op); see search/cost.py.
+    """
+    latency_ms: float
+    peak_mem_mib: float
+    params: int
+    flops: int

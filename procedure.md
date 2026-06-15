@@ -1056,3 +1056,160 @@ same partial-file assumption as the keydrift test — it resolved emitted keys
 against `data/lut.jsonl`. Retargeted at the catalog key set (`iter_sweep`),
 which is what the dummy artifact materialized anyway; the translation DoD is
 unchanged and `python -m search.arch_to_blocks` prints `DoD PASS` again.
+
+---
+
+## CP 2.2 — LUT composite-cost function (2026-06-13)
+
+`search/cost.py`: `cost(arch_dict, lut) -> {latency_ms, peak_mem_mib, params,
+flops}`. Composes a sampled subnet's predicted cost from the per-block LUT rows
+(`arch_to_blocks` → `row_key` → `lut[key]`), so Phase-3 search can rank
+thousands of candidates without touching the Jetson. Built TDD (tests RED before
+code); `tests/test_cost.py` is the contract.
+
+### Decisions taken (via AskUserQuestion)
+
+- **Stem/head offset → parameterized, default no-op.** `arch_to_blocks` emits
+  only the searchable MBConv backbone; the fixed stem (3→16) + head
+  (final-expand 160→960, feature-mix 960→1280) convs are a constant offset.
+  They are **not** in the catalog grid (conv3x3 starts at in_c=16/res≤112;
+  conv1x1 caps out_c at 320; no linear/GEMM block) and were **deliberately not
+  added** (the rejected option: grid edit + dummy regen + 3 sweep rows). Instead
+  `cost(..., stem_head: CostOffset | None = None)` takes an optional offset,
+  default `ZERO_OFFSET`. Rationale: the offset is identical for every arch in
+  the OFA-MBv3-w1.0 space (last stage always → 160 ch, input fixed at 224), so
+  it **never changes ranking** — only absolute cost, which only the deferred
+  additivity DoD needs. The measured numbers slot in later without touching the
+  interface.
+
+### Whole-net memory model (resolves the CP 2.2+ decision flagged in the
+Measurement audit §5)
+
+Aggregation is **heterogeneous**: `latency_ms` / `params` / `flops` are
+**summed** (sequential runtime, resident weights, total compute are additive);
+`peak_mem_mib` is the **max** over blocks (and over the offset), never the sum.
+The LUT's `peak_mem_mib` is per-block scratch+IO measured in isolation; blocks
+execute one at a time and free that scratch, so the resident working set is the
+largest single block's, not the running total — summing would overestimate
+~20×. The offset folds into the `max` (not added): the stem/head run
+sequentially too, and folding-in also keeps the empty-`rows` case well-defined
+(`max([])` would raise). This is the documented additivity assumption; its error
+bound is the DoD below.
+
+### Files
+
+- `search/cost.py` (new): `cost`, `cost_from_path` (load-then-cost convenience),
+  `_aggregate` (the reduce), `CostError` (loud on a missing key — a partial real
+  LUT legitimately misses keys; silently undercounting would corrupt the search
+  ranking), `ZERO_OFFSET`, and a `__main__` smoke demo.
+- `catalog/contracts.py`: added `CostDict` + `CostOffset` TypedDicts.
+- `tests/test_cost.py` (new, 9 tests): `_aggregate` reduce on inline synthetic
+  rows (sum vs **max**, offset fold-in, empty case), `cost()` missing-key →
+  `CostError`, precision filtering via `cost_from_path`, and an on-disk
+  round-trip that **skips while the real LUT is partial** (like keydrift).
+
+### DoD status
+
+- **Code + unit tests: DONE** — 8 pass, 1 skips (round-trip, gated on a complete
+  LUT). `bash scripts/check.sh` green (ruff + mypy + 122 pytest).
+- **Additivity gate DEFERRED:** "measured vs. summed latency for 5 random full
+  subnets within 15 %" (PROJECT_PLAN.md:130) needs the full real fp32 LUT + a
+  full-subnet Jetson measurement. Run after the sweep; if it fails, CP 2.3
+  (residual-GP correction) opens. `state/plan_state.yaml` keeps `last_completed:
+  2.1` until this passes.
+
+### Contracts kept
+
+`row_key` untouched; golden hashes untouched; no catalog grid change (the dummy
+LUT and all 3 measured rows stay valid). `CostDict`/`CostOffset` are new,
+additive type contracts.
+
+### What's next
+
+Either run the full sweep (completes Phase 0 + unblocks the additivity DoD) or
+proceed to CP 3.1 (search-loop scaffold) consuming `cost()`. The CUDA blocker
+(CP 2.4+ fine-tuning) is unchanged.
+
+---
+
+## Review-response pass — peer-review findings on the done work (2026-06-14)
+
+Not a checkpoint (stays CP 2.2 / `last_completed: 2.1`). `peer_review_simulation.md`
+(a simulated 5-reviewer panel, 2026-06-13) critiques the **thesis**; its LaTeX
+source is **not in this repo** (no `*.tex`/`*.bib` — only code + planning md). So
+this pass actions only the findings that land on **code/design already built here**
+(Phase 0 LUT, CP 2.1, CP 2.2) plus the P0 "close-before-compute" plan gates. The
+thesis-prose findings (soften the 32 ns claim to *timer provenance, not value
+correctness*; §2.8 contribution-delta table; §5.10 limitations; named external
+baselines; MCUNet/HAT) are **out of scope** here — they belong to the writeup tree.
+Scope was confirmed with the user via AskUserQuestion.
+
+### The sharpest finding: cost.py contradicted our own schema (Reviewer 4.4)
+
+`lut/docs/schema.md:53-62` says the whole-net memory estimate is
+`sum(weights) + max_i(scratch_i + io_i)`, "to be decided at cost-model time
+(CP 2.2+)". But CP 2.2's `cost()` shipped `peak_mem_mib = max_i(scratch_i+io_i)` and
+reported `params` *separately* — the **resident weights were never in the memory
+figure** (~10–16 MiB at fp16 for a 5–8 M-param subnet, i.e. comparable to or larger
+than the scratch term). A consumer reading `cost(arch)["peak_mem_mib"]` as "memory
+this net needs" would undercount badly, and Phase-3's `μ·max(0, m−budget)²`
+constraint would be wrong.
+
+Resolution (A1): keep `CostDict.peak_mem_mib` meaning **exactly** the measured
+working set (same as `LutRow.peak_mem_mib`), and add
+`search.cost.resident_mem_mib(cost, bytes_per_param)` =
+`params·bytes/2²⁰ + peak_mem_mib`. `bytes_per_param` is explicit (fp16→2, fp32→4)
+so no precision assumption hides inside the reduce. Documented the exclusion on
+`CostDict.peak_mem_mib`. (Two fields named `peak_mem_mib` meaning different things
+would have been the trap; the weights term lives in a named helper instead.)
+
+### Code/doc fixes (Part A — laptop-only, TDD)
+
+- **A1 — memory model.** `resident_mem_mib` helper (above) + `CostDict` doc.
+  Tests: `test_resident_mem_adds_weights_to_peak_working_set`,
+  `test_resident_mem_scales_with_precision_bytes`. Measured-vs-composed `m`
+  validation stays **deferred** with the latency additivity check (needs Jetson).
+- **A2 — additivity DoD designed to expose fusion, not hide it (R4.2).** New
+  `search/validate_additivity.py`: reports `(summed−measured)/measured` **binned by
+  depth** + aggregate, and flags any bin breaching the bar (the CP 2.3 trigger).
+  TensorRT fuses across block seams isolated rows can't see, so the summed LUT
+  over-predicts and the error grows with depth; a single aggregate would average
+  that away. Tests (synthetic — real inputs need the sweep + on-device runs):
+  `test_depth_growing_residual_trips_bin_but_not_aggregate` is the headline (mean
+  < 15 % yet the deepest bin breaches).
+- **A3 — precision is a validity boundary, not just a filter (R4.3).** `cost.py`
+  docstring limitation: block latency *rankings* are not precision-invariant, so a
+  result searched on the fp32/TF32 LUT is faithful **at the searched precision**
+  only — re-targeting FP16/INT8 is a re-sweep *and* a re-search.
+
+### Plan gates (Part B — PROJECT_PLAN.md, pre-compute P0)
+
+- **B1 — proxy-rank-fidelity DoD beside CP 2.4 (R2.1 / P0.2, the panel's #1
+  consensus gap).** CP 2.4's "twice within 0.5 %" is *reproducibility*, not *rank
+  correctness*. Added a DoD: fully train ≈8–12 archs, require **Kendall-τ ≥ 0.7**
+  of the 5-epoch proxy vs full-train ranking, gate the search on it. CUDA/D1-dep.
+- **B2 — statistical protocol for Phase 3 (R2.2 / P0.3).** ≥5 seeds for **both** BO
+  and the random-search control; Pareto **hypervolume** + across-seed dispersion +
+  dominance-across-seeds (replaces the single-run anecdote). GP seeded with the
+  random evals; batch-EI needs explicit diversification; D2 budget justified, not
+  assumed. CP 3.3 DoD rewritten accordingly.
+- **B3 — CP 2.2 DoD is now depth-binned; CP 2.3 trigger pre-registered.** Pass =
+  *no depth bin* exceeds 15 %; CP 2.3 fires on any bin breach **or** an
+  upward-with-depth residual — not on an aggregate miss.
+
+### Deferred / out of scope / needs the user
+
+- **Deferred (needs Jetson):** measured-vs-summed additivity run (now via
+  `validate_additivity`), measured-vs-composed peak-memory validation, FP16
+  additivity spot-check.
+- **Needs a user conversation:** **D1** (dataset/task/teacher/latency-budget/metric)
+  — gates B1/B2 and CP 2.4+; only flagged, not resolved.
+- **Out of scope (no LaTeX here):** all thesis-prose softening/table/limitations.
+
+### Contracts kept & verification
+
+`row_key` and golden hashes untouched; no catalog grid change; dummy LUT and all 3
+measured rows stay valid. `resident_mem_mib`/`validate_additivity` are additive.
+`bash scripts/check.sh -m "not slow"` green: ruff + mypy clean, **128 passed /
+3 skipped** (+6 vs CP 2.2: 2 memory, 4 additivity). `python -m search.cost` smoke
+unchanged (loud `CostError`s on the partial real LUT).

@@ -1,7 +1,7 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "2.1"
-last_completed: "2.1"
+current_checkpoint: "2.2"   # code + unit tests done; additivity DoD gated on the full sweep
+last_completed: "2.1"       # CP 2.2 stays open until its measured-vs-summed DoD passes
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
@@ -108,3 +108,27 @@ notes: |
   peak_mem_mib = TRT scratch + IO (non-additive across blocks). The full
   sweep (~2710 rows) is the next Phase-0 action; run it before the CP 2.2
   additivity validation.
+
+  **CP 2.2 code complete 2026-06-13:** `search/cost.py` composes a subnet's
+  predicted cost from per-block LUT rows — SUM latency/params/flops, MAX
+  peak_mem_mib (blocks run sequentially and free scratch; resolves the whole-net
+  memory-model decision the Measurement audit deferred). Stem/head offset is
+  parameterized, default no-op — it's constant across all archs (last stage
+  always → 160 ch), so it's ranking-neutral; absolute value plugs in
+  post-sweep. Added `CostDict`/`CostOffset` contracts + `tests/test_cost.py`
+  (8 pass, 1 skips on the partial LUT). Built TDD; `check.sh` green (122 pytest).
+  `current_checkpoint` is 2.2 but `last_completed` stays 2.1: the DoD
+  (measured-vs-summed within 15 %) needs the full real fp32 LUT + a full-subnet
+  Jetson measurement — deferred to post-sweep. See procedure.md "CP 2.2".
+
+  **Review-response pass 2026-06-14:** no checkpoint advance (still CP 2.2 /
+  last_completed 2.1) — design hardening from peer_review_simulation.md, scoped to
+  findings on done code (the thesis LaTeX is not in this repo). Fixed a real gap:
+  CP 2.2's `cost()` omitted resident weights from memory (contradicted
+  schema.md:53-62) — added `search.cost.resident_mem_mib`. Added
+  `search/validate_additivity.py` (additivity error binned by depth — the CP 2.3
+  trigger; exposes the cross-block-fusion threat instead of averaging it). Plan
+  gates added (PROJECT_PLAN.md): proxy-rank Kendall-τ≥0.7 DoD beside CP 2.4,
+  ≥5-seed hypervolume protocol for Phase 3, depth-binned CP 2.2 DoD + pre-registered
+  CP 2.3 trigger. D1 still open (gates the new CP 2.4 DoD). check.sh green (128
+  passed). See procedure.md "Review-response pass".
