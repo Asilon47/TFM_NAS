@@ -59,9 +59,7 @@ if [ "$LOCK_CLOCKS" = "true" ]; then
     ssh -t -p "$PORT" "$TARGET" "sudo bash -c 'if [ ! -f /root/.jetsonclocks_conf.txt ]; then jetson_clocks --store; fi; jetson_clocks'"
 fi
 
-echo "[setup_jetson] Syncing Jetson clock to laptop time to fix TLS certificates..."
-# Both sides in UTC: sending laptop-local time to `date -s` would let a
-# timezone mismatch between the two machines skew the Jetson's clock.
+echo "[setup_jetson] Syncing Jetson clock to laptop time..."
 CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S")
 ssh -t -p "$PORT" "$TARGET" "sudo date -u -s '$CURRENT_TIME'"
 

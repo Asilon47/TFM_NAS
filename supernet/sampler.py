@@ -3,13 +3,13 @@
 Implements PROJECT_PLAN.md CP 1.3: turn a canonical OFA arch dict
 (``{"ks": [...], "e": [...], "d": [...]}``) into a runnable PyTorch
 ``nn.Module`` whose weights come from CP 1.2's cached pretrained
-checkpoint at ``~/.cache/ofa/ofa_mbv3_d234_e346_k357_w1.0``.
+checkpoint at ``<project_root>/.cache/ofa/ofa_mbv3_d234_e346_k357_w1.0``.
 
 We bypass ``ofa.model_zoo`` and instantiate ``OFAMobileNetV3`` directly:
 
 - ``ofa.model_zoo.ofa_net(pretrained=True)`` redownloads into
   ``.torch/ofa_nets/`` *relative to CWD*, which defeats CP 1.2's
-  ``~/.cache/ofa/`` + SHA-pin contract.
+  project-cache + SHA-pin contract.
 - ``ofa/model_zoo.py:3`` top-imports ``gdown``; we don't otherwise need it.
 
 Run as a script for the CP 1.3 DoD smoke test::

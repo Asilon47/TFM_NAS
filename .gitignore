@@ -22,6 +22,11 @@ build/
 # Data — device-specific measurements, large, regeneratable
 data/
 
+# Downloaded pretrained checkpoints (e.g. OFA supernet, 31 MB) — see
+# supernet/download_ofa.py. Re-fetched + SHA-verified on demand, never
+# tracked in git.
+.cache/
+
 # PyTorch checkpoints saved locally (e.g. state/winner_v1/*.pt)
 *.pt
 *.pth

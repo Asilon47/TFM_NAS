@@ -1213,3 +1213,70 @@ measured rows stay valid. `resident_mem_mib`/`validate_additivity` are additive.
 `bash scripts/check.sh -m "not slow"` green: ruff + mypy clean, **128 passed /
 3 skipped** (+6 vs CP 2.2: 2 memory, 4 additivity). `python -m search.cost` smoke
 unchanged (loud `CostError`s on the partial real LUT).
+
+## Cache relocation — OFA checkpoint moved into the repo (2026-06-16)
+
+Not a checkpoint — infra-only. CP 1.2's `~/.cache/ofa/` (a stable per-user
+location outside the repo) is replaced with `<project_root>/.cache/ofa/`, at
+the user's request.
+
+### Why this is safe
+
+`~/.cache/ofa/` was chosen back at CP 1.2 specifically to survive `cd` and to
+avoid colliding with `ofa.model_zoo`'s own CWD-relative `.torch/ofa_nets/`
+(see procedure.md CP 1.2, "Cache location" row). Moving the cache *into* the
+repo reintroduces a CWD-adjacent path, but not the CWD-relative failure mode
+that motivated avoiding it: `CACHE_DIR` is now derived from
+`Path(__file__).resolve().parent.parent` in `supernet/download_ofa.py`, not
+from `Path.cwd()`, so the contract holds regardless of where the script is
+invoked from — only *which checkout* you're in matters, which is the
+intended, correct sensitivity for a per-project cache.
+
+### Changes
+
+- `supernet/download_ofa.py`: `CACHE_DIR = PROJECT_ROOT / ".cache" / "ofa"`
+  where `PROJECT_ROOT = Path(__file__).resolve().parent.parent`.
+- `.gitignore`: added `.cache/` — the 31 MB checkpoint must never be
+  tracked (mirrors the existing `data/` rule).
+- Docs updated to say `<project_root>/.cache/ofa/` instead of
+  `~/.cache/ofa/`: `supernet/sampler.py` docstring, `supernet/README.md`,
+  `PROJECT_PLAN.md` CP 1.2, `state/plan_state.yaml::cached_artifacts`.
+- Migrated the already-downloaded checkpoint from `~/.cache/ofa/` to
+  `<project_root>/.cache/ofa/` (`mv`, hash re-verified post-move) instead of
+  letting `download_ofa.py` re-fetch 31 MB on the next run. The stale
+  `~/.cache/ofa/` copy was left in place rather than deleted — it's outside
+  the repo and harmless to leave; nothing reads it anymore.
+
+### Contracts kept
+
+`PINNED_SHA256` unchanged. `tests/test_sampler.py` keys off
+`CHECKPOINT_PATH` (re-exported, not hardcoded), so it needed no change —
+confirmed by re-running `bash scripts/check.sh -m "not slow"` (green) and,
+in `.venv-nas`, `python -m supernet.download_ofa` (no-op, hash matches) +
+`python -m supernet.sampler` (CP 1.3 smoke still forwards a sampled subnet).
+
+## `.venv` drift repair — onnxscript export crash (2026-06-16)
+
+Not a checkpoint; an environment-integrity fix. Resuming the Phase-0 sweep
+(`python -m lut.orchestrate.run_sweep`) crashed every one of the 1610 unmeasured
+rows at the ONNX export step with `ModuleNotFoundError: No module named
+'onnxscript'` (0 added). Root cause was **`.venv` drift, not a missing package**:
+`.venv` is pinned to `torch==2.3.1+cpu` (`requirements.txt`) but had drifted to
+`torch==2.11.0+cu128` + `torchvision==0.26.0+cu128` — the NAS GPU stack, inside the
+LUT venv. torch 2.11's `torch.onnx.export` defaults to `dynamo=True`, which
+hard-requires `onnxscript`; torch 2.3.1's default is the legacy TorchScript
+exporter, which does not. `lut/export/to_onnx.py` was correct for 2.3.1 — code
+untouched.
+
+**Decision: restore the pin, do NOT `pip install onnxscript`.** The 1100 rows
+already in `data/lut.jsonl` were exported by the 2.3.1 legacy exporter (they
+predate the drift). Installing onnxscript would have finished the remaining 1610
+rows via the *dynamo* exporter on torch 2.11 → structurally different ONNX →
+different TRT engines → latencies not comparable *within the same LUT*. Keeping one
+export→TRT path across all rows is load-bearing for LUT validity, so the fix was
+`rm -rf .venv && bash scripts/setup_laptop.sh` (clean rebuild to 2.3.1+cpu; the
+`rm -rf` clears the +cu128 cruft a plain reinstall leaves). Verified: torch
+2.3.1+cpu, `export` has no `dynamo` kwarg, first catalog block (`conv3x3`) exports
+to valid ONNX with `onnxscript` never imported. The sweep then resumes idempotently
+(fills only the 1610 missing rows; the 1100 are untouched). Why the venv drifted
+(a stray install / wrong setup script) was not diagnosed. No checkpoint advance.

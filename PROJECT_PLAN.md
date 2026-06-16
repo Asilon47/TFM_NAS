@@ -82,7 +82,9 @@ with weights inherited from the published pretrained checkpoint.
 
 - **CP 1.2 — OFA checkpoint download + cache** ✅
   - `supernet/download_ofa.py`: pulls
-    `ofa_mbv3_d234_e346_k357_w1.0` (or `w1.2`) into `~/.cache/ofa/`.
+    `ofa_mbv3_d234_e346_k357_w1.0` (or `w1.2`) into
+    `<project_root>/.cache/ofa/` (relocated 2026-06-16 from
+    `~/.cache/ofa/` — see procedure.md "Cache relocation").
   - `supernet/README.md` documents which checkpoint is pinned
     (URL + SHA256). Future-you will thank present-you.
   - **DoD:** Checkpoint file exists on disk, hash matches the pin.

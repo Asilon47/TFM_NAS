@@ -2,7 +2,8 @@
 
 Implements PROJECT_PLAN.md CP 1.2: pulls
 ``ofa_mbv3_d234_e346_k357_w1.0`` from MIT-HAN-Lab's mirror into
-``~/.cache/ofa/`` and verifies SHA256 against the pin recorded below.
+``<project_root>/.cache/ofa/`` and verifies SHA256 against the pin
+recorded below.
 
 Idempotent: re-running with the file already present and the hash
 matching is a no-op (exit 0). A mismatch fails loudly so an upstream
@@ -28,7 +29,12 @@ CHECKPOINT_URL = (
 )
 PINNED_SHA256 = "a7def36bb4e4c688c16d37eb60d5d34b2e6dcf6438c05bc86dea918fda04c6c7"
 
-CACHE_DIR = Path("~/.cache/ofa").expanduser()
+# Project-relative cache (was ~/.cache/ofa/ — see procedure.md "Cache
+# relocation"). Derived from this file's location, not CWD, so the
+# contract holds whether the script is run as `python -m supernet.download_ofa`
+# from the repo root or `python supernet/download_ofa.py` from anywhere else.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CACHE_DIR = PROJECT_ROOT / ".cache" / "ofa"
 CHECKPOINT_PATH = CACHE_DIR / CHECKPOINT_NAME
 
 

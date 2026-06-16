@@ -9,7 +9,7 @@ can sample subnets without depending on OFA's repo layout directly.
 ## Status (CP 1.3)
 
 The OFA dependency is pinned (CP 1.1), the pretrained MBv3 supernet
-checkpoint is downloaded + hash-verified into `~/.cache/ofa/`
+checkpoint is downloaded + hash-verified into `<project_root>/.cache/ofa/`
 (CP 1.2), and `sampler.py` materialises subnets from canonical OFA
 arch dicts with weights inherited from the cached checkpoint
 (CP 1.3).
@@ -35,7 +35,7 @@ below), so the dep is unnecessary.
 
 | File | Checkpoint | Purpose |
 |---|---|---|
-| `download_ofa.py` | CP 1.2 ✅ | Pulls a pretrained OFA-MBv3 checkpoint into `~/.cache/ofa/` and verifies SHA256. |
+| `download_ofa.py` | CP 1.2 ✅ | Pulls a pretrained OFA-MBv3 checkpoint into `<project_root>/.cache/ofa/` and verifies SHA256. |
 | `sampler.py` | CP 1.3 ✅ | `sample(arch_dict) -> nn.Module` — turns an OFA arch spec into a runnable subnet with inherited weights. |
 
 ### Sampler usage
@@ -62,7 +62,7 @@ cached `state_dict`, rather than calling
 
 1. **Cache contract.** `model_zoo.ofa_net` redownloads to
    `.torch/ofa_nets/` *relative to CWD*, defeating CP 1.2's
-   `~/.cache/ofa/` + SHA-pin invariant.
+   project-cache + SHA-pin invariant.
 2. **One fewer dep.** `ofa/model_zoo.py:3` top-imports `gdown` for
    its Google Drive code paths; we don't otherwise need that package.
 
@@ -76,7 +76,7 @@ our cache contract from upstream's behaviour is a long-term win.
 |---|---|
 | Net ID | `ofa_mbv3_d234_e346_k357_w1.0` |
 | URL | `https://raw.githubusercontent.com/han-cai/files/master/ofa/ofa_nets/ofa_mbv3_d234_e346_k357_w1.0` |
-| Cache path | `~/.cache/ofa/ofa_mbv3_d234_e346_k357_w1.0` |
+| Cache path | `<project_root>/.cache/ofa/ofa_mbv3_d234_e346_k357_w1.0` |
 | Size | 31.0 MB (31,011,816 bytes) |
 | SHA256 | `a7def36bb4e4c688c16d37eb60d5d34b2e6dcf6438c05bc86dea918fda04c6c7` |
 | File format | `torch.save` dict, top-level key `state_dict` (475 tensors) |
