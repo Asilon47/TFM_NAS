@@ -22,3 +22,7 @@ ofa==0.1.0.post202307202001
 # disturbing the +cu128 torch/torchvision pins.
 tqdm>=4.66
 gdown>=5.0
+# CP 1.4's rank-fidelity gate reuses search.predictor_stats (Spearman/Kendall + the affine
+# fit), which needs scipy.stats. The import is lazy (inside rank_summary), so the pure layer
+# and `import eval.imagenet_sanity` stay scipy-free. Matches the LUT venv's scipy>=1.15.
+scipy>=1.15

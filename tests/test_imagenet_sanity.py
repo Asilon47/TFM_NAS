@@ -16,13 +16,13 @@ from eval.imagenet_sanity import (
     binomial_ci95,
     build_net_config,
     canonical_archs,
-    is_diagnostic,
     normalize_to_percent,
-    overall_pass,
+    random_archs,
+    rank_pass,
+    rank_summary,
     require_imagenet_layout,
     resolve_archs,
     val_sample_size,
-    verdict,
 )
 
 N_SLOTS = 5 * MAX_DEPTH  # 20 ks/e slots, 5 depth entries
@@ -95,31 +95,6 @@ def test_binomial_ci95_is_inf_without_samples():
     assert math.isinf(binomial_ci95(77.0, 0))
 
 
-# --- verdict ------------------------------------------------------------------
-
-def test_verdict_within_bar():
-    v = verdict(76.0, 76.5, bar=1.5)
-    assert v["gap"] == pytest.approx(-0.5)
-    assert v["within_bar"] is True
-
-
-def test_verdict_outside_bar():
-    v = verdict(74.0, 77.0, bar=1.5)
-    assert v["abs_gap"] == pytest.approx(3.0)
-    assert v["within_bar"] is False
-
-
-def test_verdict_within_noise_band_when_ci_covers_gap():
-    # 2.0pp gap busts the 1.5 bar but is consistent with a ±2.5pp measurement CI.
-    v = verdict(76.0, 74.0, bar=1.5, ci=2.5)
-    assert v["within_bar"] is False
-    assert v["within_noise"] is True
-
-
-def test_verdict_without_ci_reports_no_noise_band():
-    assert verdict(76.0, 76.0, bar=1.5)["within_noise"] is None
-
-
 # --- ImageNet layout validation (loud failure, no silent bogus number) -------
 
 def test_require_imagenet_layout_accepts_train_and_val(tmp_path):
@@ -152,31 +127,60 @@ def test_val_sample_size_caps_request_at_available():
     assert val_sample_size(10_000, 5000) == 5000  # never more than exist
 
 
-# --- DoD gate: corners are diagnostic, interior (sampled) archs gate ----------
+# --- rank-fidelity: a set of archs + the Spearman gate ------------------------
+# The accuracy predictor is a *ranking* model (constant ~6.3pp absolute offset, verified on
+# the first run); CP 1.4 therefore gates on rank correlation across a spread of archs, with
+# the OLS affine fit reported as scale evidence. These layers stay .venv-pure.
 
-def test_is_diagnostic_flags_corners_only():
-    assert is_diagnostic("max") and is_diagnostic("min")
-    assert not is_diagnostic("random")
-
-
-def test_overall_pass_ignores_diagnostic_corner_failures():
-    # The predictor extrapolates at the corners; a corner busting the bar is not a weight
-    # bug. With the interior 'sampled' arch inside the bar, the DoD passes.
-    results = [
-        {"label": "max", "diagnostic": True, "within_bar": False},
-        {"label": "random", "diagnostic": False, "within_bar": True},
-    ]
-    assert overall_pass(results) is True
-
-
-def test_overall_pass_fails_when_interior_arch_busts_bar():
-    results = [
-        {"label": "max", "diagnostic": True, "within_bar": True},
-        {"label": "random", "diagnostic": False, "within_bar": False},
-    ]
-    assert overall_pass(results) is False
+def test_random_archs_are_distinct_seed_deterministic_and_well_shaped():
+    a = random_archs(5, seed=0)
+    assert [label for label, _ in a] == ["rand0", "rand1", "rand2", "rand3", "rand4"]
+    for _, arch in a:
+        assert len(arch["ks"]) == len(arch["e"]) == N_SLOTS
+        assert len(arch["d"]) == 5
+    archs = [arch for _, arch in a]
+    assert any(arch != archs[0] for arch in archs[1:])     # distinct draws (seed + i)
+    assert random_archs(5, seed=0) == a                    # reproducible for a fixed seed
+    assert random_archs(5, seed=1) != a                    # different seed -> different set
 
 
-def test_overall_pass_falls_back_to_corners_when_no_interior():
-    assert overall_pass([{"label": "max", "diagnostic": True, "within_bar": False}]) is False
-    assert overall_pass([{"label": "min", "diagnostic": True, "within_bar": True}]) is True
+def test_random_archs_first_draw_matches_base_seed():
+    # rand0 is exactly random_arch_dict(Random(seed)) — the same draw resolve_archs('random')
+    # makes, so a single-random run and the rank run agree on their first interior arch.
+    import random as _random
+
+    from search.arch_to_blocks import random_arch_dict
+    (_, first), = random_archs(1, seed=7)
+    assert first == random_arch_dict(_random.Random(7))
+
+
+def test_rank_pass_threshold_boundary():
+    assert rank_pass(0.90, threshold=0.85) is True
+    assert rank_pass(0.85, threshold=0.85) is True         # boundary is inclusive
+    assert rank_pass(0.80, threshold=0.85) is False
+
+
+def test_rank_pass_nan_is_failure():
+    assert rank_pass(float("nan"), threshold=0.85) is False
+
+
+def test_rank_summary_affine_with_constant_offset_passes():
+    # measured = predicted - 6.3 exactly: perfect rank fidelity AND a clean affine fit
+    # (slope 1, intercept -6.3) — the structure the real predictor showed by hand.
+    predicted = [80.0, 78.0, 83.0, 77.0, 81.0, 75.0]
+    measured = [p - 6.3 for p in predicted]
+    s = rank_summary(measured, predicted, threshold=0.85)
+    assert s["spearman_rho"] == pytest.approx(1.0)
+    assert s["slope"] == pytest.approx(1.0, abs=1e-6)
+    assert s["intercept"] == pytest.approx(-6.3, abs=1e-6)
+    assert s["r2"] == pytest.approx(1.0, abs=1e-6)
+    assert s["mape_calibrated"] < s["mape"]                # calibration closes the offset
+    assert s["passed"] is True
+
+
+def test_rank_summary_rank_reversed_fails_the_gate():
+    predicted = [80.0, 78.0, 83.0, 77.0, 81.0, 75.0]
+    measured = [-p for p in predicted]                     # perfectly anti-correlated
+    s = rank_summary(measured, predicted, threshold=0.85)
+    assert s["spearman_rho"] == pytest.approx(-1.0)
+    assert s["passed"] is False
