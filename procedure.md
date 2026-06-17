@@ -1280,3 +1280,131 @@ export→TRT path across all rows is load-bearing for LUT validity, so the fix w
 to valid ONNX with `onnxscript` never imported. The sweep then resumes idempotently
 (fills only the 1610 missing rows; the 1100 are untouched). Why the venv drifted
 (a stray install / wrong setup script) was not diagnosed. No checkpoint advance.
+
+## CP 2.2 offline cost preview + additivity wiring (2026-06-16)
+
+Not a checkpoint advance — the offline groundwork the now-complete real sweep
+unblocks. **Phase 0 is DONE**: `data/lut.jsonl` holds all 2710 rows, every one
+`source=jetson_trt`, `precision=fp32`, `clocks_locked=true` (the `.venv`-drift
+repair above cleared the last blocker; the idempotent sweep then filled the
+remainder). With a complete per-block LUT, the whole search space's *cost* side is
+computable on the laptop — no Jetson, no CUDA, no dataset decision (D1).
+
+The user chose to extract that value now and pre-wire CP 2.2's deferred DoD rather
+than re-run the Jetson immediately. Two new offline tools (both `.venv`, CPU,
+numpy+pandas only):
+
+- **`search/cost_preview.py`** — samples N archs, composes each cost from the LUT
+  (`search.cost.cost`), and reports the cost geometry. Headline: the rank agreement
+  between a *free* FLOPs/params proxy and *measured* latency. On 2000 archs:
+  FLOPs~latency Spearman 0.95 / Kendall-τ 0.81; params~latency 0.54 / 0.37; and at
+  near-equal FLOPs, measured latency still spans up to 1.45×. Reading: FLOPs is a
+  decent-but-imperfect proxy, params a poor one, and the LUT captures intra-FLOPs
+  ordering a proxy is blind to — it earns its keep near the frontier where BO
+  discriminates. Per-arch cost ranges (latency 2.1–4.8 ms sampled; resident mem
+  ≤24 MiB fp32, far under the 8 GB budget — so D4's μ-penalty won't bind for these
+  subnets) dump to `data/cost_preview.csv`. Promoted
+  `arch_to_blocks._random_arch_dict` → public `random_arch_dict` (kept the underscore
+  alias) since the preview reuses it.
+
+- **`search/additivity_preview.py`** — wires CP 2.2's deferred DoD across the
+  laptop/Jetson boundary. `manifest` picks one subnet per depth spanning 11→21 LUT
+  blocks, computes each `summed_ms` from the LUT now, and writes
+  `data/additivity_subnets.json` with `measured_ms: null` placeholders (pinning
+  *which* whole subnets the Jetson must benchmark, so summed and measured refer to
+  the same archs). `report` ingests the filled manifest and prints the depth-binned
+  `AdditivityReport` (PASS / BREACH→CP 2.3). The binning is load-bearing (peer-review
+  R4.2): a demo where fusion error ramps 0→+20% with depth yields a +10% *aggregate*
+  that a single-number DoD would PASS while depths 19–21 correctly breach. The pure
+  error-binning logic stays in `search/validate_additivity.py`; this adds only the
+  LUT-driven selection + manifest I/O.
+
+Tests: `tests/test_cost_preview.py` (16, all `.venv`/CI-safe — rank & skyline
+helpers on hand-built arrays, LUT paths on a synthetic unit LUT, one on-disk smoke
+that skips while partial). `pandas.*` added to the mypy `ignore_missing_imports`
+override (no stubs ship; numpy ships its own). `check.sh` green (146 passed,
+1 skipped).
+
+**State unchanged: `current_checkpoint` stays 2.2, `last_completed` stays 2.1.**
+This does NOT close the DoD — that still needs whole-subnet Jetson measurements (the
+`measured_ms` side). It makes everything *around* the gate ready: once those numbers
+exist, `report` closes (or escalates to CP 2.3) in one command. The on-device half
+reuses the generic `run_sweep.run_remote_bench` path; only a "export a sampled
+subnet (not a single block) to ONNX" helper is still missing for it.
+
+## CP 2.2 closed — additivity DoD PASS + predictor calibration (2026-06-17)
+
+The deferred half landed: whole subnets were benchmarked on the Jetson and the
+measured-vs-summed DoD **PASSES**, so CP 2.2 is complete (`current_checkpoint`
+2.2→2.4, `last_completed` 2.1→2.2, `completed += "2.2"`). The pre-registered CP 2.3
+(residual correction) is **not** triggered — it was conditional on a depth-bin breach,
+and none occurred.
+
+**What was measured.** `lut/orchestrate/measure_additivity.py` drove 33 whole subnets
+(3 per depth, spanning 11→21 LUT blocks; `data/additivity_subnets.json`) as single
+TensorRT engines, reusing `run_sweep.run_remote_bench` verbatim under the same preflight
+(locked clocks, power mode 0, fp32). The methodological crux: each subnet is assembled
+(`search/export_subnet.py`) from the **same `catalog` block implementations the per-block
+LUT timed**, chained in an `nn.Sequential` (verified channel/resolution continuity:
+FIRST_BLOCK 16ch@112 → stages → 160ch@7) — *not* the real OFA modules — so
+`measured − summed` isolates only cross-seam TensorRT fusion (peer-review R4.2) and not
+implementation drift. The fixed stem (3→16) and head (final-expand/feature-mix/
+classifier) were measured too (`--with-stem-head` → `data/stem_head_offset.json`:
+stem+head = 0.388 ms, 2.67 M params, peak 2.1 MiB). Whole-net latencies never enter
+`data/lut.jsonl` (no valid per-block `row_key`); they live only in the manifest + offset
+JSON (both gitignored).
+
+**DoD result — PASS, and the fusion signature is mild + flat.** Depth-binned mean signed
+error `(summed − measured)/measured` (`search/validate_additivity.py`):
+
+| depth | err | depth | err | depth | err |
+|---|---|---|---|---|---|
+| 11 | +6.8% | 15 | +7.1% | 19 | +7.8% |
+| 12 | +7.4% | 16 | +8.5% | 20 | +7.5% |
+| 13 | +8.2% | 17 | +9.2% | 21 | +8.0% |
+| 14 | +8.1% | 18 | +7.8% | **agg** | **+7.9%** |
+
+Every bin is positive (the summed LUT over-predicts — fusion shaves real latency) and
+no bin nears the 15% bar; worst single arch ≈ +12%. Critically the bias is **flat in
+depth**, so fusion behaves like a near-constant multiplicative discount, not the
+depth-exploding error R4.2 warned could hide behind an aggregate.
+
+**Predictor fidelity + calibration (new this session).** The user asked to go beyond
+pass/fail and quantify/calibrate the predictor. `search/predictor_stats.py` (scipy-
+backed) computes, over the 33 (summed, measured) pairs:
+
+- **Ranking** (what search relies on): Spearman ρ = **0.991**, Kendall τ-b = 0.943,
+  Pearson r = 0.998 (all p ≤ 1e-25). The summed-LUT predictor orders archs essentially
+  exactly as the device does → BO search is faithful with the raw sum, no calibration
+  needed for *ranking*.
+- **Calibration** (absolute latency): OLS `measured ≈ 0.9343·summed − 0.0225 ms`
+  (R² = 0.996; slope stderr ±0.011); through-origin "fusion discount" factor 0.928
+  (device runs ~7.2% faster than the per-block sum). A single affine fit cuts MAPE from
+  **7.85% → 1.04%** (RMSE 0.249 → 0.039 ms).
+
+Reading: a high ρ with a *removable* (coherent multiplicative) bias is the best possible
+outcome — ranking already faithful, absolute error fixed by two parameters.
+
+**Wiring.** The fit is opt-in in `search.cost.cost(arch, lut, calibration=…)` /
+`cost_from_path` (new `LatencyCalibration` contract; default `IDENTITY_CALIBRATION` is
+ranking-neutral). It is applied to the **backbone sum only**, before the stem/head offset
+(`latency = slope·Σblocks + intercept + offset`), matching how the fit was derived
+(both manifest sides are backbone-only). A slope>0 affine map is monotonic → search
+ranking is untouched whether or not calibration is on; it matters only for absolute
+latency (the Phase-3 objective's `λ·latency` term + the latency budget). Persisted to
+`data/latency_calibration.json` (fit + provenance; `load_latency_calibration` reads back
+`slope`/`intercept`); per-subnet pairs to `data/additivity_pairs.csv` for thesis plots.
+Surfaced in `additivity_preview report` (now prints the stats block; `--write-calibration`
+/ `--csv` persist the artifacts).
+
+**Dependency.** `scipy>=1.15` added to `requirements.txt` (runtime dep of
+`predictor_stats`) and to the `pyproject.toml` mypy `ignore_missing_imports` override.
+Installed into `.venv` (scipy 1.17.1) **without** moving the `torch==2.3.1+cpu` /
+numpy 2.4.6 pin — scipy's only runtime dep is numpy, already satisfied. (User explicitly
+authorized adding scipy, relaxing the earlier numpy-only stance.)
+
+**Tests / state.** +14 tests (`tests/test_predictor_stats.py` 10; calibration in
+`test_cost.py` +4; report/calibration in `test_cost_preview.py` +3; built TDD,
+RED→GREEN). `check.sh` green (177 passed, 1 skipped). The offline calibration path needs
+no Jetson — the measurements already exist in the manifest. CP 2.4 (eval/fine-tune) is
+next but remains **blocked on CUDA + dataset decision D1**.

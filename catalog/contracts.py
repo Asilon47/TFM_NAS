@@ -105,3 +105,16 @@ class CostOffset(TypedDict):
     peak_mem_mib: float
     params: int
     flops: int
+
+
+class LatencyCalibration(TypedDict):
+    """Affine map from summed-LUT backbone latency to measured device latency.
+
+    ``measured ~= slope*summed + intercept``, fitted on the additivity subnets
+    (search/predictor_stats.py) to remove the ~8% over-prediction TensorRT fusion
+    causes. Applied to the **backbone sum only** (before the stem/head offset).
+    A slope>0 affine map is monotonic, so it shifts *absolute* cost without ever
+    changing arch *ranking*; the default (slope 1, intercept 0) is a no-op.
+    """
+    slope: float
+    intercept: float

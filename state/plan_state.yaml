@@ -1,13 +1,14 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "2.2"   # code + unit tests done; additivity DoD gated on the full sweep
-last_completed: "2.1"       # CP 2.2 stays open until its measured-vs-summed DoD passes
+current_checkpoint: "2.4"   # CP 2.2 DoD PASSED (additivity, 2026-06-17) + predictor calibrated; CP 2.3 conditional → skipped. CP 2.4 blocked on CUDA + D1
+last_completed: "2.2"       # measured-vs-summed additivity DoD passed on-device; latency predictor calibrated
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
   - "1.2"    # OFA checkpoint download + cache
   - "1.3"    # Subnet sampler (arch_dict -> nn.Module)
   - "2.1"    # Arch -> block list translator (search/arch_to_blocks.py)
+  - "2.2"    # LUT composite-cost + depth-binned additivity DoD (PASS) + latency calibration
 # NOTE: CP 1.4 (ImageNet sanity) intentionally deferred — gated on an
 # ImageNet-val subset download + dataset decision D1. CP 2.1 was taken
 # first because it needs nothing external. CP 1.4 remains open.
@@ -132,3 +133,41 @@ notes: |
   ≥5-seed hypervolume protocol for Phase 3, depth-binned CP 2.2 DoD + pre-registered
   CP 2.3 trigger. D1 still open (gates the new CP 2.4 DoD). check.sh green (128
   passed). See procedure.md "Review-response pass".
+
+  **Phase 0 LUT COMPLETE + offline cost preview 2026-06-16:** the real Jetson
+  sweep finished — data/lut.jsonl is all 2710 rows (source=jetson_trt, fp32,
+  clocks_locked). No checkpoint change (current_checkpoint stays 2.2,
+  last_completed stays 2.1). Added two offline tools (.venv, CPU):
+  search/cost_preview.py — costs N sampled archs from the LUT and reports proxy-vs-
+  measured rank agreement (FLOPs~latency Kendall-tau 0.81, params~latency 0.37, up
+  to 1.45x latency spread at near-equal FLOPs => the measured LUT beats a proxy near
+  the frontier); writes data/cost_preview.csv. search/additivity_preview.py —
+  `manifest` writes data/additivity_subnets.json (one subnet per depth 11..21 with
+  summed_ms computed + measured_ms:null), `report` runs the depth-binned DoD from a
+  filled manifest. CP 2.2's DoD is STILL OPEN: its measured-vs-summed gate needs
+  whole-subnet Jetson runs (the measured_ms side; reuses run_sweep.run_remote_bench,
+  only a subnet->ONNX export helper is missing). +16 tests
+  (tests/test_cost_preview.py); pandas added to mypy ignore_missing_imports;
+  check.sh green (146 passed). See procedure.md "CP 2.2 offline cost preview +
+  additivity wiring".
+
+  **CP 2.2 CLOSED 2026-06-17 — additivity DoD PASS + predictor calibrated.**
+  current_checkpoint 2.2→2.4, last_completed 2.1→2.2, completed += "2.2". Measured
+  side collected on-device: 33 whole subnets (3/depth, 11..21 blocks), each built from
+  the SAME catalog blocks the per-block LUT timed (search/export_subnet.py) so
+  measured−summed isolates only cross-seam TRT fusion. Depth-binned DoD PASSES — every
+  bin +6.8%..+9.2% (aggregate +7.9%), well under the 15% bar, bias positive & flat in
+  depth (fusion = near-constant discount, not depth-exploding) → pre-registered CP 2.3
+  (residual correction) NOT triggered, skipped. Predictor fidelity
+  (search/predictor_stats.py, scipy): Spearman rho 0.991, Kendall tau-b 0.943, Pearson
+  r 0.998 → ranking essentially exact (search faithful). Calibration
+  measured≈0.9343*summed−0.0225 ms (R²=0.996; through-origin fusion discount 0.928,
+  ~7.2% faster than the sum) cuts MAPE 7.85%→1.04%. Wired opt-in into
+  search.cost.cost(..., calibration=) (default identity, ranking-neutral; applied to
+  the backbone sum before the stem/head offset); fit persisted to
+  data/latency_calibration.json (load_latency_calibration), pairs in
+  data/additivity_pairs.csv. Stem/head offset measured too (data/stem_head_offset.json:
+  0.388 ms). scipy>=1.15 added to requirements.txt + pyproject mypy override (no
+  torch/numpy pin drift; user-authorized). +14 tests (TDD); check.sh green (177
+  passed). CP 2.4 (eval/fine-tune) next but BLOCKED on CUDA + dataset decision D1.
+  See procedure.md "CP 2.2 closed".

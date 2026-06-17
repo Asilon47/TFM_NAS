@@ -96,14 +96,23 @@ def arch_to_keys(arch_dict: ArchDict) -> list[str]:
     return [row_key(b, cfg, shape) for b, cfg, shape in arch_to_blocks(arch_dict)]
 
 
-def _random_arch_dict(rng: random.Random) -> ArchDict:
-    """A random arch in OFA's format (matches ``supernet.sampler.random_arch``)."""
+def random_arch_dict(rng: random.Random) -> ArchDict:
+    """A random arch in OFA's format (matches ``supernet.sampler.random_arch``).
+
+    Pure-Python (no ``ofa``/torch), so the offline cost tooling
+    (``search.cost_preview`` / ``search.additivity_preview``) can sample the
+    search space under ``.venv`` without materialising a subnet.
+    """
     n = 5 * MAX_DEPTH
     return {
         "ks": [rng.choice(KS) for _ in range(n)],
         "e": [rng.choice(E) for _ in range(n)],
         "d": [rng.choice(D) for _ in range(5)],
     }
+
+
+# Back-compat alias: this was private until the offline preview tooling reused it.
+_random_arch_dict = random_arch_dict
 
 
 def _dod_smoke_test(n_archs: int = 10, seed: int = 0) -> None:
@@ -123,7 +132,7 @@ def _dod_smoke_test(n_archs: int = 10, seed: int = 0) -> None:
     rng = random.Random(seed)
     all_ok = True
     for i in range(n_archs):
-        arch = _random_arch_dict(rng)
+        arch = random_arch_dict(rng)
         blocks = arch_to_blocks(arch)
         missing = [(cfg, tuple(shape)) for b, cfg, shape in blocks
                    if row_key(b, cfg, shape) not in known]

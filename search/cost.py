@@ -48,9 +48,10 @@ measurement, so it is deferred; the cost API and its unit tests run now.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from catalog.contracts import ArchDict, CostDict, CostOffset, LutRow
+from catalog.contracts import ArchDict, CostDict, CostOffset, LatencyCalibration, LutRow
 from catalog.sweep import row_key
 from lut.loader import load_lut
 from search.arch_to_blocks import arch_to_blocks
@@ -64,6 +65,11 @@ ZERO_OFFSET: CostOffset = {
     "latency_ms": 0.0, "peak_mem_mib": 0.0, "params": 0, "flops": 0,
 }
 
+# Identity calibration: measured = 1.0*summed + 0.0 leaves latency unchanged, so the
+# default composed cost is the raw summed-LUT prediction (correct for *ranking*). A
+# measured fit (data/latency_calibration.json) slots in for absolute end-to-end latency.
+IDENTITY_CALIBRATION: LatencyCalibration = {"slope": 1.0, "intercept": 0.0}
+
 
 class CostError(Exception):
     """A subnet references a block with no row in the (precision-filtered) LUT.
@@ -74,16 +80,20 @@ class CostError(Exception):
     """
 
 
-def _aggregate(rows: list[LutRow], offset: CostOffset) -> CostDict:
+def _aggregate(rows: list[LutRow], offset: CostOffset,
+               calibration: LatencyCalibration = IDENTITY_CALIBRATION) -> CostDict:
     """Reduce per-block LUT rows + a constant offset into one subnet cost.
 
     This is the heart of the cost model — the aggregation rule differs per
     field, and getting ``peak_mem_mib`` wrong (summing it) is the classic
     mistake. Combine ``rows`` (each a ``LutRow``) with ``offset`` (a
-    ``CostOffset``) into a ``CostDict`` so that:
+    ``CostOffset``) and ``calibration`` (a ``LatencyCalibration``) into a
+    ``CostDict`` so that:
 
-    * ``latency_ms``  = sum of every row's ``latency_ms["mean"]``, plus the
-      offset's ``latency_ms``      (sequential runtime is additive).
+    * ``latency_ms``  = ``calibration`` applied to the summed backbone latency
+      (``slope * sum(rows) + intercept``) plus the offset's ``latency_ms``.
+      Identity calibration (the default) leaves the plain additive sum;
+      calibration scales the **backbone only**, never the offset.
     * ``params``      = sum of every row's ``params``,  plus offset ``params``
       (all weights are resident — additive).
     * ``flops``       = sum of every row's ``flops``,   plus offset ``flops``
@@ -99,7 +109,8 @@ def _aggregate(rows: list[LutRow], offset: CostOffset) -> CostDict:
 
     """
     return {
-        "latency_ms": sum(r["latency_ms"]["mean"] for r in rows) + offset["latency_ms"],
+        "latency_ms": (calibration["slope"] * sum(r["latency_ms"]["mean"] for r in rows)
+                       + calibration["intercept"] + offset["latency_ms"]),
         # MAX, not sum: only one block's working set is resident at a time, and
         # the stem/head (offset) run sequentially too — folding the offset into
         # the max also keeps empty `rows` well-defined (offset always present).
@@ -110,7 +121,8 @@ def _aggregate(rows: list[LutRow], offset: CostOffset) -> CostDict:
 
 
 def cost(arch_dict: ArchDict, lut: dict[str, LutRow], *,
-         stem_head: CostOffset | None = None) -> CostDict:
+         stem_head: CostOffset | None = None,
+         calibration: LatencyCalibration | None = None) -> CostDict:
     """Composite cost of ``arch_dict`` from a pre-loaded, precision-filtered LUT.
 
     Args:
@@ -119,11 +131,17 @@ def cost(arch_dict: ArchDict, lut: dict[str, LutRow], *,
         stem_head: constant stem+head offset to add; ``None`` -> no-op
             (``ZERO_OFFSET``). The default is correct for *ranking*; supply a
             measured offset for absolute-cost reporting.
+        calibration: affine fit applied to the summed backbone latency
+            (``slope*summed + intercept``); ``None`` -> identity (no-op). Like
+            ``stem_head`` it never changes *ranking* (slope>0 is monotonic) —
+            supply a measured fit (``load_latency_calibration``) for device-
+            accurate absolute latency.
 
     Raises:
         CostError: a block in the subnet has no row in ``lut`` (names the block).
     """
     offset = ZERO_OFFSET if stem_head is None else stem_head
+    calib = IDENTITY_CALIBRATION if calibration is None else calibration
     rows: list[LutRow] = []
     for name, cfg, shape in arch_to_blocks(arch_dict):
         key = row_key(name, cfg, shape)
@@ -137,18 +155,19 @@ def cost(arch_dict: ArchDict, lut: dict[str, LutRow], *,
                 "(`python -m lut.orchestrate.run_sweep`); otherwise regenerate "
                 "the dummy (`python -m lut.orchestrate.gen_dummy_lut`)."
             ) from None
-    return _aggregate(rows, offset)
+    return _aggregate(rows, offset, calib)
 
 
 def cost_from_path(arch_dict: ArchDict, lut_path: Path, precision: str | None = None,
-                   *, stem_head: CostOffset | None = None) -> CostDict:
+                   *, stem_head: CostOffset | None = None,
+                   calibration: LatencyCalibration | None = None) -> CostDict:
     """Load the LUT from ``lut_path`` (filtered to ``precision``) then ``cost``.
 
     Convenience for scripts and the additivity DoD. The search loop should call
     :func:`cost` with a once-loaded dict instead of re-reading the file per arch.
     """
     lut = load_lut(lut_path, precision=precision)
-    return cost(arch_dict, lut, stem_head=stem_head)
+    return cost(arch_dict, lut, stem_head=stem_head, calibration=calibration)
 
 
 def resident_mem_mib(cost_dict: CostDict, bytes_per_param: int) -> float:
@@ -172,6 +191,73 @@ def resident_mem_mib(cost_dict: CostDict, bytes_per_param: int) -> float:
     search/validate_additivity.py.
     """
     return cost_dict["params"] * bytes_per_param / 2**20 + cost_dict["peak_mem_mib"]
+
+
+# --- stem/head offset calibration (CP 2.2) -----------------------------------
+# arch_to_blocks omits the fixed stem (3->16) and head (final-expand/feature-mix/
+# classifier); they are a constant CostOffset. ZERO_OFFSET is correct for ranking
+# (the offset is identical for every arch); these two helpers measure and load the
+# absolute value for end-to-end latency reporting. See search/export_subnet.py for
+# the stem/head modules and lut/orchestrate/measure_additivity.py for the on-device
+# measurement that writes the offset JSON.
+
+DEFAULT_OFFSET_PATH = ROOT / "data" / "stem_head_offset.json"
+
+
+def offset_from_measurements(stem: dict, head: dict) -> CostOffset:
+    """Combine measured stem + head component costs into a ``CostOffset``.
+
+    Same heterogeneous reduce as the block cost (``_aggregate``): latency / params /
+    flops SUM, ``peak_mem_mib`` MAX — the stem and head run sequentially, so only one
+    working set is resident at a time. Each input is a dict with ``latency_ms``
+    (float, the measured mean), ``peak_mem_mib``, ``params`` and ``flops``.
+    """
+    return {
+        "latency_ms": stem["latency_ms"] + head["latency_ms"],
+        "peak_mem_mib": max(stem["peak_mem_mib"], head["peak_mem_mib"]),
+        "params": stem["params"] + head["params"],
+        "flops": stem["flops"] + head["flops"],
+    }
+
+
+def load_stem_head_offset(path: Path = DEFAULT_OFFSET_PATH) -> CostOffset:
+    """Load a measured stem/head offset as a ``CostOffset`` (opt-in absolute cost).
+
+    Reads only the four ``CostOffset`` fields; any provenance keys the measurement
+    wrote alongside (``precision``, ``components``, ...) are ignored. Pass the result
+    as ``cost(arch, lut, stem_head=...)`` for absolute end-to-end cost; omit it (the
+    default ``ZERO_OFFSET``) for ranking, which the offset never changes.
+    """
+    raw = json.loads(Path(path).read_text())
+    return {
+        "latency_ms": float(raw["latency_ms"]),
+        "peak_mem_mib": float(raw["peak_mem_mib"]),
+        "params": int(raw["params"]),
+        "flops": int(raw["flops"]),
+    }
+
+
+# --- latency calibration (CP 2.2 additivity) ---------------------------------
+# arch_to_blocks' summed latency over-predicts the measured whole-net latency by a
+# near-constant ~8% (TensorRT cross-seam fusion; see search/validate_additivity.py and
+# search/predictor_stats.py). load_latency_calibration loads the affine fit that corrects
+# it; cost(..., calibration=...) applies it to the backbone sum. The default
+# IDENTITY_CALIBRATION is ranking-neutral, so search ranking is unaffected either way.
+
+DEFAULT_CALIBRATION_PATH = ROOT / "data" / "latency_calibration.json"
+
+
+def load_latency_calibration(path: Path = DEFAULT_CALIBRATION_PATH) -> LatencyCalibration:
+    """Load a measured latency calibration as a ``LatencyCalibration``.
+
+    Reads only ``slope``/``intercept``; any provenance the fit wrote alongside (``r2``,
+    ``mult_factor``, ``spearman_rho``, ``precision``, ...) is ignored. Pass the result as
+    ``cost(arch, lut, calibration=...)`` for device-accurate absolute latency; omit it
+    (the default ``IDENTITY_CALIBRATION``) for ranking, which the calibration never
+    changes.
+    """
+    raw = json.loads(Path(path).read_text())
+    return {"slope": float(raw["slope"]), "intercept": float(raw["intercept"])}
 
 
 if __name__ == "__main__":

@@ -1,0 +1,1687 @@
+ ▐▛███▜▌   Claude Code v2.1.179
+▝▜█████▛▘  Opus 4.8 · Claude Pro
+  ▘▘ ▝▝    ~/Desktop/TFM_NAS
+
+
+✻ Conversation compacted (ctrl+o for history)
+
+
+● Done. Here's what landed.
+
+  What you asked for → what shipped
+
+  You wanted the Spearman coefficient plus whatever stats are needed to
+  calibrate the predictor with a regression. Running report on your 33 measured
+  subnets now prints:
+
+  Ranking:   Spearman ρ = +0.9906 (p=2.2e-28)   Kendall τ-b = +0.9432   Pearson
+  r = +0.9980
+  Calibration: measured ≈ 0.9343·summed − 0.0225 ms   R²=0.9959
+               through-origin fusion discount = 0.928 (device ~7.2% faster than
+  the sum)
+  Error:     MAPE 7.85% → 1.04%    RMSE 0.249 → 0.039 ms    bias +7.85%
+
+  The result is as good as it gets: ranking is essentially exact (ρ=0.99 ⇒ your
+  BO search picks the right archs from the raw per-block sum, no correction
+  needed), and the absolute error was a coherent ~7% multiplicative bias — so
+  one affine fit collapses MAPE from 7.85% to 1.04%.
+
+  How it's wired
+
+  - search/predictor_stats.py (new, scipy) — ρ/τ/r with p-values, OLS +
+  through-origin fit, before/after error metrics.
+  - search.cost.cost(arch, lut, calibration=…) — opt-in LatencyCalibration,
+  default identity (ranking-neutral). Applied to the backbone sum before the
+  stem/head offset. load_latency_calibration() reads
+  data/latency_calibration.json.
+  - additivity_preview report --write-calibration --csv — prints the stats and
+  persists data/latency_calibration.json (fit + provenance) and
+  data/additivity_pairs.csv (33 rows, for your thesis scatter/residual plots).
+  - scipy 1.17.1 added to .venv + requirements.txt + mypy override, with
+  torch==2.3.1+cpu/numpy 2.4.6 pins verified unchanged.
+
+  Checkpoint
+
+  The additivity DoD PASSED (every depth bin +6.8%…+9.2%, flat — no fusion
+  blowup), so CP 2.2 is closed: plan_state.yaml advanced to last_completed: 2.2,
+  current_checkpoint: 2.4; CP 2.3 (residual correction) was conditional on a
+  breach → skipped. Full rationale appended to procedure.md. Built TDD
+  throughout; check.sh green (177 passed).
+
+  CP 2.4 (eval/fine-tune) is next but stays blocked on CUDA + dataset decision 
+  D1 — both need you.
+
+  One thing to flag: this is all uncommitted, and there's a substantial body of
+  work in the tree (this session + the prior export/measure/preview modules,
+  none committed). You're on main. Want me to branch and commit it?
+
+✻ Churned for 2m 31s
+
+※ recap: CP 2.2 (LUT cost predictor) is closed: Spearman 0.99, calibration cuts MAPE to 1.04%, all tests green. Next action: branch off main and commit the uncommitted work if you want it saved. (disable recaps in /config)
+
+❯ /compact                                                                      
+  ⎿  Compacted 
+  ⎿  Read state/plan_state.yaml (174 lines)
+  ⎿  Referenced file procedure.md
+  ⎿  Referenced file search/additivity_preview.py
+  ⎿  Read tests/test_cost_preview.py (275 lines)
+  ⎿  Read search/cost_preview.py (265 lines)
+  ⎿  Plan file referenced (~/.claude/plans/ticklish-popping-mountain.md)
+
+❯ /model                                                                        
+  ⎿  Set model to Opus 4.8 and saved as your default for new sessions with max
+     effort
+
+❯ what is the next step?                                                        
+
+● Skill(superpowers:brainstorming)
+  ⎿  Successfully loaded skill
+
+● I'm in plan mode and just closed CP 2.2, so "what's next" is genuinely a
+  branching decision that depends on you. Let me ground my answer in the actual
+  checkpoint plan before presenting options.
+
+  Read 1 file (ctrl+o to expand)
+
+● CP 2.2 is closed and verified, so the honest answer to "what's next" is: the 
+  literal next checkpoint is CP 2.4 (the short fine-tune eval harness) — but 
+  it's hard-blocked on two things only you can resolve. CP 2.3 (additivity
+  correction) was correctly skipped, not skipped-by-accident: it's a conditional
+  checkpoint that only fires if the additivity DoD breaches 15% in some depth
+  bin, and your run passed everywhere (+6.8%…+9.2%, flat in depth).
+
+  ★ Insight ─────────────────────────────────────
+  - D1 is the long pole, not just a CP 2.4 gate. Per PROJECT_PLAN.md:534, the
+  dataset choice also selects the Phase 8 distillation teacher and shapes every
+  accuracy number from here on. It's the one decision that unblocks the most
+  downstream work — and deciding it needs zero compute.
+  - The accuracy axis is the real frontier. Everything you've built so far (LUT,
+  cost, calibration) is the latency/cost half of J(α) = acc − λ·latency − …. CP
+  2.4 is where the accuracy half enters — and that's exactly why it needs both
+  a dataset (D1) and a GPU.
+  - CP 1.4 is the one forward step that needs neither. OFA subnet inference runs
+  on CPU, so the "do the published weights actually load correctly?" sanity
+  check is independent of both blockers — a cheap way to de-risk the accuracy
+  axis before you trust any fine-tune number.
+  ─────────────────────────────────────────────────
+
+  Before I draft a plan, two things are genuinely yours to decide and they shape
+  everything:
+
+● User answered Claude's questions:
+  ⎿  · CP 2.2 is closed and CP 2.3 was skipped (additivity passed). The official
+     next checkpoint, CP 2.4, is blocked on the D1 dataset decision and on GPU 
+     access. Which direction should we take next? → CP 1.4 ImageNet sanity
+     · CP 2.4 onward (fine-tune, search, distillation) needs CUDA, which this 
+     machine lacks. What GPU access do you actually have? This determines what's
+     executable vs. plan-only. → Remote GPU box
+
+● You picked CP 1.4 (ImageNet sanity) with a remote GPU box available. Good —
+  that's the one checkpoint that makes real forward progress without resolving
+  D1, and it de-risks the entire accuracy axis before we trust any fine-tune
+  number later.
+
+  Now I need to understand the actual machinery before drafting a plan. The key
+  correctness question for CP 1.4 is subtle: OFA subnets need BatchNorm 
+  recalibration before evaluation (the supernet's shared BN stats don't match
+  any single subnet — skipping this is the classic OFA mistake that makes
+  accuracy look ~5-15% too low). Let me verify how the sampler works, what the
+  OFA package exposes for eval/BN-recalibration, and what "published accuracy"
+  we compare against.
+
+  Read 3 files (ctrl+o to expand)
+
+● The sampler is clean: load_supernet() → set_active_subnet →
+  get_active_subnet(preserve_weight=True). Now the OFA eval machinery — BN
+  recalibration, published-accuracy reference, and the data provider.
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== eval/ dir ==="; ls -la eval/ 2>/dev/null || echo "(no eval/
+      dir)"…)
+  ⎿  === eval/ dir ===
+     total 12
+     drwxrwxr-x  3 asil asil 4096 Apr 25 11:13 .
+     … +34 lines (ctrl+o to expand)
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      OFA=.venv-nas/lib/python3.12/site-packages/ofa…)
+  ⎿  === ImageNet data provider + run manager files ===
+     .venv-nas/lib/python3.12/site-packages/ofa/tutorial/imagenet_eval_help
+     er.py
+     … +174 lines (ctrl+o to expand)
+
+● Found the canonical machinery. set_running_statistics (BN recalibration) lives
+  in elastic_nn/utils.py, and OFA ships a complete subnet-eval reference in
+  tutorial/imagenet_eval_helper.py plus a pretrained accuracy predictor
+  (tutorial/accuracy_predictor.py) — that predictor is OFA's released "expected
+  accuracy for this arch" artifact, which is exactly the published reference CP
+  1.4's DoD needs. Let me read all three.
+
+  Read 3 files (ctrl+o to expand)
+● The picture is now precise. OFA's evaluate_ofa_subnet is exactly the protocol
+  I need, and crucially it requires three things the bare sampler doesn't
+  surface: a resolution (net_config["r"]), a path/train subset for BN 
+  recalibration (the calib_bn step — 2000 images, the make-or-break detail), and
+  a path/val set for measurement. And AccuracyPredictor is OFA's released
+  per-arch reference.
+
+  One methodological subtlety to confirm before I plan: the units of the
+  predictor's output (fraction vs. percent — validate returns percent 0–100) and
+  the get_active_subnet default. Let me nail those.
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      OFA=.venv-nas/lib/python3.12/site-packages/ofa…)
+  ⎿  === get_active_subnet signature (default preserve_weight?) ===
+     .venv-nas/lib/python3.12/site-packages/ofa/imagenet_classification/ela
+     stic_nn/networks/ofa_mbv3.py:325:    def get_active_subnet(self, prese
+     … +27 lines (ctrl+o to expand)
+
+● Everything checks out: get_active_subnet(preserve_weight=True) is the default
+  (so OFA's reference eval inherits weights, matching our sampler), and —
+  critically — neither sampler.random_arch() nor
+  search.arch_to_blocks.random_arch_dict() emits a resolution, while both
+  evaluate_ofa_subnet (net_config["r"][0]) and the predictor (spec2feats(..., 
+  r)) require one. So the harness must inject r. One last thing to make the plan
+  precise — the mypy override list (the harness will import
+  ofa/torchvision/tqdm, absent from .venv):
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== mypy override block in pyproject.toml ==="…)
+  ⎿  === mypy override block in pyproject.toml ===
+     34:[[tool.mypy.overrides]]
+     37:module = ["ofa.*", "fabric.*", "tqdm.*", "yaml.*", "pandas.*", "sci
+     … +17 lines (ctrl+o to expand)
+
+● All confirmed. The mypy override has ofa.*/tqdm.* but not torchvision.* (must
+  add it); search.cost_preview.spearman is reusable and .venv-safe; and
+  catalog.ofa_mbv3 gives me KS/E/D/MAX_DEPTH to construct the max/min archs as
+  pure functions (no OFA needed).
+
+  ★ Insight ─────────────────────────────────────
+  - The reference must be the accuracy predictor, not the specialized nets.
+  OFA's specialized checkpoints (note10_lat@…_top1@…_finetune@75) bake in 25–75
+  extra fine-tune epochs, so a direct subnet of our supernet would legitimately
+  score several points below them — that's not a weight-loading bug, it's a
+  different model. The released acc_predictor.pth was trained on
+  direct-extraction + BN-recalibrated subnets of this exact w1.0 space, so
+  predicted-vs-measured is the only apples-to-apples "published number for that
+  arch."
+  - 2k val is statistically tight against a 1.5pp bar. Binomial noise at ~77%
+  top-1 on 2k images is ±1.8pp (95% CI) — wider than the bar itself. The harness
+  should default to a larger val subset and report the CI, so a 1.6pp gap isn't
+  mistaken for a weight-loading failure when it's really sampling noise.
+  - Lazy imports keep the module CI-safe. Importing ofa/torchvision only inside
+  the orchestration functions (not at module top) lets import 
+  eval.imagenet_sanity succeed in .venv for the pure-logic tests, mirroring how
+  additivity_preview defers its scipy import.
+  ─────────────────────────────────────────────────
+
+  I have everything I need. Let me write the plan.
+
+  Read 1 file (ctrl+o to expand)
+
+● Updated plan
+  ⎿  /plan to preview
+
+● The plan is written. Let me load the tool to exit plan mode and request your
+  approval.
+
+● User approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/ticklish-popping-mountain.md · /plan to edit
+     Plan: CP 1.4 — ImageNet sanity check (validate the inherited supernet 
+     weights)
+
+     Context
+
+     CP 2.2 is closed (additivity DoD passed, latency predictor calibrated). The
+     latency/cost
+     half of the search objective J(α) = acc − λ·latency − … is now trustworthy.
+     The next
+     step the user chose is CP 1.4 — the one open Phase-1 checkpoint and the one
+     piece of
+     forward progress that needs neither the D1 dataset decision nor a GPU (OFA
+     subnet
+     inference runs on CPU). A remote GPU box is available for later (CP 2.4+),
+     but a one-shot
+     sanity check runs fine CPU-local in .venv-nas.
+
+     Why it matters: CP 1.4 is the first time the accuracy axis is exercised. It
+     proves
+     that supernet.sampler.load_supernet() → sample(arch) → BN recalibration
+     reproduces
+     the accuracy OFA's own released model says that arch should have. If the
+     inherited weights
+     or the eval protocol were wrong, every accuracy number from CP 2.4 onward
+     would be built on
+     sand. This de-risks that before we spend a single fine-tune epoch.
+
+     DoD (PROJECT_PLAN.md:98-102): on a ≥2k ImageNet-val subset, a sampled
+     subnet lands
+     within 1.5 % top-1 of OFA's published accuracy for that arch. One subnet,
+     one arch,
+     one number.
+
+     Key findings from exploration (grounding the design)
+
+     - Sampler (supernet/sampler.py): load_supernet() loads the pinned w1.0
+     checkpoint;
+     sample(arch) = set_active_subnet + get_active_subnet(preserve_weight=True)
+     (confirmed default preserve_weight=True). We must use load_supernet(), not
+     ofa.model_zoo.ofa_net, to preserve CP 1.2's cache/SHA-pin contract.
+     - OFA ships the exact eval protocol in
+     ofa/tutorial/imagenet_eval_helper.py:
+     evaluate_ofa_subnet(ofa_net, path, net_config, val_loader, batch_size, 
+     device) →
+     set_active_subnet → get_active_subnet().to(device) → calib_bn (samples 2000
+     path/train images, RandomResizedCrop@r, runs set_running_statistics — the
+     BN
+     recalibration that is the make-or-break step for subnet accuracy) →
+     validate over
+     path/val (Resize→CenterCrop@r, returns top-1 in percent, 0–100). Its
+     device="cpu"
+     branch is clean (no DataParallel), so it runs CPU-local as-is.
+     - The reference is the accuracy predictor,
+     ofa/tutorial/accuracy_predictor.py
+     AccuracyPredictor(pretrained=True, device=…) (downloads acc_predictor.pth).
+     It was
+     trained on direct-extraction + BN-recalibrated subnets of this exact w1.0
+     space (ks
+     3/5/7, e 3/4/6, d 2/3/4, r 112–224), so predicted-vs-measured is
+     apples-to-apples.
+     Not the specialized nets (…top1@…_finetune@75) — those include 25–75 extra
+     fine-tune epochs and would legitimately differ by several points.
+     - Resolution must be injected. net_config needs ks(20)/e(20)/d(5)/r, and
+     the predictor's spec2feats(…, r) needs r ∈ {112,128,…,224}. Neither
+     sampler.random_arch() nor arch_to_blocks.random_arch_dict() emits r → the
+     harness
+     adds r=[224] (canonical full-res, highest documented accuracy).
+     - Predictor output units are unverified offline (evolution_finder uses
+     acc.item() directly with a -100 sentinel — works for either [0,1] or
+     [0,100]) →
+     normalize defensively (×100 if ≤ 1.0) and verify empirically on first run.
+     - 2k val is noisy vs a 1.5pp bar: at ~77% top-1, 2k images → ±1.8pp 95% CI.
+     Default to
+     a larger val subset and report the CI so sampling noise isn't mistaken for
+     a bug.
+     - Reusable / CI-safe: catalog.ofa_mbv3 (KS/E/D/MAX_DEPTH, no OFA dep)
+     builds the
+     max/min archs purely; search.cost_preview.spearman (numpy/pandas) is
+     reusable for an
+     optional multi-arch rank-fidelity readout. eval/ is currently empty
+     (__init__.py).
+
+     Approach (recommended)
+
+     A thin orchestrator eval/imagenet_sanity.py that reuses OFA's validated 
+     eval + the
+     released predictor and our cache-respecting supernet loader. Pure decision
+     logic is
+     separated from OFA/ImageNet I/O so it is unit-testable in .venv (CPU, no
+     OFA, no
+     ImageNet); the heavy path is import-guarded/skip-on-missing-data, matching
+     the repo's
+     existing convention (ofa tests auto-skip outside .venv-nas; LUT-file tests
+     skip when
+     data/ is absent). OFA/torchvision/tqdm imports are lazy (inside the
+     orchestration
+     functions) so import eval.imagenet_sanity succeeds in .venv.
+
+     Rejected alternatives: (B) compare against a specialized fine-tuned net —
+     not apples-to-
+     apples (extra fine-tuning); (C) hardcode a paper biggest-net number —
+     single-arch only and
+     unverifiable offline. The predictor generalizes to any arch and is OFA's
+     own artifact.
+
+     Deliverables
+
+     1. eval/imagenet_sanity.py (NEW)
+
+     Pure functions (.venv-testable, no OFA):
+     - canonical_archs() -> dict[str, ArchDict] — max (ks=[7]*20, e=[6]*20, 
+     d=[4]*5) and
+     min (ks=[3]*20, e=[3]*20, d=[2]*5) from catalog.ofa_mbv3.KS/E/D/MAX_DEPTH;
+     random via a seeded arch_to_blocks.random_arch_dict.
+     - build_net_config(arch, resolution) -> dict — inject "r": [resolution],
+     assert
+     len(ks)==len(e)==20 and len(d)==5 (mirrors evaluate_ofa_subnet's asserts).
+     - normalize_to_percent(v) -> float — v*100 if v <= 1.0 else v (defensive
+     predictor
+     scaling).
+     - binomial_ci95(p_percent, n) -> float — 1.96*sqrt(p(1-p)/n) in pp.
+     - verdict(measured_pct, predicted_pct, *, bar=1.5, ci=None) -> dict —
+     {gap, within_bar, within_noise}.
+
+     Orchestration (lazy ofa/torchvision/tqdm imports; needs .venv-nas + 
+     ImageNet):
+     - predict_topk(arch, resolution, device) -> float — cache one
+     AccuracyPredictor, call
+     predict_accuracy([{**arch, "r":[resolution]}]), normalize_to_percent.
+     - measure_topk(supernet, arch, resolution, imagenet_path, *, batch_size, 
+     bn_images, n_val, device) -> float — build datasets.ImageFolder(path/val)
+     loader, call OFA's
+     evaluate_ofa_subnet(supernet, imagenet_path, build_net_config(arch, 
+     resolution), val_loader, batch_size, device).
+     - run_sanity(imagenet_path, *, archs, resolution, n_val, bn_images, device,
+     bar, seed)
+     — load supernet once, loop archs: predict + measure + verdict; print a
+     per-arch table
+     (measured / predicted / gap / CI / PASS); optional Spearman if ≥4 archs;
+     return a report.
+     - main(argv) argparse CLI: --imagenet-path (required; fail loudly if train/
+     or
+     val/ missing — never emit a silent bogus number), --resolution 224, --n-val
+     0
+     (0 = all found; recommend ≥10k), --bn-images 2000, --device auto
+     (cuda if available else cpu), --bar 1.5, --archs max,min,random, --seed 0.
+
+     2. tests/test_imagenet_sanity.py (NEW) — TDD, .venv CPU
+
+     Pure-fn tests: canonical_archs shapes (max=7/6/4, min=3/3/2, lengths
+     20/20/5);
+     build_net_config injects r and enforces lengths; normalize_to_percent
+     (0.77→77,
+     77→77); binomial_ci95 against a hand value; verdict within/over bar and
+     noise-band.
+     Any orchestration smoke uses pytest.importorskip("ofa") + skip when an
+     ImageNet env path
+     is unset (so CI / .venv skip cleanly).
+
+     3. pyproject.toml (EDIT)
+
+     Add "torchvision.*" to the existing [[tool.mypy.overrides]] 
+     ignore_missing_imports
+     module list (currently has ofa.*, fabric.*, tqdm.*, yaml.*, pandas.*, 
+     scipy.*).
+
+     4. eval/README.md (NEW)
+
+     Document the required ImageNet ImageFolder layout
+     (<path>/train/<wnid>/*.JPEG for BN
+     recalibration — a few-k-image subset is enough and keeps the index scan
+     fast; full train
+     works but scans slowly — and <path>/val/<wnid>/*.JPEG by standard wnid
+     folders so label
+     indices match the supernet), the run command, the predictor-as-reference
+     rationale, and
+     the CPU-local-vs---device cuda (remote box) note.
+
+     5. Checkpoint discipline (EDIT — only once the user runs it and the number 
+     lands)
+
+     procedure.md: a CP 1.4 section (protocol, BN-recalib rationale, predictor
+     reference +
+     the fine-tuning nuance, the measured/predicted numbers + CI, PASS/FAIL).
+     state/plan_state.yaml:
+     add "1.4" to completed (back-fills the gap; current_checkpoint stays 2.4,
+     the
+     frontier) with a one-line note.
+
+     Runbook
+
+     1. Build + unit-test now (.venv, closeable today): write the module + tests
+     TDD;
+     bash scripts/check.sh -m "not slow" green (ruff + mypy + new pure-fn
+     tests).
+     2. Run the real eval (needs the user's ImageNet; CPU-local or their remote 
+     GPU):
+     source .venv-nas/bin/activate && python -m eval.imagenet_sanity 
+     --imagenet-path <PATH>
+     (add --device cuda on the GPU box). On first run, eyeball the predictor
+     scale
+     (max-arch predicted ≈ 76–77%, not ≈0.77 — confirms normalize_to_percent).
+     3. If PASS: update procedure.md + state/plan_state.yaml.
+
+     Verification / DoD
+
+     - Per-arch |measured − predicted top-1| ≤ 1.5 pp (the DoD), reported
+     alongside the
+     binomial 95% CI for an honest noise read. Max-arch measured ≈ predictor ≈
+     OFA's
+     biggest-net ~76–77% is the external cross-check. (Multi-arch Spearman is a
+     bonus signal,
+     not the gate.)
+     - bash scripts/check.sh -m "not slow" green; import eval.imagenet_sanity
+     works in
+     .venv (lazy imports); ofa/ImageNet path skips cleanly in CI.
+
+     Out of scope / guardrails
+
+     - No D1, no CP 2.4 fine-tune (those stay blocked on CUDA + the dataset
+     decision); no
+     building remote-GPU orchestration (CPU-local default; --device cuda is
+     enough for their
+     box).
+     - Use sampler.load_supernet() — do not call ofa_net(pretrained=True) (would
+     defeat
+     the cache/SHA pin). No edits to data/lut.jsonl, golden hashes, or grids.
+     - The OFA checkpoint pin is unchanged; the predictor download
+     (acc_predictor.pth →
+     .torch/) is read-only and tiny — pinning it is optional gold-plating, noted
+     not done.
+     - No git commit unless asked (branch first — currently on main). The
+     separate uncommitted
+     CP 2.2 work is left exactly as-is unless the user asks to commit it.
+
+● Plan approved. Per the repo's TDD discipline (and it genuinely applies here —
+  I'm writing new code with tests), let me load the test-driven-development
+  skill before coding.
+
+● Skill(superpowers:test-driven-development)
+  ⎿  Successfully loaded skill
+
+● TDD locked in: RED → verify fail → GREEN → verify pass. Let me load the task
+  tools to track this work, then start with the failing tests.
+● Now let me ground the test in the existing type/utility conventions before
+  writing it.
+
+  Read 2 files (ctrl+o to expand)
+
+● Good — ArchDict is {ks, e, d} (no r, confirming the harness must inject
+  resolution), and random_arch_dict(rng) is the pure sampler. Let me confirm the
+  test harness setup (sys.path / markers) before writing the RED test.
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== root conftest.py ==="; cat conftest.py 2>/dev/null || echo
+      "(none)"…)
+  ⎿  === root conftest.py ===
+     """Root conftest — anchors pytest imports at the repo root.
+     … +35 lines (ctrl+o to expand)
+
+● Test harness is clear: repo-root on sys.path via conftest, slow marker for the
+  heavy lane. Now RED — I'll write the failing tests for the pure-logic layer
+  first (per the Iron Law: no production code without a failing test).
+
+● Write(tests/test_imagenet_sanity.py)
+  ⎿  Wrote 116 lines to tests/test_imagenet_sanity.py
+       2 """CP 1.4 ImageNet-sanity harness tests.
+         rmalization,ecision layer (arch construction, predictor-scale no
+       4 binomial CI, pass/fail verdict) is deterministic and runs under 
+       5 ``ofa``/``torchvision``/ImageNet — that is what these tests cove
+         r. The OFA + ImageNet
+         y``) needs ``.venv-nas``_topk`` / ``predict_topk`` / ``run_sanit
+          (mirrors how thet, so it is exercised by the runbook, not in CI
+       8 ofa-dependent and LUT-file tests skip when their inputs are abse
+       9 """.
+      10 import math
+     … +129 lines (ctrl+o to expand)
+
+● Now mark the task in-progress and run the tests to verify RED (they must fail
+  because the module is empty):
+
+● Bash(env -u PYTHONPATH .venv/bin/python -m pytest
+      tests/test_imagenet_sanity.py -q 2>&1 | tail -20)
+  ⎿  ==================================== ERRORS ==========================
+     ==========
+     ________________ ERROR collecting tests/test_imagenet_sanity.py ______
+     … +15 lines (ctrl+o to expand)
+
+● RED confirmed — No module named 'eval.imagenet_sanity', failing because the
+  feature is missing (not a typo). Now GREEN: implement the minimal pure layer
+  to pass these tests.
+
+● Write(eval/imagenet_sanity.py)
+  ⎿  Wrote 127 lines to eval/imagenet_sanity.py
+         0 supernet. ImageNet sanity check for the inherited OFA-MBv3-w1.
+       3 Validates that ``supernet.sampler.load_supernet()`` + ``sample(a
+       4 recalibration** reproduces the top-1 accuracy OFA's *own* releas
+       5 arch. This is the first time the accuracy axis is exercised; a w
+         rong weight load or a
+         mber from CP 2.4 on.tion would silently poison every accuracy nu
+       8 **Protocol** (mirrors OFA's own ``ofa/tutorial/imagenet_eval_hel
+       9 ``set_active_subnet`` -> ``get_active_subnet(preserve_weight=Tru
+      10 2000-image ``train`` subset (``set_running_statistics`` — the ma
+         ke-or-break step: a subnet
+     … +157 lines (ctrl+o to expand)
+
+● Now verify GREEN — the pure-layer tests should pass:
+
+● Bash(env -u PYTHONPATH .venv/bin/python -m pytest
+      tests/test_imagenet_sanity.py -q 2>&1 | tail -15)
+  ⎿  ..............
+        [100%]
+     14 passed in 0.68s
+
+● GREEN — 14/14 pure-layer tests pass.
+
+  ★ Insight ─────────────────────────────────────
+  - The lazy-import boundary is the whole reason this module is CI-testable.
+  Everything above runs in .venv because the module top only touches math,
+  random, and the pure catalog/search helpers. The moment I add the
+  orchestration, even supernet.sampler is off-limits at module top — importing
+  it pulls ofa (its line-25 from ofa… import OFAMobileNetV3). So load_supernet
+  gets imported inside run_sanity, not at the top.
+  ─────────────────────────────────────────────────
+
+  Before the OFA glue (which can't run in CI), let me extract the two pieces of
+  orchestration logic that are pure and TDD them: the loud path validation and
+  the val-subset sizing that feeds the CI. RED first — add their tests:
+
+● Update(tests/test_imagenet_sanity.py)
+  ⎿  Added 2 lines
+      17      build_net_config,
+      18      canonical_archs,
+      19      normalize_to_percent,
+      20 +    require_imagenet_layout,                                   
+      21      resolve_archs,
+      22 +    val_sample_size,                                           
+      23      verdict,
+      24  )
+      25  
+
+● Update(tests/test_imagenet_sanity.py)
+  ⎿  Added 32 lines
+      116  
+      117  def test_verdict_without_ci_reports_no_noise_band():
+      118      assert verdict(76.0, 76.0, bar=1.5)["within_noise"] is Non
+           e
+      119 +                                                              
+      120 +                                                              
+      121 +# --- ImageNet layout validation (loud failure, no silent bogu
+          +s number) -------                                             
+      122 +                                                              
+      123 +def test_require_imagenet_layout_accepts_train_and_val(tmp_pat
+          +h):                                                           
+      124 +    (tmp_path / "train").mkdir()                              
+      125 +    (tmp_path / "val").mkdir()                                
+      126 +    assert require_imagenet_layout(tmp_path) == tmp_path      
+      127 +                                                              
+      128 +                                                              
+      129 +def test_require_imagenet_layout_rejects_missing_val(tmp_path)
+          +:                                                             
+      130 +    (tmp_path / "train").mkdir()                              
+      131 +    with pytest.raises(FileNotFoundError, match="val"):       
+      132 +        require_imagenet_layout(tmp_path)                     
+      133 +                                                              
+      134 +                                                              
+      135 +def test_require_imagenet_layout_rejects_missing_train(tmp_pat
+          +h):                                                           
+      136 +    (tmp_path / "val").mkdir()                                
+      137 +    with pytest.raises(FileNotFoundError, match="train"):     
+      138 +        require_imagenet_layout(tmp_path)                     
+      139 +                                                              
+      140 +                                                              
+      141 +# --- val-subset sizing (feeds the binomial CI) --------------
+          +-----------------                                             
+      142 +                                                              
+      143 +def test_val_sample_size_zero_means_all():                    
+      144 +    assert val_sample_size(0, 5000) == 5000                   
+      145 +    assert val_sample_size(-1, 5000) == 5000      # guard agai
+          +nst negatives                                                 
+      146 +                                                              
+      147 +                                                              
+      148 +def test_val_sample_size_caps_request_at_available():         
+      149 +    assert val_sample_size(2000, 5000) == 2000                
+      150 +    assert val_sample_size(10_000, 5000) == 5000  # never more
+          + than exist                                                   
+
+● Bash(env -u PYTHONPATH .venv/bin/python -m pytest
+      tests/test_imagenet_sanity.py -q 2>&1 | tail -12)
+  ⎿  Hint: make sure your test modules/packages have valid Python names.
+     Traceback:
+     /usr/lib/python3.12/importlib/__init__.py:90: in import_module
+     … +13 lines (ctrl+o to expand)
+
+● RED confirmed again. Now GREEN for the two pure helpers, plus I'll add the
+  full OFA/ImageNet orchestration + CLI (lazy imports, won't affect the .venv
+  tests). First let me check the mypy strictness so I annotate the glue
+  correctly:
+
+  Read 1 file (ctrl+o to expand)
+
+● mypy is non-strict (no disallow_untyped_defs) but torch (cpu build) is present
+  in .venv with real stubs, while torchvision/ofa need the override. Note eval/
+  isn't in the mypy files list — I'll add it so the new module is actually
+  checked. Now GREEN: the two pure helpers plus the full orchestration. First
+  the imports:
+
+● Update(eval/imagenet_sanity.py)
+  ⎿  Added 6 lines
+      27  
+      28  from __future__ import annotations
+      29  
+      30 +import argparse                                                
+      31  import math
+      32  import random
+      33 +from pathlib import Path                                       
+      34 +from typing import TYPE_CHECKING                               
+      35  
+      36  from catalog.contracts import ArchDict
+      37  from catalog.ofa_mbv3 import D, E, KS, MAX_DEPTH
+      38  from search.arch_to_blocks import random_arch_dict
+      39  
+      40 +if TYPE_CHECKING:  # heavy deps stay lazy — imported inside the
+         + orchestration fns below                                       
+      41 +    from ofa.imagenet_classification.elastic_nn.networks import
+         + OFAMobileNetV3                                                
+      42 +                                                               
+      43  # OFA-MBv3 has 5 stages x MAX_DEPTH block slots; ks/e carry one
+           entry per slot, d one per
+      44  # stage. OFA's evaluate_ofa_subnet asserts exactly these length
+          s.
+      45  N_SLOTS = 5 * MAX_DEPTH
+
+● Now the pure helpers and the full orchestration layer:
+● Update(eval/imagenet_sanity.py)
+  ⎿  Added 183 lines
+      131          "ci95": ci,
+      132          "within_noise": (abs_gap <= ci) if ci is not None else
+            None,
+      133      }
+      134 +                                                              
+      135 +                                                              
+      136 +def require_imagenet_layout(path: Path) -> Path:              
+      137 +    """Fail loudly unless ``path`` holds both ``train/`` and `
+          +`val/`` (ImageFolder roots).                                  
+      138 +                                                              
+      139 +    A missing split must abort before any measurement — never 
+          +silently emit a                                               
+      140 +    meaningless accuracy from an empty / mislaid dataset.     
+      141 +    """                                                       
+      142 +    for split in ("train", "val"):                            
+      143 +        if not (path / split).is_dir():                       
+      144 +            raise FileNotFoundError(                          
+      145 +                f"ImageNet path {path} is missing a '{split}/'
+          + directory "                                                  
+      146 +                f"(expected <path>/{split}/<wnid>/*.JPEG, torc
+          +hvision ImageFolder layout)"                                  
+      147 +            )                                                 
+      148 +    return path                                               
+      149 +                                                              
+      150 +                                                              
+      151 +def val_sample_size(n_val: int, available: int) -> int:       
+      152 +    """How many val images to score: ``n_val <= 0`` means all;
+          + otherwise cap at available."""                               
+      153 +    return available if n_val <= 0 else min(n_val, available) 
+      154 +                                                              
+      155 +                                                              
+      156 +# --- OFA + ImageNet orchestration ---------------------------
+          +-----------------                                             
+      157 +# Heavy deps (torch/torchvision/ofa, and supernet.sampler whic
+          +h imports ofa) are imported                                   
+      158 +# *inside* these functions so the pure layer above stays impor
+          +table under .venv. Running                                    
+      159 +# any of these needs .venv-nas + a real dataset.              
+      160 +                                                              
+      161 +_PREDICTOR_CACHE: dict = {}                                   
+      162 +                                                              
+      163 +                                                              
+      164 +def resolve_device(spec: str) -> str:                         
+      165 +    """``auto`` -> ``cuda`` when a GPU is visible else ``cpu``
+          +; any explicit value passes."""                               
+      166 +    if spec != "auto":                                        
+      167 +        return spec                                           
+      168 +    import torch                                              
+      169 +                                                              
+      170 +    return "cuda" if torch.cuda.is_available() else "cpu"     
+      171 +                                                              
+      172 +                                                              
+      173 +def predict_topk(arch: ArchDict, resolution: int, *, device: s
+          +tr = "cpu") -> float:                                         
+      174 +    """OFA's released accuracy predictor's top-1 (%) for ``arc
+          +h`` at ``resolution``.                                        
+      175 +                                                              
+      176 +    This is the apples-to-apples reference: the predictor was 
+          +trained on direct-extraction +                                
+      177 +    BN-recalibrated subnets of this exact w1.0 space. One pred
+          +ictor instance is cached per                                  
+      178 +    device (it downloads ``acc_predictor.pth`` on first use). 
+      179 +    """                                                       
+      180 +    from ofa.tutorial.accuracy_predictor import AccuracyPredic
+          +tor                                                           
+      181 +                                                              
+      182 +    if device not in _PREDICTOR_CACHE:                        
+      183 +        _PREDICTOR_CACHE[device] = AccuracyPredictor(pretraine
+          +d=True, device=device)                                        
+      184 +    pred = _PREDICTOR_CACHE[device].predict_accuracy([build_ne
+          +t_config(arch, resolution)])                                  
+      185 +    return normalize_to_percent(float(pred.flatten()[0]))     
+      186 +                                                              
+      187 +                                                              
+      188 +def _build_val_loader(                                        
+      189 +    imagenet_path: Path, *, n_val: int, batch_size: int, devic
+          +e: str, seed: int                                             
+      190 +):                                                            
+      191 +    """ImageFolder ``DataLoader`` over ``val/``, subset to ``n
+          +_val`` images (0 = all).                                      
+      192 +                                                              
+      193 +    Returns ``(loader, n_used)``; ``n_used`` feeds the binomia
+          +l CI. The placeholder transform                               
+      194 +    is irrelevant — OFA's ``validate`` overrides ``dataset.tra
+          +nsform`` before iterating.                                    
+      195 +    """                                                       
+      196 +    import torch                                              
+      197 +    from torchvision import datasets, transforms              
+      198 +                                                              
+      199 +    dataset = datasets.ImageFolder(str(imagenet_path / "val"),
+          + transforms.ToTensor())                                       
+      200 +    n_used = val_sample_size(n_val, len(dataset))             
+      201 +    sampler = None                                            
+      202 +    if n_used < len(dataset):                                 
+      203 +        gen = torch.Generator().manual_seed(seed)             
+      204 +        idx = torch.randperm(len(dataset), generator=gen)[:n_u
+          +sed].tolist()                                                 
+      205 +        sampler = torch.utils.data.SubsetRandomSampler(idx)   
+      206 +    loader = torch.utils.data.DataLoader(                     
+      207 +        dataset, batch_size=batch_size, sampler=sampler, shuff
+          +le=False,                                                     
+      208 +        num_workers=8, pin_memory=("cuda" in device), drop_las
+          +t=False,                                                      
+      209 +    )                                                         
+      210 +    return loader, n_used                                     
+      211 +                                                              
+      212 +                                                              
+      213 +def measure_topk(                                             
+      214 +    supernet: OFAMobileNetV3, arch: ArchDict, resolution: int,
+          + imagenet_path: Path, *,                                      
+      215 +    batch_size: int = 100, bn_images: int = 2000, n_val: int =
+          + 0,                                                           
+      216 +    device: str = "cpu", seed: int = 0,                       
+      217 +) -> tuple[float, int]:                                       
+      218 +    """Measured top-1 (%) and image count for ``arch``, BN-rec
+          +alibrated then validated.                                     
+      219 +                                                              
+      220 +    Step-for-step OFA's ``evaluate_ofa_subnet`` (set_active ->
+          + get_active(preserve_weight) ->                               
+      221 +    ``calib_bn`` on ``bn_images`` train images -> ``validate``
+          +), but threading ``bn_images`` /                              
+      222 +    ``n_val`` and stating ``preserve_weight=True`` explicitly.
+      223 +    """                                                       
+      224 +    from ofa.tutorial.imagenet_eval_helper import calib_bn, va
+          +lidate                                                        
+      225 +                                                              
+      226 +    cfg = build_net_config(arch, resolution)                  
+      227 +    supernet.set_active_subnet(ks=cfg["ks"], d=cfg["d"], e=cfg
+          +["e"])                                                        
+      228 +    subnet = supernet.get_active_subnet(preserve_weight=True).
+          +to(device)                                                    
+      229 +    loader, n_used = _build_val_loader(                       
+      230 +        imagenet_path, n_val=n_val, batch_size=batch_size, dev
+          +ice=device, seed=seed                                         
+      231 +    )                                                         
+      232 +    calib_bn(subnet, str(imagenet_path), resolution, batch_siz
+          +e, num_images=bn_images)                                      
+      233 +    top1 = validate(subnet, str(imagenet_path), resolution, lo
+          +ader, batch_size, device)                                     
+      234 +    return float(top1), n_used                                
+      235 +                                                              
+      236 +                                                              
+      237 +def run_sanity(                                               
+      238 +    imagenet_path: Path | str, *, archs: tuple[str, ...] = ("m
+          +ax", "min", "random"),                                        
+      239 +    resolution: int = 224, n_val: int = 0, bn_images: int = 20
+          +00, batch_size: int = 100,                                    
+      240 +    device: str = "auto", bar: float = 1.5, seed: int = 0,    
+      241 +) -> dict:                                                    
+      242 +    """Measure vs predict top-1 for each arch and assemble the
+          + CP 1.4 report dict."""                                       
+      243 +    path = require_imagenet_layout(Path(imagenet_path))       
+      244 +    dev = resolve_device(device)                              
+      245 +    from supernet.sampler import load_supernet                
+      246 +                                                              
+      247 +    supernet = load_supernet()                                
+      248 +    results = []                                              
+      249 +    for label, arch in resolve_archs(list(archs), seed=seed): 
+      250 +        predicted = predict_topk(arch, resolution, device=dev)
+      251 +        measured, n_used = measure_topk(                      
+      252 +            supernet, arch, resolution, path, batch_size=batch
+          +_size,                                                        
+      253 +            bn_images=bn_images, n_val=n_val, device=dev, seed
+          +=seed,                                                        
+      254 +        )                                                     
+      255 +        row = verdict(measured, predicted, bar=bar, ci=binomia
+          +l_ci95(measured, n_used))                                     
+      256 +        row.update(label=label, n_val=n_used, resolution=resol
+          +ution)                                                        
+      257 +        results.append(row)                                   
+      258 +    report = {                                                
+      259 +        "device": dev, "resolution": resolution, "bar": bar, "
+          +results": results,                                            
+      260 +        "passed": all(r["within_bar"] for r in results),      
+      261 +    }                                                         
+      262 +    _print_report(report)                                     
+      263 +    return report                                             
+      264 +                                                              
+      265 +                                                              
+      266 +def _print_report(report: dict) -> None:                      
+      267 +    print(f"\nCP 1.4 ImageNet sanity — device={report['device'
+          +]}, "                                                         
+      268 +          f"r={report['resolution']}, bar=+-{report['bar']}pp"
+          +)                                                             
+      269 +    print("=" * 76)                                           
+      270 +    print(f"  {'arch':7s} {'n_val':>7s} {'measured':>9s} {'pre
+          +dicted':>10s} "                                               
+      271 +          f"{'gap':>7s} {'CI95':>8s}  verdict")               
+      272 +    for r in report["results"]:                               
+      273 +        tag = "PASS" if r["within_bar"] else ("noise" if r["wi
+          +thin_noise"] else "FAIL")                                     
+      274 +        ci_s = f"+-{r['ci95']:.2f}" if math.isfinite(r["ci95"]
+          +) else "n/a"                                                  
+      275 +        print(f"  {r['label']:7s} {r['n_val']:7d} {r['measured
+          +']:7.2f}%  "                                                  
+      276 +              f"{r['predicted']:8.2f}%  {r['gap']:+6.2f} {ci_s
+          +:>8s}  {tag}")                                                
+      277 +    results = report["results"]                               
+      278 +    if len(results) >= 4:                                     
+      279 +        from search.cost_preview import spearman              
+      280 +                                                              
+      281 +        rho = spearman([r["measured"] for r in results],      
+      282 +                       [r["predicted"] for r in results])     
+      283 +        print(f"\n  measured~predicted Spearman rho = {rho:+.3
+          +f} "                                                          
+      284 +              f"(rank fidelity across {len(results)} archs)") 
+      285 +    print(f"\n  DoD (every arch within +-{report['bar']}pp of 
+          +predictor): "                                                 
+      286 +          f"{'PASS' if report['passed'] else 'FAIL'}")        
+      287 +                                                              
+      288 +                                                              
+      289 +def main(argv: list[str] | None = None) -> int:               
+      290 +    p = argparse.ArgumentParser(description=__doc__.splitlines
+          +()[0])                                                        
+      291 +    p.add_argument("--imagenet-path", type=Path, required=True
+          +,                                                             
+      292 +                   help="ImageNet root containing train/ and v
+          +al/ ImageFolder subdirs")                                     
+      293 +    p.add_argument("--archs", default="max,min,random",       
+      294 +                   help="comma-separated subset of: max, min, 
+          +random")                                                      
+      295 +    p.add_argument("--resolution", type=int, default=224)     
+      296 +    p.add_argument("--n-val", type=int, default=0,            
+      297 +                   help="val images to score (0 = all found; >
+          +=10000 recommended vs the "                                   
+      298 +                        "1.5pp bar — 2k alone is +-1.8pp noise
+          +)")                                                           
+      299 +    p.add_argument("--bn-images", type=int, default=2000,     
+      300 +                   help="train images for BN recalibration (OF
+          +A's default)")                                                
+      301 +    p.add_argument("--batch-size", type=int, default=100)     
+      302 +    p.add_argument("--device", default="auto", help="auto | cp
+          +u | cuda | cuda:0")                                           
+      303 +    p.add_argument("--bar", type=float, default=1.5, help="DoD
+          + top-1 bar in pp")                                            
+      304 +    p.add_argument("--seed", type=int, default=0)             
+      305 +    args = p.parse_args(argv)                                 
+      306 +    report = run_sanity(                                      
+      307 +        args.imagenet_path,                                   
+      308 +        archs=tuple(a.strip() for a in args.archs.split(",")),
+      309 +        resolution=args.resolution, n_val=args.n_val, bn_image
+          +s=args.bn_images,                                             
+      310 +        batch_size=args.batch_size, device=args.device, bar=ar
+          +gs.bar, seed=args.seed,                                       
+      311 +    )                                                         
+      312 +    return 0 if report["passed"] else 1                       
+      313 +                                                              
+      314 +                                                              
+      315 +if __name__ == "__main__":                                    
+      316 +    raise SystemExit(main())                                  
+
+● Now verify GREEN — pure tests pass and the module imports cleanly in .venv
+  despite the OFA orchestration (lazy imports):
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== pytest (pure layer, 19 tests) ==="…)
+  ⎿  === pytest (pure layer, 19 tests) ===
+     ...................
+        [100%]
+     … +14 lines (ctrl+o to expand)
+
+● All GREEN: 19/19, clean .venv import, CLI wired. Tasks #40–#41 done. Now wire
+  mypy (add torchvision.* to the override and put eval under mypy's files so the
+  new module is actually checked):
+
+● Update(pyproject.toml)
+  ⎿  Added 3 lines, removed 3 lines
+      28  
+      29  [tool.mypy]
+      30  python_version = "3.12"
+      31 -files = ["catalog", "search", "supernet", "lut", "tests"]      
+      31 +files = ["catalog", "eval", "search", "supernet", "lut", "tests
+         +"]                                                             
+      32  exclude = "lut/bench/"
+      33  
+      34  [[tool.mypy.overrides]]
+      35 -# ofa lives only in .venv-nas; fabric/tqdm/yaml/pandas/scipy sh
+         -ip no (complete)                                               
+      35 +# ofa/torchvision live only in .venv-nas; fabric/tqdm/yaml/pand
+         +as/scipy ship no (complete)                                    
+      36  # type stubs (numpy does; pandas-stubs is a separate opt-in pac
+          kage we don't depend on).
+      37 -module = ["ofa.*", "fabric.*", "tqdm.*", "yaml.*", "pandas.*", 
+         -"scipy.*"]                                                     
+      37 +module = ["ofa.*", "torchvision.*", "fabric.*", "tqdm.*", "yaml
+         +.*", "pandas.*", "scipy.*"]                                    
+      38  ignore_missing_imports = true
+
+● Now the eval/README.md documenting the dataset contract and run — the part the
+  user needs to actually close the DoD:
+
+● Write(eval/README.md)
+  ⎿  Wrote 63 lines to eval/README.md
+       2 # `eval/`
+       3 Accuracy-side evaluation harnesses for the NAS pipeline. Runs un
+       4 (needs `ofa` + `torchvision`); the pure decision logic is import
+         able under `.venv` too.
+       6 ## `imagenet_sanity.py` — CP 1.4 (ImageNet sanity check)
+       7 
+          **BatchNorm-recalibrated**, OFA-MBv3-w1.0 supernet, sampled and
+       9 reproduces the top-1 accuracy OFA's own released model predicts 
+      10 first exercise of the accuracy axis — a wrong weight load or a s
+         kipped BN recalibration
+     … +81 lines (ctrl+o to expand)
+
+● Tasks #42 wired. Now run the full fast-lane gate (ruff + mypy + pytest) — this
+  is where the new module gets type-checked and linted for the first time:
+
+● Bash(bash scripts/check.sh -m "not slow" 2>&1 | tail -35)
+  ⎿  [check] ruff
+     I001 [*] Import block is un-sorted or un-formatted
+       --> eval/imagenet_sanity.py:28:1
+     … +22 lines (ctrl+o to expand)
+
+● ruff caught an import-ordering nit (random before pathlib). Let me apply
+  ruff's autofix and re-run the gate:
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      env -u PYTHONPATH .venv/bin/python -m ruff check --fix
+      eval/imagenet_sanity.py 2>&1 | tail -3…)
+  ⎿  Found 1 error (1 fixed, 0 remaining).
+     --- re-run full fast lane ---
+     collected 199 items / 3 deselected / 1 skipped / 196 selected
+     … +24 lines (ctrl+o to expand)
+
+● [check] all green — 196 passed, 1 skipped (test_sampler skips: ofa only in
+  .venv-nas), 3 slow deselected. ruff + mypy + my 19 new tests all pass. Task
+  #43 done.
+
+  Now a high-value verification I can do without ImageNet: run the predictor 
+  path in .venv-nas. This resolves the units question I flagged (is the
+  predictor output ~77 or ~0.77?) and confirms normalize_to_percent picks the
+  right scale + the predictor ranks max above min — all without a dataset.
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      env -u PYTHONPATH .venv-nas/bin/python - <<'PY' 2>&1 | tail -25…)
+  ⎿  Traceback (most recent call last):
+       File "<stdin>", line 2, in <module>
+       File "/home/asil/Desktop/TFM_NAS/.venv-nas/lib/python3.12/site-packa
+     … +8 lines (ctrl+o to expand)
+
+● Real dependency gap discovered: tqdm is missing from .venv-nas. Importing any
+  ofa.tutorial.* module triggers ofa/tutorial/__init__.py → evolution_finder →
+  from tqdm import tqdm. CP 1.3's sampler only used
+  ofa.imagenet_classification.* (no tqdm), so this is the first code to need it
+  — without it, python -m eval.imagenet_sanity fails at import. Let me check
+  whether it's a listed-but-uninstalled drift or a genuinely-absent dep:
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== requirements-nas.txt ==="; cat requirements-nas.txt
+      2>/dev/null…)
+  ⎿  === requirements-nas.txt ===
+     # NAS-side dependencies. Install into a separate venv (.venv-nas/) —
+     # do NOT mix with requirements.txt (the LUT pipeline uses CPU torch).
+     … +21 lines (ctrl+o to expand)
+
+● tqdm is a genuinely-absent transitive dep (OFA's wheel only declares torch).
+  It's pure-Python with zero dependencies, so installing it can't perturb the
+  torch 2.11.0+cu128 / torchvision 0.26.0+cu128 pins — same safe pattern as
+  adding scipy to .venv. Let me install it, verify the pins held, then re-run
+  the smoke:
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== install tqdm into .venv-nas ==="…)
+  ⎿  === install tqdm into .venv-nas ===
+     Successfully installed tqdm-4.68.3
+     … +8 lines (ctrl+o to expand)
+
+● tqdm 4.68.3 installed, pins held (torch 2.11.0+cu128 / torchvision
+  0.26.0+cu128 unchanged). Now re-run the predictor smoke — this resolves the
+  units question:
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      env -u PYTHONPATH .venv-nas/bin/python - <<'PY' 2>&1 | tail -20…)
+  ⎿  Traceback (most recent call last):
+       File "<stdin>", line 2, in <module>
+       File "/home/asil/Desktop/TFM_NAS/.venv-nas/lib/python3.12/site-packa
+     … +12 lines (ctrl+o to expand)
+
+● Another forced dep: gdown. ofa/tutorial/__init__.py eagerly imports
+  imagenet_eval_helper → from ofa.model_zoo import ofa_specialized → import 
+  gdown. So importing anything from ofa.tutorial drags in tqdm + gdown, even
+  though the functions I actually call (AccuracyPredictor, calib_bn, validate)
+  never use gdown — it's only in the evaluate_ofa_specialized path I don't
+  touch.
+
+  This is exactly the gdown dep supernet/README.md said the sampler avoids — but
+  CP 1.4's reuse of OFA's validated tutorial eval genuinely needs it. The
+  plan's explicit choice was to reuse OFA's eval (vendoring it would risk
+  diverging from the protocol that produces OFA's published numbers — the very
+  thing CP 1.4 verifies). gdown/tqdm are legitimate, pure-Python OFA deps that
+  won't touch the torch pins. Installing:
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== install gdown into .venv-nas ==="…)
+  ⎿  === install gdown into .venv-nas ===
+
+     Successfully installed PySocks-1.7.1 beautifulsoup4-4.15.0 certifi-202
+     … +9 lines (ctrl+o to expand)
+
+● gdown installed (pins still held). Now the predictor smoke should work —
+  re-run:
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      env -u PYTHONPATH .venv-nas/bin/python - <<'PY' 2>&1 | tail -20…)
+  ⎿  Downloading: "https://raw.githubusercontent.com/han-cai/files/master/o
+     fa/acc_predictor.pth" to /home/asil/.torch/acc_predictor.pth
+     predictor loaded OK
+     … +6 lines (ctrl+o to expand)
+
+● The smoke resolves the open questions decisively:
+
+  ★ Insight ─────────────────────────────────────
+  - Units confirmed — the predictor emits a fraction, not a percent (max=0.8359,
+  min=0.7774). The defensive normalize_to_percent (×100 when ≤1.0) was
+  essential, not paranoia: without it every comparison would be off by 100×.
+  This is exactly the kind of latent unit bug that "write code after, it passed"
+  testing never catches.
+  - Ranking is sane (max 83.59% > min 77.74%) — the predictor orders the corners
+  correctly, so the supernet→predictor wiring is sound.
+  - Corner caveat surfaced: 83.6% for the max arch is above OFA's realistic
+  ceiling (~80% even with fine-tuning). The predictor is trained mostly on
+  interior archs, so it extrapolates optimistically at the space corners. That
+  means the random (interior) arch — which is literally what the DoD says ("a
+  sampled subnet") — is the fair test; the max/min corners may show larger gaps
+  that are predictor error, not weight bugs.
+  ─────────────────────────────────────────────────
+
+  The harness is verified as far as possible offline (only the calib_bn/validate
+  ImageNet path remains, which needs the dataset). Two new required deps (tqdm,
+  gdown) must be pinned. Let me record them:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(requirements-nas.txt)
+  ⎿  Added 8 lines
+      14  pyyaml>=6.0
+      15  Pillow>=10.0
+      16  ofa==0.1.0.post202307202001
+      17 +# CP 1.4 eval (eval/imagenet_sanity.py) reuses OFA's validated 
+         +eval helpers, and                                              
+      18 +# importing ofa.tutorial.* runs ofa/tutorial/__init__.py, which
+         + eagerly pulls                                                 
+      19 +# evolution_finder (-> tqdm) and imagenet_eval_helper (-> ofa.m
+         +odel_zoo -> gdown).                                            
+      20 +# The CP 1.3 sampler bypasses ofa.tutorial so it never needed t
+         +hese; the eval                                                 
+      21 +# harness does. Both are pure-Python (no torch interaction) — t
+         +hey install without                                            
+      22 +# disturbing the +cu128 torch/torchvision pins.                
+      23 +tqdm>=4.66                                                     
+      24 +gdown>=5.0                                                     
+
+● Now document the dep requirement in the README where the user will look:
+
+● Update(eval/README.md)
+  ⎿  Added 3 lines, removed 1 line
+      1  # `eval/`
+      2  
+      3  Accuracy-side evaluation harnesses for the NAS pipeline. Runs un
+         der **`.venv-nas`**
+      4 -(needs `ofa` + `torchvision`); the pure decision logic is import
+        -able under `.venv` too.                                         
+      4 +(needs `ofa` + `torchvision`, plus `tqdm` + `gdown` — importing 
+        +OFA's `ofa.tutorial.*`                                          
+      5 +eval helpers transitively requires both; they're pinned in `requ
+        +irements-nas.txt`). The                                         
+      6 +pure decision logic is importable under `.venv` too.            
+      7  
+      8  ## `imagenet_sanity.py` — CP 1.4 (ImageNet sanity check)
+      9  
+
+● The smoke also exposed a verdict design flaw I must fix before the user runs 
+  it: the predictor reads ~83.6% (max) / ~77.7% (min), but the measured
+  direct-extraction accuracy will be ~77% / ~71% — so the corners will bust the
+  1.5pp bar by ~5–7pp purely from predictor extrapolation, not weight bugs. With
+  passed = all archs within bar, the run would spuriously report FAIL even with
+  perfect weights. The DoD is about "a sampled subnet" (interior) — so corners
+  must be diagnostic-only, excluded from the pass gate.
+
+  This is evidence-driven, so I'll TDD the fix. RED first — tests for the new
+  gate logic:
+
+● Update(tests/test_imagenet_sanity.py)
+  ⎿  Added 2 lines
+      16      binomial_ci95,
+      17      build_net_config,
+      18      canonical_archs,
+      19 +    is_diagnostic,                                             
+      20      normalize_to_percent,
+      21 +    overall_pass,                                              
+      22      require_imagenet_layout,
+      23      resolve_archs,
+      24      val_sample_size,
+
+● Update(tests/test_imagenet_sanity.py)
+  ⎿  Added 30 lines
+      150  def test_val_sample_size_caps_request_at_available():
+      151      assert val_sample_size(2000, 5000) == 2000
+      152      assert val_sample_size(10_000, 5000) == 5000  # never more
+            than exist
+      153 +                                                              
+      154 +                                                              
+      155 +# --- DoD gate: corners are diagnostic, interior (sampled) arc
+          +hs gate ----------                                            
+      156 +                                                              
+      157 +def test_is_diagnostic_flags_corners_only():                  
+      158 +    assert is_diagnostic("max") and is_diagnostic("min")      
+      159 +    assert not is_diagnostic("random")                        
+      160 +                                                              
+      161 +                                                              
+      162 +def test_overall_pass_ignores_diagnostic_corner_failures():   
+      163 +    # The predictor extrapolates at the corners; a corner bust
+          +ing the bar is not a weight                                   
+      164 +    # bug. With the interior 'sampled' arch inside the bar, th
+          +e DoD passes.                                                 
+      165 +    results = [                                               
+      166 +        {"label": "max", "diagnostic": True, "within_bar": Fal
+          +se},                                                          
+      167 +        {"label": "random", "diagnostic": False, "within_bar":
+          + True},                                                       
+      168 +    ]                                                         
+      169 +    assert overall_pass(results) is True                      
+      170 +                                                              
+      171 +                                                              
+      172 +def test_overall_pass_fails_when_interior_arch_busts_bar():   
+      173 +    results = [                                               
+      174 +        {"label": "max", "diagnostic": True, "within_bar": Tru
+          +e},                                                           
+      175 +        {"label": "random", "diagnostic": False, "within_bar":
+          + False},                                                      
+      176 +    ]                                                         
+      177 +    assert overall_pass(results) is False                     
+      178 +                                                              
+      179 +                                                              
+      180 +def test_overall_pass_falls_back_to_corners_when_no_interior()
+          +:                                                             
+      181 +    assert overall_pass([{"label": "max", "diagnostic": True, 
+          +"within_bar": False}]) is False                               
+      182 +    assert overall_pass([{"label": "min", "diagnostic": True, 
+          +"within_bar": True}]) is True                                 
+
+● Bash(env -u PYTHONPATH .venv/bin/python -m pytest
+      tests/test_imagenet_sanity.py -q 2>&1 | tail -8)
+  ⎿             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     tests/test_imagenet_sanity.py:15: in <module>
+         from eval.imagenet_sanity import (
+     … +8 lines (ctrl+o to expand)
+
+● RED confirmed. Now GREEN — add the two pure functions:
+
+● Update(eval/imagenet_sanity.py)
+  ⎿  Added 17 lines
+      153      return available if n_val <= 0 else min(n_val, available)
+      154  
+      155  
+      156 +def is_diagnostic(label: str) -> bool:                        
+      157 +    """The ``max``/``min`` corners are diagnostic, not gating.
+      158 +                                                              
+      159 +    The accuracy predictor is trained on interior (sampled) ar
+          +chs and extrapolates                                          
+      160 +    *optimistically* at the space corners, so a corner exceedi
+          +ng the bar reflects predictor                                 
+      161 +    error, not a weight-loading defect. The DoD speaks of "a s
+          +ampled subnet" — an interior                                  
+      162 +    point — so the corners inform ranking/range but do not dec
+          +ide pass/fail.                                                
+      163 +    """                                                       
+      164 +    return label in ("max", "min")                            
+      165 +                                                              
+      166 +                                                              
+      167 +def overall_pass(results: list[dict]) -> bool:                
+      168 +    """DoD verdict: every *interior* arch within the bar (corn
+          +ers excluded when present)."""                                
+      169 +    gated = [r for r in results if not r["diagnostic"]] or res
+          +ults                                                          
+      170 +    return all(r["within_bar"] for r in gated)                
+      171 +                                                              
+      172 +                                                              
+      173  # --- OFA + ImageNet orchestration ---------------------------
+           -----------------
+      174  # Heavy deps (torch/torchvision/ofa, and supernet.sampler whic
+           h imports ofa) are imported
+      175  # *inside* these functions so the pure layer above stays impor
+           table under .venv. Running
+● Now wire them into the orchestration. Let me read the current
+  run_sanity/_print_report to edit precisely:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(eval/imagenet_sanity.py)
+  ⎿  Added 3 lines, removed 2 lines
+      270              bn_images=bn_images, n_val=n_val, device=dev, seed
+           =seed,
+      271          )
+      272          row = verdict(measured, predicted, bar=bar, ci=binomia
+           l_ci95(measured, n_used))
+      273 -        row.update(label=label, n_val=n_used, resolution=resol
+          -ution)                                                        
+      273 +        row.update(label=label, n_val=n_used, resolution=resol
+          +ution,                                                        
+      274 +                   diagnostic=is_diagnostic(label))           
+      275          results.append(row)
+      276      report = {
+      277          "device": dev, "resolution": resolution, "bar": bar, "
+           results": results,
+      277 -        "passed": all(r["within_bar"] for r in results),      
+      278 +        "passed": overall_pass(results),                      
+      279      }
+      280      _print_report(report)
+      281      return report
+
+● Now update _print_report to mark diagnostic rows and clarify the gate. Let me
+  read it:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(eval/imagenet_sanity.py)
+  ⎿  Added 5 lines, removed 1 line
+      289            f"{'gap':>7s} {'CI95':>8s}  verdict")
+      290      for r in report["results"]:
+      291          tag = "PASS" if r["within_bar"] else ("noise" if r["wi
+           thin_noise"] else "FAIL")
+      292 +        if r["diagnostic"]:                                   
+      293 +            tag += " (diag)"     # corner: predictor extrapola
+          +tes here; not gated                                           
+      294          ci_s = f"+-{r['ci95']:.2f}" if math.isfinite(r["ci95"]
+           ) else "n/a"
+      295          print(f"  {r['label']:7s} {r['n_val']:7d} {r['measured
+           ']:7.2f}%  "
+      296                f"{r['predicted']:8.2f}%  {r['gap']:+6.2f} {ci_s
+           :>8s}  {tag}")
+     ...
+      302                         [r["predicted"] for r in results])
+      303          print(f"\n  measured~predicted Spearman rho = {rho:+.3
+           f} "
+      304                f"(rank fidelity across {len(results)} archs)")
+      303 -    print(f"\n  DoD (every arch within +-{report['bar']}pp of 
+          -predictor): "                                                 
+      305 +    print("\n  (max/min are diagnostic — the predictor extrapo
+          +lates at the space corners; "                                 
+      306 +          "the\n   DoD gates on the interior 'sampled' arch(s)
+          +.)")                                                          
+      307 +    print(f"  DoD (interior arch within +-{report['bar']}pp of
+          + predictor): "                                                
+      308            f"{'PASS' if report['passed'] else 'FAIL'}")
+      309  
+      310  
+
+● Now verify GREEN and re-run the full gate (the orchestration changed, so
+  re-lint/type-check too):
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      echo "=== new pure tests ==="…)
+  ⎿  === new pure tests ===
+     .......................
+        [100%]
+     … +13 lines (ctrl+o to expand)
+
+● [check] all green — 200 passed, 1 skipped. The verdict now correctly treats
+  corners as diagnostic. Two README fixes are needed to match what the smoke
+  actually revealed (my earlier "~76–77%" guess for the max-arch predicted value
+  was wrong — it's ~83.6%, and the corner-diagnostic behavior is new):
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(eval/README.md)
+  ⎿  Added 10 lines, removed 4 lines
+      54  carry 25–75 extra fine-tune epochs, so a direct subnet would le
+          gitimately score several
+      55  points lower. That gap would be a fine-tuning artifact, not a w
+          eight-loading bug.
+      56  
+      57 -### Two things to watch on the first run                       
+      57 +### Three things to watch on the first run                     
+      58  
+      59 -- **Predictor scale.** The predictor's output units are unverif
+         -ied offline; the harness                                       
+      60 -  normalizes anything ≤ 1.0 as a fraction (×100). Eyeball the `
+         -max`-arch *predicted* value:                                   
+      61 -  ~76–77 %, not ~0.77 — confirms the normalization picked the r
+         -ight scale.                                                    
+      59 +- **Predictor scale.** The predictor's released weights emit a 
+         +*fraction* (verified: ~0.84                                    
+      60 +  for the max arch), and the harness normalizes anything ≤ 1.0 
+         +by ×100. The printed `max`                                     
+      61 +  *predicted* value should land in the ~80s (a percent), not ~0
+         +.8 — confirms the scaling                                      
+      62 +  fired.                                                       
+      63 +- **Corners are diagnostic, not gated.** `max`/`min` sit at the
+         + edge of the predictor's                                       
+      64 +  training distribution, where it extrapolates *optimistically*
+         + (it predicts ~83.6 % for                                      
+      65 +  the max arch — above OFA's realistic ceiling even with fine-t
+         +uning). The DoD therefore                                      
+      66 +  gates on the interior `random` (sampled) arch; corners print 
+         +a `(diag)` tag and inform                                      
+      67 +  ranking/range only. A corner reading `FAIL (diag)` is expecte
+         +d, not a weight bug.                                           
+      68  - **Measurement noise vs the bar.** A 2 k-image val set carries
+           ≈ ±1.8 pp (95% CI) of
+      69    binomial noise — *wider* than the 1.5 pp bar — so the report 
+          prints the CI per arch and a
+      70    `noise` verdict for gaps that bust the bar but sit inside the
+           CI. Prefer `--n-val 10000`
+
+● The harness is feature-complete and green. Let me do a final self-review of
+  the orchestration half (it's the untested-in-CI path, so coherence matters
+  most there):
+
+  Read 1 file (ctrl+o to expand)
+
+● The orchestration is coherent and faithfully mirrors OFA's
+  evaluate_ofa_subnet. The one path I haven't exercised end-to-end is
+  calib_bn→validate over a dataset. I can de-risk that plumbing (not accuracy)
+  with a tiny synthetic ImageNet stub — proving run_sanity executes
+  start-to-finish before the user invests in real ImageNet setup:
+
+● Bash(cd /home/asil/Desktop/TFM_NAS
+      env -u PYTHONPATH .venv-nas/bin/python - <<'PY' 2>&1 | tail -30…)
+  ⎿  /home/asil/Desktop/TFM_NAS/.venv-nas/lib/python3.12/site-packages/torc
+     h/utils/data/dataloader.py:1118: UserWarning: 'pin_memory' argument is
+      set as true but no accelerator is found, then device pinned memory wo
+     … +20 lines (ctrl+o to expand)
+
+● Plumbing verified end-to-end. The full pipeline ran on CPU against a synthetic
+  stub: supernet load → set_active_subnet → get_active_subnet → calib_bn (BN
+  recalibration) → validate → report. top1=0% is exactly right for random-noise
+  images vs 1000-way logits — the point was proving the wiring executes, and it
+  does. (The lone pin_memory warning is from OFA's own calib_bn, not my loader,
+  and is harmless on CPU.)
+
+  Note the interior random arch predicted 81.48% — a sensible, non-corner value,
+  confirming the DoD will gate on a reasonable arch.
+
+  CP 1.4 harness: done and verified as far as possible offline
+
+  ★ Insight ─────────────────────────────────────
+  The verification ladder here matters more than the code: pure unit tests
+  (logic) → predictor smoke (resolved the fraction-vs-percent unit ambiguity
+  that would've silently broken every comparison) → plumbing smoke (proved the
+  OFA glue runs). Each rung tests something the rung below can't, and none
+  required ImageNet. What's left genuinely needs the dataset — there's no way to
+  fake "does the measured accuracy match" without real labeled images.
+  ─────────────────────────────────────────────────
+
+  Built & green (bash scripts/check.sh -m "not slow" → 200 passed, 1 skipped):
+  - eval/imagenet_sanity.py — pure decision layer (TDD, 23 tests in .venv) +
+  OFA/ImageNet orchestration (lazy imports, faithful to OFA's
+  evaluate_ofa_subnet) + CLI.
+  - eval/README.md, pyproject.toml (torchvision.* + eval under mypy),
+  requirements-nas.txt (+tqdm, +gdown — real deps ofa.tutorial forces; pins
+  held: torch 2.11.0+cu128 unchanged).
+
+  Three things the verification settled:
+  1. Reference = OFA's accuracy predictor (apples-to-apples for
+  direct-extraction subnets), not the fine-tuned specialized nets.
+  2. Predictor emits a fraction (0.84 max) → normalize_to_percent ×100 is
+  essential.
+  3. Corners extrapolate (predicts 83.6% for max, above OFA's ceiling) → max/min
+  are diagnostic-only; the DoD gates on the interior random arch, matching the
+  DoD's "a sampled subnet."
+
+  What's left to close the DoD (needs you)
+
+  Point it at real ImageNet (<path>/train/<wnid>/, <path>/val/<wnid>/ in
+  ImageFolder layout):
+
+  source .venv-nas/bin/activate
+  python -m eval.imagenet_sanity --imagenet-path /path/to/imagenet --n-val 10000
+    # +--device cuda on the GPU box
+
+  It prints measured vs predicted per arch (+95% CI) and the PASS/FAIL. On PASS
+  I'll record the numbers in procedure.md and add 1.4 to plan_state.yaml — I
+  held those edits per the plan since the DoD bar is a real measured number, not
+  something I can fabricate offline.
+
+  Two open items, both yours to call:
+  - Do you have ImageNet accessible (here, or on the remote GPU box)? That's the
+  only blocker to closing CP 1.4.
+  - This is all uncommitted (this session + the prior CP 2.2 work), and you're
+  on main. Want me to branch and commit?
+
+✻ Worked for 33m 28s
+
+※ recap: CP 1.4 (ImageNet sanity check for the OFA supernet) harness is built, tested, and verified offline; it's green and committed-pending. Next: run it against real ImageNet in .venv-nas to get the measured-vs-predicted number and close the checkpoint. (disable recaps in /config)
+
+❯ Winter 2021 release                                                           
+                                                                                
+      ImageNet21K MD5: ab313ce03179fd803a401b02c651c0a2                         
+      Download a single Synset:                                                 
+  https://image-net.org/data/winter21_whole/SYNSET_ID.tar, e.g.,                
+  https://image-net.org/data/winter21_whole/n02352591.tar                       
+      Processed version of ImageNet21K (MD5: c314e95f17e357b3e9cbf0a18ef7ecd6)  
+  using the script of "ImageNet-21K pretraining for the masses"                 
+      ImageNet10K from Deng et al. ECCV2010                                     
+                                                                                
+  People subtree annotations (FAT* 2020).                                       
+                                                                                
+      Description and details                                                   
+      Unsafe synsets                                                            
+      Imageability annotations                                                  
+      Due to sensitivity of the data, the demographic annotations are not       
+  available here. Please contact us at imagenet.help.desk@gmail.com to request  
+  access.                                                                       
+                                                                                
+  ImageNet Large-scale Visual Recognition Challenge (ILSVRC)                    
+                                                                                
+      2017                                                                      
+      2016                                                                      
+      2015                                                                      
+      2014                                                                      
+      2013                                                                      
+      2012                                                                      
+      2011                                                                      
+      2010                                                                      
+      ILSVRC 2012–2017 evaluation server                                        
+                                                                                
+  Face-blurred ILSVRC2012–2017 classification data is now available (below). We 
+  strongly encourage researchers to use this new privacy-aware version for all  
+  purposes.                                                                     
+  Face obfuscation in ILSVRC                                                    
+                                                                                
+      Description and details                                                   
+      Face annotations                                                          
+      Blurred training images                                                   
+      Blurred validation images                                                 
+                                                                                
+  Object bounding boxes (AAAI 2010).                                            
+                                                                                
+      Description and details                                                   
+      Download all available                                                    
+                                                                                
+  Object attributes (ECCV workshop 2010).                                       
+                                                                                
+      Description, details, and download                                        
+                                                                                
+  Download image data for Visual Domain Decathlon(PASCAL in Detail Workshop     
+  Challenge)                                                                    
+                                                                                
+      Description and details                                                   
+      Decathlon data, 6.1 GB                                                    
+                                                                                
+  Download downsampled image data (32x32, 64x64)                                
+                                                                                
+      Description and details                                                   
+      Train(8x8), npz format, 227 MB                                            
+      Val(8x8), npz format 9 MB                                                 
+      Train(16x16), npz format, 888 MB                                          
+      Val(16x16), npz format, 34 MB                                             
+      Train(32x32), npz format, 3 GB                                            
+      Val(32x32), npz format, 134 MB                                            
+      Train(64x64) part1, npz format, 6 GB                                      
+      Train(64x64) part2, npz format, 6 GB                                      
+      Val(64x64), npz format, 509 MB                                            
+                                                                                
+  Tiny Imagenet(Stanford CS231N)                                                
+                                                                                
+      Description and details                                                   
+      Tiny, 236 MB                                                              
+                                                                                
+  ImageNet-OOD (ICLR 2024)                                                      
+                                                                                
+      Description and details                                                   
+      Download, 608 MB (MD5: f223759a476610dd59ee1010c97e29e9)                  
+                                                                                
+  WICH one should i download?                                                   
+
+● Short answer: the standard ILSVRC2012 classification data (the "ILSVRC 2012"
+  entry under the ILSVRC 2012–2017 section) — and really just its validation 
+  set. None of the other items on that page will work.
+
+  Why only ILSVRC2012: OFA's ofa_mbv3_d234_e346_k357_w1.0 and the accuracy
+  predictor are both trained on the 1000-class ILSVRC2012 task at ~224 px. The
+  measured labels have to line up with that exact 1000-way output. So:
+
+  ┌─────────────────────────────────┬───────────────────────────────────────┐
+  │             Option              │                Verdict                │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ ILSVRC2012 (or its face-blurred │ ✅ the one you want                   │
+  │  twin)                          │                                       │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ ImageNet21K (Winter 2021) /     │ ❌ wrong label space (21k/10k         │
+  │ ImageNet10K                     │ classes, not 1000)                    │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ Downsampled 32×32 / 64×64       │ ❌ wrong resolution + .npz, not image │
+  │                                 │  files                                │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ Tiny ImageNet                   │ ❌ 200 classes @ 64px                 │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ ImageNet-OOD                    │ ❌ out-of-distribution test set       │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ bounding boxes / attributes /   │ ❌ annotations, not classification    │
+  │ people subtree                  │ images                                │
+  └─────────────────────────────────┴───────────────────────────────────────┘
+
+  What to actually download
+
+  - Validation images — ILSVRC2012_img_val.tar, ~6.3 GB, 50k images. This is the
+  must-have; accuracy is measured here.
+    - Unblurred = cleanest match to the predictor's reference (the predictor's
+  numbers were built on unblurred ILSVRC2012). The face-blurred "Blurred
+  validation images" is ImageNet's recommended privacy-aware version and is also
+  fine — blurring only shifts top-1 by ~0.1–0.7 pp, inside our 1.5 pp bar.
+  Either works; I'd grab unblurred if it's one click away.
+  - You do NOT need the ~138 GB train tarball. BN recalibration needs only ~2000
+  images.
+
+  Two gotchas
+
+  1. Val prep (important). The val tar unpacks as 50k flat ILSVRC2012_val_*.JPEG
+  — you must sort them into val/<wnid>/ folders (the standard valprep.sh, or
+  torchvision.datasets.ImageNet does it for you). ImageFolder assigns class
+  indices by sorted folder name, and that wnid ordering is exactly what makes
+  your labels match OFA's output neurons. Skip this and you'll measure ~0% with
+  perfectly good weights.
+  2. The train/ for BN. The harness reads <path>/train/ for the 2000-image BN
+  recalibration. Cheapest options: carve a small disjoint slice off val into
+  train/<wnid>/, or grab a few train synsets.
+
+  Two ways to save effort
+
+  - If your remote GPU box already has ImageNet (lots of shared GPU
+  servers/clusters do, often at /datasets/imagenet or similar) — just point
+  --imagenet-path at it and skip the download entirely.
+  - If the train download is a hassle, I can add a --bn-from-val flag so you
+  only need the 6.3 GB val set — it'd hold out a disjoint slice of val for BN
+  recalibration (BN stats don't care train-vs-val; ImageNet's distribution is
+  the same). I'd TDD it like the rest. Want me to?
+
+  So: ILSVRC2012 validation images (~6.3 GB), unblurred if convenient — that's
+  the download.
+
+✻ Worked for 2m 22s
+
+❯ if i want to do it in kaggle?                                                 
+
+● Yes — Kaggle is actually a better fit than your laptop for this: the full
+  ILSVRC2012 is already hosted there (nothing to download to your machine), and
+  you get a free GPU so you can run --device cuda and use the whole 50k val set.
+
+  The dataset to attach
+
+  "ImageNet Object Localization Challenge"
+  (imagenet-object-localization-challenge) — it's the full ILSVRC2012. Add it to
+  your notebook (＋ Add Input). It mounts read-only at
+  /kaggle/input/imagenet-object-localization-challenge/ with:
+  - ILSVRC/Data/CLS-LOC/train/<wnid>/*.JPEG — train already in wnid folders ✅
+  - ILSVRC/Data/CLS-LOC/val/*.JPEG — val is flat (needs sorting)
+  - LOC_val_solution.csv — maps each val image → its wnid (this is your val-prep
+  key)
+
+  Notebook setup
+
+  Settings first: Accelerator → GPU (T4×2 or P100); Internet → On (needs
+  one-time phone verification — required for pip, the OFA checkpoint, and
+  acc_predictor.pth).
+
+  # 1. Get the repo into the notebook. For a private thesis repo, the clean way 
+  is
+  #    to upload it as a private Kaggle Dataset, then copy it somewhere 
+  writable:
+  !cp -r /kaggle/input/<your-repo-dataset-slug> /kaggle/working/TFM_NAS
+  # (or, if public:  !git clone <url> /kaggle/working/TFM_NAS)
+
+  # 2. Kaggle's image already has torch/torchvision/tqdm/gdown. Just add ofa:
+  !pip install -q ofa==0.1.0.post202307202001
+
+  # 3. Build train/ + val/ symlink trees in writable /kaggle/working (input is 
+  read-only).
+  import os, csv, pathlib
+  SRC  = pathlib.Path("/kaggle/input/imagenet-object-localization-challenge")
+  CLS  = SRC / "ILSVRC/Data/CLS-LOC"
+  out  = pathlib.Path("/kaggle/working/imagenet");
+  (out/"val").mkdir(parents=True, exist_ok=True)
+
+  # val: flat -> val/<wnid>/  (label = first token of PredictionString)
+  with open(SRC/"LOC_val_solution.csv") as f:
+      for row in csv.DictReader(f):
+          wnid = row["PredictionString"].split()[0]
+          d = out/"val"/wnid; d.mkdir(exist_ok=True)
+          link = d/f'{row["ImageId"]}.JPEG'
+          if not link.exists(): os.symlink(CLS/"val"/f'{row["ImageId"]}.JPEG',
+  link)
+
+  # train subset: 2 imgs/class = 2000 images -> fast BN recalibration
+  # (avoids ImageFolder scanning the full 1.28M-file train on every arch)
+  (out/"train").mkdir(exist_ok=True)
+  for wd in sorted((CLS/"train").iterdir()):
+      d = out/"train"/wd.name; d.mkdir(exist_ok=True)
+      for img in sorted(wd.iterdir())[:2]:
+          link = d/img.name
+          if not link.exists(): os.symlink(img, link)
+  print("done:", len(list((out/'val').iterdir())), "val classes")
+
+  # 4. Download the OFA checkpoint, then run the sanity check on the GPU over 
+  full val.
+  %cd /kaggle/working/TFM_NAS
+  !python -m supernet.download_ofa
+  !python -m eval.imagenet_sanity --imagenet-path /kaggle/working/imagenet
+  --device cuda --n-val 0
+
+  That's it — on GPU the full 50k val runs in a couple of minutes (CI ±0.37 pp,
+  the cleanest read against the 1.5 pp bar).
+
+  Two notes
+
+  - The harness works unchanged on Kaggle — --device cuda triggers OFA's
+  DataParallel path, and the lazy imports mean you just need ofa on top of
+  Kaggle's stock torch/torchvision.
+  - Expect max/min to print FAIL (diag) — that's the predictor extrapolating at
+  the corners, not a bug. The DoD verdict gates on the interior random arch (see
+  the per-arch table).
+
+  Offer: if you'd rather skip the train-subset cell entirely, I can add a
+  --bn-from-val flag (holds out a disjoint slice of val for BN recalibration) so
+  you only prep val/. Small change, I'd TDD it like the rest — want it?
+  Otherwise the recipe above works as-is today.
+
+✻ Brewed for 2m 17s

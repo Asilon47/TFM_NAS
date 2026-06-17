@@ -28,10 +28,11 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["catalog", "search", "supernet", "lut", "tests"]
+files = ["catalog", "eval", "search", "supernet", "lut", "tests"]
 exclude = "lut/bench/"
 
 [[tool.mypy.overrides]]
-# ofa lives only in .venv-nas; fabric/tqdm/yaml ship no type stubs.
-module = ["ofa.*", "fabric.*", "tqdm.*", "yaml.*"]
+# ofa/torchvision live only in .venv-nas; fabric/tqdm/yaml/pandas/scipy ship no (complete)
+# type stubs (numpy does; pandas-stubs is a separate opt-in package we don't depend on).
+module = ["ofa.*", "torchvision.*", "fabric.*", "tqdm.*", "yaml.*", "pandas.*", "scipy.*"]
 ignore_missing_imports = true

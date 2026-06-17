@@ -14,3 +14,11 @@ numpy>=1.26
 pyyaml>=6.0
 Pillow>=10.0
 ofa==0.1.0.post202307202001
+# CP 1.4 eval (eval/imagenet_sanity.py) reuses OFA's validated eval helpers, and
+# importing ofa.tutorial.* runs ofa/tutorial/__init__.py, which eagerly pulls
+# evolution_finder (-> tqdm) and imagenet_eval_helper (-> ofa.model_zoo -> gdown).
+# The CP 1.3 sampler bypasses ofa.tutorial so it never needed these; the eval
+# harness does. Both are pure-Python (no torch interaction) — they install without
+# disturbing the +cu128 torch/torchvision pins.
+tqdm>=4.66
+gdown>=5.0

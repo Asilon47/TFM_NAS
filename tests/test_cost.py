@@ -15,11 +15,15 @@ from catalog.sweep import row_key
 from lut.loader import load_lut
 from search.arch_to_blocks import _random_arch_dict, arch_to_blocks, arch_to_keys
 from search.cost import (
+    IDENTITY_CALIBRATION,
     ZERO_OFFSET,
     CostError,
     _aggregate,
     cost,
     cost_from_path,
+    load_latency_calibration,
+    load_stem_head_offset,
+    offset_from_measurements,
     resident_mem_mib,
 )
 
@@ -121,6 +125,45 @@ def test_roundtrip_on_disk_lut(lut_path):
     assert c["latency_ms"] > 0 and c["params"] > 0 and c["peak_mem_mib"] > 0
 
 
+# ---- stem/head offset: measured stem + head -> a CostOffset -----------------
+# The fixed stem (3->16) and head (final-expand/feature-mix/classifier) run
+# sequentially like blocks, so the offset aggregates them the same way cost does:
+# latency/params/flops SUM, peak_mem MAX (only one resident at a time).
+
+def test_offset_from_measurements_sums_latency_maxes_peak():
+    stem = {"latency_ms": 0.30, "peak_mem_mib": 12.0, "params": 500, "flops": 1000}
+    head = {"latency_ms": 0.20, "peak_mem_mib": 5.0, "params": 2_600_000, "flops": 9000}
+    off = offset_from_measurements(stem, head)
+    assert off["latency_ms"] == pytest.approx(0.50)   # 0.30 + 0.20
+    assert off["params"] == 2_600_500                  # summed
+    assert off["flops"] == 10_000                       # summed
+    assert off["peak_mem_mib"] == 12.0                  # max(12, 5), NOT 17
+
+
+def test_load_stem_head_offset_extracts_four_fields(tmp_path):
+    p = tmp_path / "stem_head_offset.json"
+    p.write_text(json.dumps({
+        "latency_ms": 0.5, "peak_mem_mib": 12.0, "params": 2_600_500, "flops": 10_000,
+        "precision": "fp32", "components": {"stem": {}, "head": {}},  # provenance ignored
+    }))
+    assert load_stem_head_offset(p) == {
+        "latency_ms": 0.5, "peak_mem_mib": 12.0, "params": 2_600_500, "flops": 10_000}
+
+
+def test_offset_roundtrips_and_composes_into_cost(tmp_path):
+    stem = {"latency_ms": 0.3, "peak_mem_mib": 12.0, "params": 500, "flops": 1000}
+    head = {"latency_ms": 0.2, "peak_mem_mib": 5.0, "params": 2_600_000, "flops": 9000}
+    off = offset_from_measurements(stem, head)
+    p = tmp_path / "o.json"
+    p.write_text(json.dumps({**off, "precision": "fp32"}))
+    assert load_stem_head_offset(p) == off
+    # the loaded offset shifts a composed cost by exactly its latency
+    arch = _random_arch_dict(random.Random(7))
+    lut = {k: _row(mean=1.0, key=k) for k in arch_to_keys(arch)}
+    base = cost(arch, lut)["latency_ms"]
+    assert cost(arch, lut, stem_head=off)["latency_ms"] == pytest.approx(base + 0.5)
+
+
 # ---- resident_mem_mib: deployable memory = resident weights + peak working set --
 # CostDict.peak_mem_mib is the measured MAX scratch+IO and EXCLUDES weights
 # (schema.md:59); the deployable figure must add every block's resident weights
@@ -138,3 +181,48 @@ def test_resident_mem_scales_with_precision_bytes():
                    "params": 2**20, "flops": 0}
     # fp32 (4 bytes/param) doubles only the weights term; working set unchanged.
     assert resident_mem_mib(c, bytes_per_param=4) == pytest.approx(7.0)
+
+
+# ---- latency calibration: measured ~= slope*summed + intercept ----------------
+# The additivity fit (search/predictor_stats.py) calibrates the summed backbone
+# latency to the device. cost() applies it to the BACKBONE SUM ONLY, before adding
+# the stem/head offset (both fit inputs are backbone-only). Default is identity, so
+# ranking is untouched; a slope>0 affine map is monotonic => order-preserving.
+
+def test_load_latency_calibration_extracts_two_fields(tmp_path):
+    p = tmp_path / "latency_calibration.json"
+    p.write_text(json.dumps({
+        "slope": 0.92, "intercept": 0.05,
+        "r2": 0.99, "mult_factor": 0.93, "n": 33, "precision": "fp32",
+        "spearman_rho": 0.98,                      # provenance — must be ignored
+    }))
+    assert load_latency_calibration(p) == {"slope": 0.92, "intercept": 0.05}
+
+
+def test_identity_calibration_is_a_noop():
+    arch = _random_arch_dict(random.Random(4))
+    lut = {k: _row(mean=1.0, key=k) for k in arch_to_keys(arch)}
+    assert cost(arch, lut, calibration=IDENTITY_CALIBRATION) == cost(arch, lut)
+
+
+def test_calibration_scales_backbone_then_adds_offset():
+    arch = _random_arch_dict(random.Random(5))
+    lut = {k: _row(mean=1.0, key=k) for k in arch_to_keys(arch)}
+    n = len(arch_to_blocks(arch))                  # backbone sum == n (1.0 each)
+    cal = {"slope": 0.9, "intercept": 0.0}
+    assert cost(arch, lut, calibration=cal)["latency_ms"] == pytest.approx(0.9 * n)
+    offset: CostOffset = {"latency_ms": 0.5, "peak_mem_mib": 0.0,
+                          "params": 0, "flops": 0}
+    # offset is added AFTER calibrating the backbone, not scaled by it
+    assert cost(arch, lut, stem_head=offset, calibration=cal)["latency_ms"] == (
+        pytest.approx(0.9 * n + 0.5))
+
+
+def test_calibration_is_affine_so_ranking_preserved():
+    arch = _random_arch_dict(random.Random(6))
+    lut = {k: _row(mean=1.0, key=k) for k in arch_to_keys(arch)}
+    base = cost(arch, lut)["latency_ms"]
+    cal = {"slope": 0.9, "intercept": 0.2}
+    # latency == slope*base + intercept: an affine, slope>0 (monotonic) transform
+    assert cost(arch, lut, calibration=cal)["latency_ms"] == pytest.approx(
+        0.9 * base + 0.2)
