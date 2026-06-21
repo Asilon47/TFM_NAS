@@ -22,6 +22,11 @@ build/
 # Data — device-specific measurements, large, regeneratable
 data/
 
+# Target dataset (D1 = gate-pose, ~1.6 GB synthetic A2RL renders) — large +
+# externally sourced, tracked outside git like data/. Keep the schema doc.
+dataset/*
+!dataset/SCHEMA.md
+
 # Downloaded pretrained checkpoints (e.g. OFA supernet, 31 MB) — see
 # supernet/download_ofa.py. Re-fetched + SHA-verified on demand, never
 # tracked in git.
@@ -60,3 +65,17 @@ Thumbs.db
 
 # Temp
 /tmp/
+
+# Nested deployment/training repo (separate git project, vendored locally)
+yolo-ros2-inference/
+
+# External A2RL gate datasets dropped at the repo root (large image/label trees,
+# like dataset/ — sourced + tracked outside git). Add new dated drops here.
+20_jan_a2rl_WITH_SYNTH/
+12dec_3jan_fused_fixed/
+
+# YOLO/Ultralytics training outputs (weights, plots, tensorboard, results.csv)
+experiments/
+runs/
+wandb/
+*.tfevents.*

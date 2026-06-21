@@ -1408,3 +1408,392 @@ authorized adding scipy, relaxing the earlier numpy-only stance.)
 RED→GREEN). `check.sh` green (177 passed, 1 skipped). The offline calibration path needs
 no Jetson — the measurements already exist in the manifest. CP 2.4 (eval/fine-tune) is
 next but remains **blocked on CUDA + dataset decision D1**.
+
+## CP 1.4 CLOSED — ImageNet sanity via rank fidelity (2026-06-18)
+
+The deferred Phase-1 sanity checkpoint is **complete** (`completed += "1.4"`;
+`current_checkpoint`/`last_completed` unchanged — CP 1.4 was always an out-of-order
+backfill, not the critical-path head, which stays at CP 2.4). DoD **PASS**.
+
+**What CP 1.4 verifies, and the re-frame.** The original DoD wording was "a sampled
+subnet is within 1.5% top-1 of OFA's published number." Building the harness
+(`eval/imagenet_sanity.py`) surfaced that that wording rests on a false premise:
+OFA publishes only *fine-tuned specialized-net* accuracies (`note10_lat@…_finetune@75`,
+25–75 extra epochs), so a directly-extracted subnet legitimately scores several points
+lower — there is no clean absolute external anchor. What the checkpoint actually needs to
+prove is that the **inherited weights + BatchNorm recalibration are intact** — a bad load
+or skipped `set_running_statistics` would poison every accuracy number from CP 2.4 on.
+
+**The first real run (2026-06-17, Kaggle GPU, full 50k val) made the right test obvious.**
+Measured top-1 vs OFA's released *accuracy predictor* (the artifact OFA uses to *rank*
+candidates in evolutionary search) showed a clean ~6.3pp constant offset: `max` 77.3% vs
+predicted 83.6%, `min` 70.5% vs 77.7%, a random interior 75.8% vs 81.5% — and a single
+offset anchored on `max` reconciled all three to <1pp with **identical rank order**. That
+is the signature of a ranking model trained on a higher absolute scale (a train-holdout
+subset), harmless for OFA's use and ours since search needs only the *order*. The `max`
+subnet (all weights, no slicing) landing at 77.3% — exactly OFA's biggest-direct-net
+ballpark — is the load-integrity proof; a broken load would be tens of points low.
+
+**Decision (via AskUserQuestion): gate on rank fidelity (Spearman), not an absolute bar.**
+This is the predictor's intended use and the strongest claim for the committee. The DoD
+became: *measured and predicted top-1 rank-correlate across a spread of archs — Spearman
+ρ ≥ 0.85 (p < 0.05)*, with the OLS affine fit reported as scale evidence. The harness was
+pivoted to compute the statistic over a *set* of archs (the two space corners + N random
+interior), **reusing `search.predictor_stats.predictor_stats`** — the exact
+Spearman/Kendall/affine tooling CP 2.2 built for the latency predictor (x=predictor,
+y=device convention). Added pure functions `random_archs` / `rank_pass` / `rank_summary`
+(TDD, `.venv`-pure via lazy scipy import); removed the superseded absolute-bar gate
+(`verdict`/`is_diagnostic`/`overall_pass`). `scipy>=1.15` added to `requirements-nas.txt`
+(lazy-imported, so the pure layer and `import eval.imagenet_sanity` stay scipy-free under
+`.venv`).
+
+**DoD result — PASS.** Re-run 2026-06-18 (Kaggle GPU, full 50k val, 20 archs = max/min +
+18 random; `data/results/imagenet_sanity_report.json` + `.csv`):
+
+- **Ranking (the gate):** Spearman ρ = **0.919** (p = 1.1e-08), Kendall τ = 0.800
+  (p = 1.7e-08) — measured and predicted order archs the same way. **PASS** (≥ 0.85).
+- **Scale (supporting):** OLS `measured ≈ 1.105·predicted − 14.469` (r² = 0.918). The
+  slope > 1 means a mild compression on top of the offset, but it is affine and monotone
+  → never reorders. Calibration collapses MAPE **7.89% → 0.38%**, and **all 20 archs** sit
+  within the 1.5pp band on the *calibrated* gap (`measured − affine(predicted)`; worst
+  −0.81pp at `min`, +0.74pp at `rand2`).
+- **External anchor:** `max` = 77.34%, `min` = 70.66% — the OFA-w1.0 direct-extraction
+  corners, confirming the weight load + BN recalibration are intact.
+
+Reading: high ρ with a *removable* (coherent affine) absolute bias is the best outcome —
+the supernet ranks faithfully and the offset is fully explained by two parameters. The
+"FAIL" the first run printed was an artifact of the old absolute gate, not a supernet
+defect.
+
+**State.** `tests/test_imagenet_sanity.py` swapped its 8 abs-bar tests for 6 rank tests
+(21 total in-file); `check.sh` fast lane green (198 passed, 1 skipped, 3 deselected).
+Reports saved under `data/results/` (gitignored). No CUDA was used on this machine — the
+run is GPU-only and ran on Kaggle. CP 1.4 no longer gates anything; the critical path
+remains CP 2.4 (fine-tune harness), **blocked on CUDA + dataset decision D1**.
+
+---
+
+## D1 resolved — pose pivot (2026-06-18)
+
+Not a checkpoint — a **decision** (D1) plus a CPU-verified prototype. `current_checkpoint`
+stays **2.4**; D1 was the non-CUDA half of CP 2.4's block, now cleared.
+
+### The decision
+
+The user supplied the target dataset (`dataset/`) and asked to adopt it "from now on." It is
+an **Ultralytics YOLO-pose** dataset — 1 class `gate`, **8 keypoints**, 2842 train / 140 val
+synthetic A2RL drone-racing renders (see `dataset/SCHEMA.md`). Their existing stack
+(`yolo-ros2-inference/`) already deploys **yolo11n-pose** on the Jetson Orin Nano
+(`yolo11n-pose-jetson-fp16.engine`, 640, FP16 TRT). So D1 resolves to **gate detection +
+8-keypoint pose** — a re-frame from 1000-class ImageNet classification to detection/pose
+(metric: **pose mAP / OKS**).
+
+This was an open decision (D1, "do not resolve unilaterally"). Three sub-decisions taken via
+AskUserQuestion:
+
+1. **NAS strategy = OFA backbone + YOLO-pose head.** Each OFA-MBv3 subnet is searched as a
+   *backbone*; a YOLO11-pose neck/head is grafted on top. This keeps the entire investment —
+   supernet, sampler, latency LUT, Net2Net, BO — and makes the ImageNet pretrain (CP 1.2/1.4)
+   the backbone *warm-start*, which is exactly its right role for a detection backbone.
+2. **Baseline + teacher = yolo11-pose.** The baseline-to-beat becomes the deployed
+   **yolo11n-pose** (on the Jetson accuracy/latency frontier); the Phase-8 distillation teacher
+   becomes a bigger **yolo11s/m/l-pose** (reuse `yolo-ros2-inference/scripts/yolo_distillation.py`).
+   This replaces the old "Pareto-dominate MobileNetV3 on ImageNet" headline.
+3. **Accuracy metric = pose mAP (OKS).** Reused from Ultralytics' validator (`metrics.pose.map`),
+   not re-implemented.
+
+### What carries over vs. changes
+
+Keep: OFA supernet/sampler/Net2Net/BO (backbone now), the ImageNet pretrain + CP 1.4 sanity
+(warm-start), the Jetson LUT pipeline + TRT methodology (latency is task-agnostic). Change:
+the accuracy harness (top-1 → pose mAP), the `J(α)` accuracy term, the baseline/teacher.
+
+### The backbone-tap design (the technical crux)
+
+OFA-MBv3-w1.0 makes only ks/e/d elastic; the **stage output widths are fixed**
+(24/40/80/112/160). Stages 1/3/4 end at strides 8/16/32, so a subnet's `(P3, P4, P5)` taps are
+the **last-block indices of those stages** — pure cumulative sums of the active depths
+(`stage_tap_indices(d) = (sum(d[:2]), sum(d[:4]), sum(d[:5]))`; `blocks[0]` is OFA's fixed first
+block). Because the widths are fixed, the tap channels are **invariant across the whole search
+space**: `(40, 112, 160)` for *every* arch. So **one fixed neck/head/adapter serves every
+sampled backbone** — what makes "search the backbone, freeze the head" tractable. At 640×640
+the taps are 80²/40²/20² — the canonical YOLO P3/P4/P5 scales.
+
+### Prototype built + CPU-verified (`.venv-nas`, no CUDA needed for a forward)
+
+- `supernet/pose_backbone.py` — `stage_tap_indices` (pure, TDD'd under `.venv`) +
+  `PoseBackbone(subnet, depths)` (wraps a sampled subnet, drops the classifier, returns the
+  three taps). Real-OFA `__main__` smoke: a random subnet forwards `(1,3,640,640) →
+  P3(1,40,80,80) P4(1,112,40,40) P5(1,160,20,20)` — confirming the tap math against the actual
+  sampled block list (`len(blocks) == 1 + sum(d)`), with pretrained weights.
+- `detect/` — `ChannelAdapter` (1×1 convs (40,112,160)→(64,128,256); torch-only, TDD'd under
+  `.venv`); `pose_model.build_pose_model` grafts a **real `ultralytics.nn.modules.head.Pose`**
+  onto backbone+adapter; `evaluate.pose_map` wraps Ultralytics' pose validator and rewrites
+  `dataset.yaml`'s stale absolute `path:` at run time. Real-OFA `__main__` smoke: forwards
+  `(1,3,640,640)` → Pose head `boxes(1,64,8400) scores(1,1,8400) kpts(1,24,8400)` (24 = 8×3
+  keypoints, 8400 = 80²+40²+20² anchors, scores ch = nc = 1). The graft works end-to-end.
+- Tests: `tests/test_pose_backbone.py` (8, incl. a stub-backbone forward), `tests/test_pose_adapter.py`
+  (3). `check.sh` fast lane green (**209 passed**, 1 skipped, 3 deselected).
+
+### Infra fixes (discovered while installing ultralytics)
+
+- `requirements-nas.txt` += `ultralytics>=8.3` (installed 8.4.70; torch 2.11.0+cu128 / tv
+  0.26.0+cu128 / ofa pins all intact; its opencv/matplotlib/pandas deps are CPU/pure).
+- `scripts/setup_laptop_nas.sh` was **broken on this machine**: the repo was moved
+  (`…/lookup_table` → `…/TFM_NAS`), so the checked-in `.venv-nas/bin/activate` exports a stale
+  `VIRTUAL_ENV` (and even references `cygpath`); `source activate` left bare `python` pointing
+  at the system, externally-managed interpreter → pip aborted with **PEP 668** on the first
+  command. Fixed: invoke `.venv-nas/bin/python` by absolute path (not `activate`) and clear
+  ROS's leaked `PYTHONPATH` (same guard `scripts/check.sh` already uses). NB the user's *manual*
+  `source .venv-nas/bin/activate` (per CLAUDE.md) is still stale — regenerate the venv
+  scaffolding or invoke the interpreter directly.
+- `.gitignore` += `dataset/*` (with `!dataset/SCHEMA.md`): the 1.6 GB payload is no longer
+  committable, the schema doc stays tracked. `pyproject.toml`: `detect` added to mypy `files`,
+  `ultralytics.*` to the no-stubs override, `yolo-ros2-inference` to ruff `extend-exclude` (it
+  is the user's separate ROS2 repo, not NAS source).
+
+### Consequence owed (not done here)
+
+The LUT rows are keyed by per-block `input_shape` derived from **224**. Pose runs at **640**, so
+every block's feature-map shape differs → new `row_key`s → the measured 224-LUT does not cover
+them. The append-only, `input_shape`-keyed schema absorbs this natively: a **second LUT sweep at
+the deployment resolution** (recommend 640) plus a resolution parameter on
+`search/arch_to_blocks` + the catalog grid. `search/cost.py`'s constant offset generalizes
+(stem + pose neck/head instead of the classifier). Also owed: anchor the baseline (yolo11n-pose
+Jetson latency + val pose mAP), and wrap the grafted backbone as an Ultralytics model for
+end-to-end pose train/val (the fresh head needs a short fine-tune to be meaningful). All
+CUDA/Jetson-gated.
+
+### State
+
+`current_checkpoint` 2.4 (unchanged), `last_completed` 2.2, `completed` unchanged. CP 2.4's
+metric is now pose mAP (`PROJECT_PLAN.md` CP 2.4 + the D1 entry re-scoped; CP 8.1 teacher →
+yolo11-pose). The actual fine-tune remains **CUDA-gated**. `CLAUDE.md` is agent-write-protected,
+so its one-paragraph summary, the CP 1.4 line, and the D1 row need a manual update by the user.
+
+## CP 2.4 — CPU slice (trainable graft + harness + DoD gates) (2026-06-18)
+
+Built the **CPU-buildable slice** of CP 2.4 (the rest is GPU-gated). The forward-only prototype
+from the D1 pivot could only run inference; the graft is now **trainable and eval-able
+end-to-end**, and both DoD checks are coded + unit-tested. No checkpoint advance — the DoDs
+themselves need the GPU fine-tunes.
+
+**The trainable graft (`detect/pose_model.py`).** Added `GraftedPoseModel`, a subclass of
+Ultralytics' `ultralytics.nn.tasks.PoseModel`, plus `build_grafted_pose_model(arch)` (factory:
+sample OFA subnet → `PoseBackbone` → `ChannelAdapter` → fresh `Pose` head w/ `bias_init`). The
+subclass overrides **only** (a) construction — it skips `DetectionModel.__init__` (yaml build +
+stride-inference forward) via `nn.Module.__init__`, holding the assembled parts in
+`self.model = Sequential(backbone, adapter, head)` so `self.model[-1]` is the Pose head; and
+(b) `_predict_once` — runs `backbone → adapter → head` directly, because the OFA/adapter modules
+lack Ultralytics' per-layer `.f`/`.i` routing the inherited loop assumes. Everything else
+(`loss()`, `init_criterion()` → `v8PoseLoss`, `_apply` stride-moving) is **inherited unchanged**
+— they only ever reach the head through `self.model[-1]`. The wrapper exposes the attributes the
+loss/validator read: `.args` (loss gains box/cls/dfl/pose/kobj via `get_cfg(DEFAULT_CFG)`),
+`.names` (`{0: gate}`), `.nc`, `.kpt_shape`, `.stride`, `.yaml`, `.task`. The subclass is built
+lazily through module `__getattr__` (PEP 562) so `import detect.pose_model` stays
+ultralytics-free under `.venv` (the contract; only touching `.GraftedPoseModel` pulls ultralytics
+in).
+
+**Grafted eval (`detect/evaluate.py`).** Added `pose_map_model(model, …)`: the existing `pose_map`
+drives the high-level `YOLO` wrapper (baseline/teacher anchoring) which a bare graft lacks, so
+this runs `PoseValidator` directly against the graft (AutoBackend reads `.stride`/`.names`/
+`.kpt_shape`; dataloader from the path-rewritten yaml). **CPU-verified** on the real 140-img val
+split (random head → mAP≈9e-8, as expected; the point is the OKS pipeline *runs*).
+
+**The harness (`eval/shortft.py`).** `short_finetune(arch, …)` = seed → `build_grafted_pose_model`
+→ Ultralytics pose dataloader (`_build_pose_loader`, **`cfg.task='pose'`** so keypoints load) →
+AdamW loop (`loss.sum().backward()`) → `pose_map_model`. Train path CPU-smoked: real pose batch
+(keys `img/batch_idx/cls/bboxes/keypoints`) → grafted model → finite v8PoseLoss → backward/step.
+Plus the two **DoD gates**: `rank_fidelity(proxy, full)` → `RankFidelity{kendall_tau, spearman,
+passes}` (the search gate, τ ≥ 0.7, scipy) and `reproducible(a, b)` (twice within 0.5 mAP pts =
+0.005 absolute, since pose mAP is a [0,1] fraction). `v8PoseLoss.loss` returns `(5-vector ×
+batch, detached)` (box, pose, kobj, cls, dfl) → the loop sums before backward.
+
+**Why this design (vs a thin `v8PoseLoss` loop).** Subclassing the real `PoseModel` keeps the
+graft a first-class Ultralytics model → the user's `yolo_training.py` / `yolo_distillation.py` /
+`.val()` can drive it later unchanged, and it sets up the Phase-8 distillation graft. Cost: the
+two small overrides above. The cls-BCE term flows gradient to the backbone on *every* anchor, so
+the grad-path test is robust even when no anchor matches the synthetic box.
+
+**Tests / verification.** `tests/test_shortft.py` (10, scipy-only → `.venv`/CI: the two DoD
+gates incl. the one-swap τ=2/3<0.7 boundary). `tests/test_grafted_pose_model.py` (6,
+`.venv-nas`: head-is-`model[-1]`, `.args`/metadata contract, train-mode predict dict, **loss
+finite + grad reaches the backbone stem**, and a slow 1-image overfit that drives loss down with
+a stub backbone — *no OFA checkpoint needed*). `python -m detect.pose_model` overfit smoke:
+loss 24.93 → 8.97 / 15 steps. Built TDD (RED→GREEN for both helper + wrapper). `check.sh` fast
+lane green: **219 passed**, 2 skipped (grafted test skips without ultralytics; sampler without
+ofa), 3 deselected; ruff + mypy clean.
+
+**Remains (GPU-gated):** the real ~5-epoch fine-tune + both DoDs — reproducibility (same arch
+twice within 0.5 %) and proxy-rank Kendall-τ ≥ 0.7 over ~8–12 archs vs a full-train ranking
+(peer-review R2.1 / P0.2; gates the whole search). Run on Kaggle / Jetson. Parallel CPU-runnable
+item: anchor the baseline yolo11n-pose **mAP** via `pose_map` (its Jetson **latency** stays gated).
+
+**Protocol driver (`eval/proxy_rank.py`, the one-command GPU run).**
+`python -m eval.proxy_rank --archs 10 --proxy-epochs 5 --full-epochs 100 --device cuda` runs the
+whole DoD: `sample_archs` picks N archs spanning the space (min/max **corners** + seeded randoms —
+uniform sampling clusters mid-depth and weakens τ), scores each under proxy + full via
+`short_finetune`, reruns arch 0 at **seed+1** for the reproducibility floor (same seed twice is
+bit-identical → a meaningless pass), and `assemble_verdict` → Kendall-τ/Spearman + repro +
+PASS/FAIL (process exit 0 ⇔ DoD pass). **Resumable:** every per-arch result is flushed to
+`data/cp24_proxy_rank.json` (gitignored), so a Kaggle timeout (a full train of 10 archs can exceed
+the ~9–12 h cap) continues, not restarts; verdict → `<out>.verdict.json`. Pure logic
+(verdict/corners/JSON-resume) TDD'd in `tests/test_proxy_rank.py` (7, `.venv`); the loop is
+CPU-smoked via `--max-steps` (2 corner archs, proxy+full+repro, resume verified, no repo
+`runs/` pollution). +7 tests; `check.sh` fast lane **226 passed**.
+
+### State
+
+`current_checkpoint` 2.4 (unchanged), `last_completed` 2.2, `completed` unchanged — CP 2.4 stays
+**open** until the GPU DoDs pass. `CLAUDE.md` updated (guard lifted earlier this session): the
+CP 2.4 line, blockers, and "lowest-friction next build" now reflect the built CPU slice.
+
+---
+
+## CP 2.4 — GPU run FAILED both DoDs → diagnose-first (2026-06-21)
+
+The Kaggle GPU run of `python -m eval.proxy_rank` landed (`data/cp24_proxy_rank.json` +
+`.verdict.json`). **Both DoD gates failed:**
+
+| Gate | Result | Threshold |
+|---|---|---|
+| Proxy-rank fidelity | Kendall-τ = **0.20** | ≥ 0.70 |
+| Reproducibility | Δ = **0.0149** (1.5 mAP pts, arch 0 at seed vs seed+1) | ≤ 0.005 |
+
+### What the 10-arch data says
+
+Per-arch (proxy → full pose-mAP): the **min corner** (idx 0) is correctly lowest in both
+(0.50 → 0.778); the **max corner** (idx 1) highest full (0.850). But the 8 random archs' full-train
+mAPs **cluster in 0.823–0.850** (spread ≈ 0.024), and proxy vs full are **uncorrelated** among them
+(e.g. idx 8 is 2nd-best by full, dead last by proxy; idx 9 best by proxy, mid by full). So the only
+signal the 5-epoch proxy captured is *"the smallest net is worst"* — that single arch contributes
+~all of τ=0.20 (net ≈ 9/45 concordant pairs). The proxy is trying to resolve accuracy gaps smaller
+than its own noise. The reproducibility and rank failures share a root: `build_grafted_pose_model`
+fine-tunes a **randomly-initialized** YOLO-pose head for only 5 epochs, so the proxy partly measures
+head-init luck (eval is deterministic given weights → the 1.5-pt gap is training-trajectory noise).
+
+### Decisions (AskUserQuestion)
+
+- **Q1 → diagnose first.** The data can't tell us whether the *full-train* ranking of the clustered
+  archs is itself reliable. If full-train noise ≈ the cluster spread, the synthetic gate task does
+  **not** separate archs on accuracy and *no* proxy can pass — reframe. If full-train is stable, the
+  proxy is the (repairable) problem. Measure the full-train noise floor before spending repair compute
+  (PROJECT_PLAN CP 2.4 "below threshold → repair the proxy first" branch).
+- **Q2 → decide head warm-start after the diagnostic.** So no warm-start was built this pass.
+
+### Built — the full-train noise diagnostic (`eval/proxy_rank.py`)
+
+Extends the existing driver (reuses `ArchResult`, the resumable JSON, `short_finetune`); the 10
+existing seed-0 full maps are **reused** as ground truth — the diagnostic only adds ~3 *new*
+full-trains at `seed+1`.
+
+- **`full_noise_verdict(reseed, cluster_maps)` (pure, TDD'd):** `noise_floor = median |seed1−seed0|`,
+  `cluster_spread = max−min` of the clustered full maps (the global-min corner is dropped — it's the
+  one trivially-separable outlier), `snr = spread / noise_floor` → `discriminates` (≥ 2) / `flat`
+  (≤ 1) / `ambiguous`; plus per-arch deltas and the seed0↔seed1 Kendall-τ.
+- **`ArchResult.full_map_reseed`** — new optional field (back-compatible; old JSON loads on the
+  default `None`).
+- **`run_full_diagnostic(indices=…)` + `--diagnose-full`/`--indices` CLI:** reads the prior results,
+  reruns the chosen archs' full-train at `seed+1` into `full_map_reseed` (resumable per-arch flush),
+  writes the verdict to `<out>.diagnostic.json`. Default `--indices 7,4,8` (spans the cluster).
+- **Tests:** `full_noise_verdict` (discriminates / flat / ambiguous / deltas / ≥1-reseed guard) +
+  `ArchResult` round-trip & old-record back-compat. Because **`.venv-nas` is not built on this
+  laptop** (only `.venv`), `run_full_diagnostic`'s resume/guard/verdict-writing path is covered by a
+  **stubbed-fine-tune** test (monkeypatch `eval.shortft.short_finetune`, `supernet=object()`) — the
+  real fine-tune is the Kaggle step. CLI dispatch smoked via the missing-prior guard. `check.sh` fast
+  lane **236 passed**, 2 skipped, 3 deselected; ruff + mypy clean.
+
+### The decision the diagnostic feeds (next pass)
+
+- **`discriminates`** → ground truth real → repair the **proxy** (revisit Q2 head warm-start +
+  epochs 5→10–15 + LR schedule; re-run **proxy-only** and re-correlate against the existing full maps
+  — cheap). Target τ ≥ 0.7.
+- **`flat`** → task doesn't separate archs → **reframe** (accuracy as a constraint, latency the
+  objective; adjacent to open decision **D4** → escalate, don't resolve unilaterally).
+- **`ambiguous`** → tighten the full-train reference too (epochs / eval protocol) *and* the proxy.
+
+Kaggle command (prior `data/cp24_proxy_rank.json` present for resume):
+`python -m eval.proxy_rank --diagnose-full --indices 7,4,8 --full-epochs 100 --device cuda`.
+
+### State
+
+`current_checkpoint` **2.4** (unchanged), `last_completed` 2.2, `completed` unchanged — CP 2.4 stays
+**open** (failed; diagnosing). Existing seed-0 `full_map`s preserved (the diagnostic writes only
+`full_map_reseed` + a separate `.diagnostic.json`).
+
+## CP 2.4 — repair: head warm-start + freeze (2026-06-21)
+
+Before running the 300-epoch diagnostic, a **read-only investigation** (no GPU; correlated the 10
+existing archs against zero-cost LUT descriptors via `search.cost.cost_from_path`) updated the picture
+enough to change the plan.
+
+### Investigation — the proxy is the noise, not the task
+
+| ranker vs `full_map` | Kendall τ (all 10) | τ (8 randoms, no corners) |
+|---|---|---|
+| depth `sum(d)` | **+0.767** (passes gate) | +0.596 |
+| Jetson latency | **+0.733** (passes gate) | +0.571 |
+| FLOPs | +0.689 | +0.500 |
+| params | +0.556 | +0.286 |
+| **5-epoch fine-tune proxy** | **+0.200** | **0.000** |
+
+- The full-train mAP **tracks size strongly and stays ordered even inside the "cluster"** — so the
+  ground truth is real, not flat (the original diagnose-first worry). A free layer-count out-ranks the
+  GPU fine-tune.
+- The proxy correlates with **nothing** (τ=0.20; **−0.08 once the min corner is dropped**; τ=0.07 vs
+  FLOPs). Regressing `full_map` on depth (r²=0.71) leaves an architectural residual of only
+  **stdev ≈ 0.010 mAP** — the signal a *good* proxy must resolve.
+- **Root cause = the randomly-initialized Pose head.** Smoking gun: **idx8 = 2nd-best full-train
+  (0.846) but the worst proxy (0.5705)** — a good backbone sabotaged by 5 epochs of learning a head
+  from scratch. Same root as the 1.5-pt reproducibility gap (re-seed → re-roll the head).
+- (Full numbers + residual table in the plan file `ticklish-popping-mountain.md`, "Investigation
+  addendum".)
+
+### Decision (AskUserQuestion → "fix the head first")
+
+Given the ground truth is clearly size-structured (the "flat" scenario that motivated diagnose-first
+is now disfavored) and the random head is the proven culprit, **fix the head and re-test cheaply**
+before spending the 300-epoch diagnostic. The diagnostic stays the **fallback** if the warm re-test
+still misses. (`detect/pose_model.py:9-12` already named the trained-head clone as the intended next
+step; the adapter was built to feed the head's `(64,128,256)` inputs.)
+
+### Built — head warm-start + freeze
+
+- **`detect.pose_model`:** `warm_start_head(head, donor_state)` — **shape-aware partial `state_dict`
+  copy** (copy where key+shape match, leave the rest at init, raise if *nothing* matches); serves both
+  the gate donor (nc=1/8-kpt → whole head transfers) and COCO (17-kpt → keypoint branch reinitialized).
+  `freeze_module(m)` (`requires_grad_(False)`), `_donor_head_state(pt)` (lazy ultralytics —
+  `YOLO(pt).model.model[-1].state_dict()`). `build_grafted_pose_model` gains `head_weights=`/
+  `freeze_head=` (after `bias_init()`).
+- **`eval.shortft.short_finetune`** gains `head_weights=`/`freeze_head=`; optimizer now over
+  `[p for p in model.parameters() if p.requires_grad]` — a frozen head is excluded, so the short
+  fine-tune adapts only backbone+adapter to a fixed, competent head (the proxy becomes a
+  **backbone-quality probe**, not a head-init lottery).
+- **`eval.proxy_rank`:** `run_protocol` gains `head_weights`/`freeze_head`/`reset_proxy`; the
+  `load_supernet` import made **lazy** (parity with `run_full_diagnostic`, so a supplied supernet skips
+  `ofa`). `--reset-proxy` nulls loaded `proxy_map`s (keeps `full_map`) for a warm-head re-test; CLI
+  `--head-weights/--freeze-head/--reset-proxy` added.
+- **Tests (TDD, `.venv`/CI — torch CPU, no ultralytics):** new `tests/test_warm_start.py` (copy-all on
+  shape-match / skip-mismatch / leave-unmatched-at-init / raise-when-nothing-matches / freeze+optimizer
+  filter) + a `run_protocol` reset-proxy orchestration test (stubbed fine-tune; asserts proxy
+  recomputed with the warm head, full maps preserved, kwargs threaded). `check.sh` fast lane
+  **242 passed**, 2 skipped, 3 deselected; ruff + mypy clean. CLI `--help` smoked.
+
+### GPU re-test owed (Kaggle) + criteria
+
+Work on a **copy** (never overwrite the only expensive ground truth):
+```
+cp data/cp24_proxy_rank.json /kaggle/working/cp24_warmstart.json
+python -m eval.proxy_rank --reset-proxy --head-weights <gate-yolo11n-pose.pt> --freeze-head \
+    --no-full --device cuda --imgsz 640 --batch 16 --out /kaggle/working/cp24_warmstart.json
+```
+Read `…cp24_warmstart.json.verdict.json`: **τ ≥ 0.7 & Δ ≤ 0.005 → CP 2.4 closes** (advance state); a
+miss → run the (already-built) `--diagnose-full` to decide repair-more vs reframe (D4 → user). Donor:
+the **gate** checkpoint freezes cleanly; with only COCO `yolo11n-pose.pt`, drop `--freeze-head` (its
+reinitialized keypoint branch must train).
+
+### State
+
+`current_checkpoint` **2.4** (unchanged) — CP 2.4 stays **open** until the warm re-test clears the gate.
+Original `data/cp24_proxy_rank.json` untouched (the re-test runs on a copy). No golden-hash / LUT
+changes.

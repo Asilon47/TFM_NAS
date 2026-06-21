@@ -26,3 +26,9 @@ gdown>=5.0
 # fit), which needs scipy.stats. The import is lazy (inside rank_summary), so the pure layer
 # and `import eval.imagenet_sanity` stay scipy-free. Matches the LUT venv's scipy>=1.15.
 scipy>=1.15
+# D1 (gate-pose) pivot: the OFA backbone is grafted under a YOLO11-pose head (detect/) and the
+# pose-mAP eval reuses Ultralytics' validator instead of re-implementing OKS. YOLO11 needs
+# ultralytics>=8.3. The import is lazy (inside detect/pose_model.py + detect/evaluate.py), so
+# the torch-only adapter layer and the .venv pure tests stay ultralytics-free. Its extra deps
+# (opencv/matplotlib/pandas) are CPU/pure and don't perturb the +cu128 torch/torchvision pins.
+ultralytics>=8.3

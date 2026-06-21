@@ -95,10 +95,13 @@ with weights inherited from the published pretrained checkpoint.
   - **DoD:** `sampler.sample(random_arch)` forwards a `(1, 3, 224, 224)`
     tensor without error.
 
-- **CP 1.4 — ImageNet sanity**
-  - On a 2 k-image ImageNet-val subset, confirm a sampled subnet is within
-    1.5 % top-1 of OFA's published accuracy for that arch.
-  - **DoD:** One subnet, one published arch, one number matches.
+- **CP 1.4 — ImageNet sanity** ✅
+  - On a 50k ImageNet-val run (Kaggle GPU), confirm the OFA weight load + BN
+    recalibration are intact via rank fidelity across a spread of archs.
+  - **DoD:** Spearman ρ ≥ 0.85 between OFA's accuracy predictor and measured
+    top-1 across ≥ 20 archs (max/min corners + random interior).
+    **RESULT: ρ = 0.919, p = 1.1e-08; max-arch = 77.3 % top-1 confirms weight
+    load intact. CLOSED 2026-06-18.** See `procedure.md` "CP 1.4 CLOSED".
 
 ### References
 - OFA: Cai et al., ICLR 2020. https://arxiv.org/abs/1908.09791
@@ -117,7 +120,7 @@ flops)` **without** re-measuring on the Jetson during search.
 
 ### Checkpoints
 
-- **CP 2.1 — Arch → block list translator** 🔲
+- **CP 2.1 — Arch → block list translator** ✅
   - `search/arch_to_blocks.py`: OFA arch_dict + macro-topology →
     ordered `(block_type, cfg, input_shape)` list (LUT keys).
   - Correctly propagate stride/resolution so each block's `input_shape` is
@@ -125,7 +128,7 @@ flops)` **without** re-measuring on the Jetson during search.
   - **DoD:** 10 random archs — every emitted tuple has a matching `row_key`
     in `data/lut.jsonl`.
 
-- **CP 2.2 — LUT composite-cost function**
+- **CP 2.2 — LUT composite-cost function** ✅
   - `search/cost.py`: `cost(arch) → {latency_ms, peak_mem_mib, params, flops}`.
   - Latency = Σ LUT[block].latency_ms.mean; `peak_mem_mib` = **max** over blocks
     (not the sum — schema.md); deployable memory adds resident weights via
@@ -137,8 +140,18 @@ flops)` **without** re-measuring on the Jetson during search.
     `search/validate_additivity.py`, plus the aggregate. **Pass = no depth bin
     exceeds 15 %.** A single averaged number would mask fusion error that grows
     with depth, so it is not the gate. If any bin breaches → CP 2.3.
+  - **RESULT (33 subnets, depth 11–21, 2026-06-17):** all bins +6.8–9.2 %
+    (aggregate +7.9 %), none breached 15 %; bias flat in depth (fusion = constant
+    multiplicative discount, not depth-exploding). Predictor fidelity: Spearman
+    ρ = 0.991, Kendall τ = 0.943. Calibration fit: measured ≈ 0.934·summed
+    (MAPE 7.9 % → 1.0 %). **CLOSED 2026-06-17.** See `procedure.md` "CP 2.2 closed".
 
-- **CP 2.3 — Additivity correction (conditional)**
+- **CP 2.3 — Additivity correction (conditional)** — **SKIPPED**
+  - **SKIPPED 2026-06-17:** CP 2.2's depth-binned DoD passed in all bins
+    (worst +9.2 %, aggregate +7.9 %, bias flat in depth). The trigger condition
+    ("any depth bin > 15 %" or upward-with-depth residual) was **not met**.
+    The pre-registered escalation path remains documented below in case a future
+    re-sweep (e.g. at 640 resolution) triggers it.
   - **Trigger (pre-registered — peer-review R4.2 / P1.8):** CP 2.2's by-depth
     report breaches the 15 % bar in **any** depth bin, **or** the residual trends
     upward with depth (the cross-block-fusion signature). Do not wait for the
@@ -147,10 +160,13 @@ flops)` **without** re-measuring on the Jetson during search.
     `(depth, total_flops, n_dw)`.
   - **DoD:** Corrected error < 10 % on held-out nets.
 
-- **CP 2.4 — Eval harness (short fine-tune)**
-  - `eval/shortft.py`: 5-epoch fine-tune on the target task
-    (see open decision D1), fixed seed, fixed LR schedule.
-  - Returns top-1 / mIoU / mAP depending on the task.
+- **CP 2.4 — Eval harness (short fine-tune)** ⏳ CPU slice built; GPU DoDs pending
+  - `eval/shortft.py`: short (≈5-epoch) fine-tune on the target task
+    (D1 = gate-pose), fixed seed, fixed LR schedule. With the OFA backbone
+    grafted under a YOLO11-pose head (`detect/pose_model.py`), this is a short
+    Ultralytics pose fine-tune of the candidate.
+  - Returns **pose mAP (OKS)** (D1 = gate-pose), reusing Ultralytics' pose
+    validator (`detect/evaluate.py`) rather than re-implementing OKS.
   - **DoD — reproducibility:** running twice on the same arch gives results
     within 0.5 %.
   - **DoD — proxy-rank fidelity (gates the whole search — peer-review R2.1 /
@@ -160,6 +176,14 @@ flops)` **without** re-measuring on the Jetson during search.
     correctness*: if the proxy mis-ranks, BO climbs the wrong surface efficiently.
     Below threshold, repair the proxy (epochs / LR / resolution) **before**
     spending search compute. CUDA- and D1-dependent.
+  - **Status (2026-06-18):** CPU slice BUILT + CPU-proven. `detect/pose_model.
+    GraftedPoseModel` (trainable Ultralytics `PoseModel` subclass),
+    `detect/evaluate.pose_map_model`, and `eval/shortft.py` harness + both DoD
+    gates (`rank_fidelity`, `reproducible`) all coded + unit-tested (`.venv` +
+    `.venv-nas`). **Remains (GPU-gated):** the real 5-epoch fine-tune + both DoDs.
+    One-command GPU run (Kaggle / Jetson):
+    `python -m eval.proxy_rank --archs 10 --proxy-epochs 5 --full-epochs 100 --device cuda`
+    (resumable → `data/cp24_proxy_rank.json`). See `procedure.md` "CP 2.4 — CPU slice".
 
 ---
 
@@ -437,9 +461,10 @@ all distill the final model).
 ### Checkpoints
 
 - **CP 8.1 — Teacher selection & caching**
-  - Choose the external SOTA teacher that matches the target task (open
-    decision **D1**): classification → e.g. ConvNeXt-L / EfficientNetV2-L
-    (`timm`); segmentation → e.g. SegFormer-B5; detection → a strong detector.
+  - Teacher matched to the target task (**D1 = gate-pose**, resolved): a bigger
+    **yolo11s/m/l-pose** trained on `dataset/`, reusing the user's
+    `yolo-ros2-inference/scripts/yolo_distillation.py`. The student is the
+    search-winner OFA backbone + YOLO-pose head — same task, larger-capacity teacher.
   - `distill/teacher.py`: load it **frozen, eval-mode**; expose `teacher(x)`.
   - Pin URL + SHA256 in `distill/README.md` — same discipline as the OFA
     checkpoint pin in `supernet/download_ofa.py`.
@@ -531,14 +556,20 @@ winner on a Jetson.
 
 ## Open decisions (revisit at their phase)
 
-- **D1 — Target dataset** (blocks CP 2.4 onward; also selects the Phase 8
-  distillation teacher).
-  Options: ImageNet (generic, well-aligned to OFA pretraining but doesn't
-  match deployment workload); Cityscapes / ADE20K (seg, matches LUT's
-  seg heads); COCO (det, matches LUT's det heads).
-  The chosen dataset/task also determines which external SOTA teacher is
-  available for CP 8.1 — a classification teacher won't transfer to seg/det.
-  **Decide before CP 2.4.**
+- **D1 — Target dataset — RESOLVED 2026-06-18 → gate-pose.**
+  Target = `dataset/` (Ultralytics YOLO-pose: 1 class `gate`, 8 keypoints,
+  synthetic A2RL drone-racing renders; see `dataset/SCHEMA.md`). The task is
+  gate detection + 8-keypoint pose (metric: **pose mAP / OKS**), not
+  classification. Decisions (AskUserQuestion): the OFA subnet is searched as a
+  **backbone** under a YOLO11-pose head (`supernet/pose_backbone.py` +
+  `detect/`), keeping the supernet/LUT/Net2Net/BO machinery and using the
+  ImageNet pretrain as the backbone warm-start; the **baseline-to-beat** and the
+  **Phase-8 teacher** become the deployed **yolo11n-pose** and a bigger
+  **yolo11s/m/l-pose** (reusing `yolo-ros2-inference/scripts/yolo_distillation.py`),
+  replacing MobileNetV3/ImageNet. **Consequence:** the LUT is keyed per-block at
+  res 224; pose runs at 640, so the per-block shapes re-key — a second LUT sweep
+  at the deployment resolution is owed (the append-only schema absorbs it). See
+  `procedure.md` "D1 resolved — pose pivot".
 
 - **D2 — Search-budget target** (blocks CP 3.2 / 7.2).
   Default: 100 candidates for Phase 3, 200 for Phase 7.

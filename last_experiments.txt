@@ -1,0 +1,67 @@
+> exp08 - Synthetic + 140 real - 70 real with new resolution. Adjusted loss NEW LOSS & MAP choosing for best model
+python scripts/yolo_training.py \
+--data /root/workspace/12dec_3jan_fused_fixed/dataset.yaml \
+--model yolo11n-pose.pt \
+--epochs 2000 \
+--batch-size 4 \
+--imgsz 640 \
+--lr0 0.01 \
+--lrf 0.01 \
+--patience 300 \
+--optimizer SGD \
+--seed 33 \
+--momentum 0.9 \
+--weight-decay 0.0005 \
+--project experiments \
+--save-period 5 \
+--val-scales 640 \
+--val-every 3 \
+--degrees 10.0 \
+--translate 0.1 \
+--scale 0.05 \
+--shear 0.0 \
+--perspective 0.0 \
+--flipud 0.0 \
+--fliplr 0.0 \
+--mosaic 0.0 \
+--mixup 0.0 \
+--pose-loss 50.0 \
+--kobj-loss 10.0 \
+--multiscale \
+--pretrained \
+--val-metric "map" \
+--device 0
+
+
+> exp15 - Synthetic + real warehouse and adnec from scratch
+python scripts/yolo_training.py \
+--data /root/workspace/20_jan_a2rl_WITH_SYNTH/dataset.yaml \
+--model yolo11n-pose.pt \
+--epochs 2000 \
+--batch-size 4 \
+--imgsz 640 \
+--lr0 0.01 \
+--lrf 0.01 \
+--patience 300 \
+--optimizer SGD \
+--seed 33 \
+--momentum 0.9 \
+--weight-decay 0.0005 \
+--project experiments \
+--save-period 5 \
+--val-scales 640 \
+--val-every 3 \
+--degrees 10.0 \
+--translate 0.1 \
+--scale 0.05 \
+--shear 0.0 \
+--perspective 0.0 \
+--fliplr 0.0 \
+--mosaic 0.0 \
+--mixup 0.0 \
+--pose-loss 50.0 \
+--kobj-loss 10.0 \
+--multiscale \
+--pretrained \
+--val-metric "map" \
+--device 0

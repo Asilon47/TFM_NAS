@@ -17,7 +17,9 @@ line-length = 100
 target-version = "py312"
 # nas-course/ is HTML course material; lut/bench/ runs on the Jetson inside
 # Docker and is deployed separately — local lint churn there buys nothing.
-extend-exclude = ["nas-course", "lut/bench"]
+# yolo-ros2-inference/ is the user's separate ROS2 deployment package (its own
+# git repo + lint conventions); it's a reference/teacher stack, not NAS source.
+extend-exclude = ["nas-course", "lut/bench", "yolo-ros2-inference"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
@@ -28,11 +30,12 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["catalog", "eval", "search", "supernet", "lut", "tests"]
+files = ["catalog", "detect", "eval", "search", "supernet", "lut", "tests"]
 exclude = "lut/bench/"
 
 [[tool.mypy.overrides]]
-# ofa/torchvision live only in .venv-nas; fabric/tqdm/yaml/pandas/scipy ship no (complete)
-# type stubs (numpy does; pandas-stubs is a separate opt-in package we don't depend on).
-module = ["ofa.*", "torchvision.*", "fabric.*", "tqdm.*", "yaml.*", "pandas.*", "scipy.*"]
+# ofa/torchvision/ultralytics live only in .venv-nas; fabric/tqdm/yaml/pandas/scipy ship no
+# (complete) type stubs (numpy does; pandas-stubs is a separate opt-in package we don't depend on).
+module = ["ofa.*", "torchvision.*", "ultralytics.*", "fabric.*", "tqdm.*", "yaml.*",
+          "pandas.*", "scipy.*"]
 ignore_missing_imports = true

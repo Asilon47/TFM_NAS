@@ -16,15 +16,21 @@ if [[ ! -d .venv-nas ]]; then
   python3 -m venv .venv-nas
 fi
 
-# shellcheck disable=SC1091
-source .venv-nas/bin/activate
+# Invoke the venv interpreter by absolute path instead of `source activate`.
+# If this repo directory was ever moved, the checked-in activate script exports
+# a stale VIRTUAL_ENV (its old absolute path), so bare `python` falls through to
+# the system, externally-managed interpreter and pip aborts with PEP 668. ROS
+# also leaks its system site-packages via PYTHONPATH (see scripts/check.sh), so
+# clear it for the install. Direct invocation is robust to both.
+VENV_PY="$ROOT/.venv-nas/bin/python"
+unset PYTHONPATH
 
-python -m pip install --upgrade pip wheel
-python -m pip install --extra-index-url "$TORCH_INDEX_URL" -r requirements-nas.txt
-python -m pip install -r requirements-dev.txt
+"$VENV_PY" -m pip install --upgrade pip wheel
+"$VENV_PY" -m pip install --extra-index-url "$TORCH_INDEX_URL" -r requirements-nas.txt
+"$VENV_PY" -m pip install -r requirements-dev.txt
 
 # CP 1.1 DoD — confirm `import ofa` works.
-python - <<'PY'
+"$VENV_PY" - <<'PY'
 import ofa, torch, numpy, yaml
 print("nas env ok:",
       "torch", torch.__version__,
