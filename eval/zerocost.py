@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from catalog.contracts import ArchDict, CostDict
-from eval.shortft import RankFidelity, precision_at_k, rank_fidelity, top1_regret
+from eval.shortft import RankVerdict, rank_verdict
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,19 +75,18 @@ def zerocost_score(
 
 @dataclass(frozen=True)
 class DescriptorRanking:
-    """How one zero-cost descriptor ranks a set of archs vs their full-train ground truth."""
+    """How one zero-cost descriptor ranks a set of archs vs their full-train ground truth.
+
+    Wraps the search-relevant :class:`eval.shortft.RankVerdict` (Spearman + top-1 regret) so a
+    descriptor is judged by the *same* reframed gate as the fine-tune proxy.
+    """
 
     name: str
-    kendall_tau: float
-    spearman: float
-    precision_at_k: float
-    top1_regret: float
-    n: int
+    verdict: RankVerdict
 
     @property
     def passes(self) -> bool:
-        """Reuses the CP 2.4 τ gate so a descriptor is directly comparable to the proxy."""
-        return RankFidelity(self.kendall_tau, self.spearman, self.n).passes
+        return self.verdict.passes
 
 
 def rank_report(
@@ -97,7 +96,7 @@ def rank_report(
     descriptor_keys: tuple[str, ...] = DESCRIPTOR_KEYS,
     k: int = 3,
 ) -> list[DescriptorRanking]:
-    """Correlate each zero-cost descriptor against ``full_map`` over ``records``.
+    """Score each zero-cost descriptor against ``full_map`` over ``records`` (search-relevant gate).
 
     ``records`` are the ``{index, arch, proxy_map, full_map}`` rows from
     ``data/cp24_proxy_rank.json``; ``lut`` is a precision-filtered LUT (``lut.loader.load_lut``).
@@ -114,20 +113,10 @@ def rank_report(
         for key in descriptor_keys:
             scored[key].append(d[key])
 
-    out = []
-    for key, scores in scored.items():
-        rf = rank_fidelity(scores, full)
-        out.append(
-            DescriptorRanking(
-                name=key,
-                kendall_tau=rf.kendall_tau,
-                spearman=rf.spearman,
-                precision_at_k=precision_at_k(scores, full, k),
-                top1_regret=top1_regret(scores, full),
-                n=len(scores),
-            )
-        )
-    return out
+    return [
+        DescriptorRanking(name=key, verdict=rank_verdict(scores, full, k=k))
+        for key, scores in scored.items()
+    ]
 
 
 if __name__ == "__main__":  # smoke: reproduce the validation table against data/
@@ -143,14 +132,16 @@ if __name__ == "__main__":  # smoke: reproduce the validation table against data
 
     full = [r["full_map"] for r in recs]
     proxy = [r["proxy_map"] for r in recs]
-    proxy_rf = rank_fidelity(proxy, full)
     hdr = (f"{'descriptor':12} {'kendall_tau':>11} {'spearman':>9} "
            f"{'prec@3':>7} {'regret':>8} {'gate':>5}")
-    print("\n" + hdr)
-    print(f"{'5ep_proxy':12} {proxy_rf.kendall_tau:>11.3f} {proxy_rf.spearman:>9.3f} "
-          f"{precision_at_k(proxy, full, 3):>7.2f} {top1_regret(proxy, full):>8.4f} "
-          f"{'PASS' if proxy_rf.passes else 'fail':>5}")
+    print("\n(gate = search-relevant: Spearman >= 0.70 AND top1_regret <= 0.01)")
+    print(hdr)
+
+    def show(name: str, v: RankVerdict) -> None:
+        print(f"{name:12} {v.kendall_tau:>11.3f} {v.spearman:>9.3f} "
+              f"{v.precision_at_k:>7.2f} {v.top1_regret:>8.4f} "
+              f"{'PASS' if v.passes else 'fail':>5}")
+
+    show("5ep_proxy", rank_verdict(proxy, full))
     for dr in rank_report(recs, lut):
-        print(f"{dr.name:12} {dr.kendall_tau:>11.3f} {dr.spearman:>9.3f} "
-              f"{dr.precision_at_k:>7.2f} {dr.top1_regret:>8.4f} "
-              f"{'PASS' if dr.passes else 'fail':>5}")
+        show(dr.name, dr.verdict)

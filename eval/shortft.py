@@ -124,6 +124,66 @@ def top1_regret(proxy_scores: Sequence[float], full_scores: Sequence[float]) -> 
     return max(full_scores) - full_scores[pick]
 
 
+# CP 2.4 search-relevant gate (the reframe — supersedes the τ-on-10 DoD, which the data showed
+# mis-measures: size descriptors "fail" τ yet pick the true-best arch). Thresholds are proposed
+# defaults, tunable per the user's risk appetite (D4-adjacent).
+SPEARMAN_GATE = 0.70  # conventional "strong" monotonic correlation
+TOP1_REGRET_TOL = 0.01  # the proxy's #1 pick must be within 1 mAP point of the true best
+
+
+@dataclass(frozen=True)
+class RankVerdict:
+    """Search-relevant rank-fidelity verdict for a proxy/zero-cost ranker.
+
+    Passes iff the ranker is both monotonically informative (Spearman ρ ≥ ``spearman_gate``)
+    **and** its #1 pick is near-best (``top1_regret`` ≤ ``regret_tol``) — what a BO loop seeded
+    from the ranker actually needs. Replaces the Kendall-τ-on-10 gate, whose CIs at n=10 are very
+    wide and which punishes mid-rank disagreements the search ignores (CP 2.4: depth_sum/latency
+    pass here, the 5-epoch proxy fails). ``precision_at_k`` and ``kendall_tau`` ride along as
+    diagnostics; the stored thresholds keep ``passes`` self-contained.
+    """
+
+    spearman: float
+    kendall_tau: float
+    precision_at_k: float
+    top1_regret: float
+    k: int
+    n: int
+    spearman_gate: float
+    regret_tol: float
+
+    @property
+    def passes(self) -> bool:
+        return self.spearman >= self.spearman_gate and self.top1_regret <= self.regret_tol
+
+
+def rank_verdict(
+    proxy_scores: Sequence[float],
+    full_scores: Sequence[float],
+    *,
+    k: int = 3,
+    spearman_gate: float = SPEARMAN_GATE,
+    regret_tol: float = TOP1_REGRET_TOL,
+) -> RankVerdict:
+    """Search-relevant verdict combining Spearman ρ + top-1 regret (+ precision@k / τ diagnostics).
+
+    The CP 2.4 reframe's success criterion. ``proxy_scores[i]`` / ``full_scores[i]`` are the
+    ranker and full-train scores of arch ``i``; higher is better. ``rank_fidelity`` is called
+    first so a length mismatch raises before any metric is computed.
+    """
+    rf = rank_fidelity(proxy_scores, full_scores)  # validates lengths; gives τ + ρ
+    return RankVerdict(
+        spearman=rf.spearman,
+        kendall_tau=rf.kendall_tau,
+        precision_at_k=precision_at_k(proxy_scores, full_scores, k),
+        top1_regret=top1_regret(proxy_scores, full_scores),
+        k=k,
+        n=rf.n,
+        spearman_gate=spearman_gate,
+        regret_tol=regret_tol,
+    )
+
+
 # --------------------------------------------------------------------------------------------
 # Integration: the actual short fine-tune. Heavy imports are lazy so importing this module (for
 # the DoD helpers above) stays torch/ultralytics/ofa-free under .venv / CI. GPU-gated to run.
