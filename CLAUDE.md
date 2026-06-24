@@ -142,14 +142,22 @@ built** (see CP 2.4 bullet). The next step is the **warm-head re-test** (one com
 the deployed **gate** `yolo11n-pose.pt` as `--head-weights`, and a *copy* of the prior results):
 ```
 cp data/cp24_proxy_rank.json /kaggle/working/cp24_warmstart.json   # never touch the original
-python -m eval.proxy_rank --reset-proxy --head-weights <gate-yolo11n-pose.pt> --freeze-head \
-    --no-full --device cuda --imgsz 640 --batch 16 --out /kaggle/working/cp24_warmstart.json
+python -m eval.proxy_rank --reset-proxy \
+    --head-weights runs/pose/experiments/gate_baseline/weights/best.pt --freeze-head \
+    --proxy-seeds 3 --no-full --device cuda --imgsz 640 --batch 16 \
+    --out /kaggle/working/cp24_warmstart.json
 ```
 `--reset-proxy` nulls the proxy maps (keeps the expensive seed-0 full maps), recomputes the proxy
-with the warm+frozen head, then re-correlates. Read `…cp24_warmstart.json.verdict.json`:
+with the warm+frozen head **averaged over 3 seeds** (`--proxy-seeds`, the Δ fix), then re-correlates.
+Read `…cp24_warmstart.json.verdict.json`:
 - **τ ≥ 0.7 & Δ ≤ 0.005** → CP 2.4 **closes** (advance state + `procedure.md`).
 - **miss** → run the (already-built) `python -m eval.proxy_rank --diagnose-full --indices 7,4,8
   --full-epochs 100 --device cuda` to decide repair-more vs **reframe** (D4 → ask the user).
+
+**Reframe is already built + validated (no GPU, 2026-06-25 — "both"):** `eval/zerocost.py` (zero-cost
+ranker, `python -m eval.zerocost`) + the search-relevant gate `rank_verdict` (Spearman ≥ 0.70 AND
+top1_regret ≤ 0.01) in `eval/shortft.py`. depth_sum/latency_ms/flops pass; the failed proxy fails.
+See `procedure.md` "Both paths implemented". The warm-head re-test above is now the GPU **cross-check**.
 
 Donor note: the **gate** checkpoint (nc=1, 8-kpt) makes the whole head transfer + freeze cleanly;
 with only generic COCO `yolo11n-pose.pt` (17-kpt) the keypoint branch reinitializes → run **without**

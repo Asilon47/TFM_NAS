@@ -1839,3 +1839,24 @@ ranker dominates the failed proxy on every metric — and the DoD's τ-on-10 gat
 *repair* (warm-head re-test, GPU — donor `runs/pose/.../best.pt` ready) vs *reframe* (adopt the zero-cost
 ranker, no GPU). Plus the DoD-gate change. GPU upgrade if reframing: a ZiCo/jacob_cov gradient proxy on
 the backbone (`eval/zerocost.py` is the CPU descriptor half). State stays **2.4**.
+
+### Both paths implemented (2026-06-25 — user: "do your recommendation, both")
+
+- **Reframe (no GPU) — DONE.** Search-relevant DoD gate `rank_verdict`/`RankVerdict` in
+  `eval/shortft.py`: passes iff **Spearman ρ ≥ 0.70 AND top1_regret ≤ 0.01** (τ + precision@k carried
+  as diagnostics; proposed thresholds, tunable). Wired into `eval/zerocost.rank_report`. Under it
+  (`python -m eval.zerocost`): depth_sum / latency_ms / flops **PASS**, the 5-epoch proxy + params
+  (ρ=0.685) fail — a cleaner separation than τ. Commit `4dc3fc5`.
+- **Repair (GPU-run) — code DONE.** `eval/proxy_rank.py` `--proxy-seeds N` averages each arch's proxy
+  mAP over N seeds (per-seed flushed to `ArchResult.proxy_seed_maps` for mid-arch resume; repro rerun
+  compares two independent averaged estimates) — the Δ fix per "Variation Matters". Commit `bf177c2`.
+- **NOT building full LP-FT (deliberate, refines my own recommendation).** For *ranking* backbones the
+  head must be **identical** across archs to isolate backbone quality; full LP-FT lets the head
+  fine-tune per-arch, re-introducing head variance. So **warm-start + freeze-head** (already built) is
+  the better ranking variant than LP-FT here — the repair cross-check is `--reset-proxy --head-weights
+  best.pt --freeze-head --proxy-seeds 3`.
+- **Objective `J(α)` integration intentionally deferred** — λ/μ + normalizing the zero-cost score into
+  an accuracy term *is* D4/CP 3.3; building it now would bake that decision. `zerocost_score` already
+  is the adopted accuracy signal.
+- `check.sh` fast lane **261 passed**, 2 skipped, ruff + mypy clean. State stays **2.4** (the reframe
+  gate + zero-cost ranker are the proposed close; the warm-head re-test is the GPU cross-check).
