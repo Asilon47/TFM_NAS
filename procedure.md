@@ -1797,3 +1797,45 @@ reinitialized keypoint branch must train).
 `current_checkpoint` **2.4** (unchanged) — CP 2.4 stays **open** until the warm re-test clears the gate.
 Original `data/cp24_proxy_rank.json` untouched (the re-test runs on a copy). No golden-hash / LUT
 changes.
+
+## CP 2.4 — deep-research + zero-cost ranker (Tier-1A, no GPU) (2026-06-22)
+
+Not a checkpoint advance. While the donor trained on Kaggle, ran a literature pass (deep-research) for
+alternatives to the failed 5-epoch proxy, then built + validated the cheapest one. Full report:
+`~/.claude/plans/mode-full-research-piped-sunrise.md`.
+
+**Diagnosis (literature-confirmed).** The proxy failure is two named effects, not a tuning miss:
+(1) **random-head distortion** — a random task head emits large gradients that distort the pretrained
+backbone during short fine-tuning, so the score is head-init luck not backbone quality (Kumar et al.,
+"Fine-Tuning can Distort Pretrained Features"/LP-FT, ICLR 2022; "How to prepare your task head", ICLR
+2023). Their stated ranking consequence — *backbones that fine-tune poorly may actually be superior* —
+is idx8 exactly. (2) **top-k/cluster collapse** — every proxy collapses to ~random within a
+similar-size cluster while #params/#FLOPs dominate on wide ranges (Zero-Shot NAS survey, arXiv
+2307.01998; NAS-Bench-Suite-Zero, NeurIPS 2022). The Δ reproducibility half is score variance
+("Variation Matters", arXiv 2502.19657 — average over seeds/batches).
+
+**Built (TDD, `.venv`/CI, no GPU).** `eval/zerocost.py` — zero-cost descriptors (`depth_sum`, plus
+`params`/`flops`/`latency_ms` from `search.cost.cost`), `zerocost_score`, `rank_report`, and a
+reproducible `__main__`. `eval/shortft.py` gained `precision_at_k` + `top1_regret` (pure, additive; the
+τ gate + `KENDALL_TAU_GATE` untouched). New tests `tests/test_zerocost.py` + `tests/test_rankmetrics.py`
+(12); `check.sh` fast lane **254 passed**, 2 skipped, ruff + mypy clean. Committed `f184842`.
+
+**Validated vs the seed-0 ground truth** (`data/cp24_proxy_rank.json`, read-only):
+
+| ranker | Kendall τ | Spearman | precision@3 | top1_regret | gate |
+|---|---|---|---|---|---|
+| 5-epoch proxy (failed) | 0.200 | 0.212 | 0.33 | 0.0195 | fail |
+| **depth_sum** | **0.767** | 0.843 | 0.67* | **0.000** | **PASS** |
+| latency_ms (Jetson) | **0.733** | 0.855 | 0.67 | 0.000 | PASS |
+| flops | 0.689 | 0.842 | 0.67 | 0.000 | fail |
+| params | 0.556 | 0.685 | 0.67 | 0.000 | fail |
+
+*precision@3 is tie-sensitive (depth_sum integer ties); τ + regret are tie-robust. **Every** descriptor
+picks the true-best arch (regret 0); the failed proxy is the only ranker that doesn't. The zero-cost
+ranker dominates the failed proxy on every metric — and the DoD's τ-on-10 gate mis-measures (params/flops
+"fail" τ yet have regret 0), evidence for switching the gate to Spearman + precision@k.
+
+**Owed / pending user decision (D4-adjacent, do not resolve unilaterally).** Two CP 2.4 paths now exist:
+*repair* (warm-head re-test, GPU — donor `runs/pose/.../best.pt` ready) vs *reframe* (adopt the zero-cost
+ranker, no GPU). Plus the DoD-gate change. GPU upgrade if reframing: a ZiCo/jacob_cov gradient proxy on
+the backbone (`eval/zerocost.py` is the CPU descriptor half). State stays **2.4**.

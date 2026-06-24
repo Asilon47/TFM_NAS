@@ -156,6 +156,22 @@ with only generic COCO `yolo11n-pose.pt` (17-kpt) the keypoint branch reinitiali
 `--freeze-head`. CPU-runnable in parallel: anchor the **baseline yolo11n-pose** mAP via
 `detect.evaluate.pose_map` (latency half stays Jetson-gated).
 
+**Donor now trained (2026-06-22):** `runs/pose/experiments/gate_baseline/weights/best.pt` (epoch 1359,
+gate dataset, pose mAP50-95 0.878) — the team had only a fused ONNX (unusable donor), so we trained our
+own ([[cp24-donor-must-be-trained]]). Keypoints converged ~epoch 300; it's a ready donor for the
+warm-head re-test above.
+
+**Validated no-GPU alternative (2026-06-22, deep-research) — `eval/zerocost.py`.** A literature pass
+(plan `~/.claude/plans/mode-full-research-piped-sunrise.md`) found the failure is two named effects:
+random-head distortion (Kumar et al., LP-FT, ICLR 2022) + top-k/cluster collapse (Zero-Shot NAS survey
+2307.01998), and that **zero-cost/size descriptors are the literature-favored ranker**. Built + validated
+against `data/cp24_proxy_rank.json` (no GPU): `depth_sum` ranks at **τ=0.767** (passes), Jetson
+`latency_ms` at 0.733, and *every* descriptor picks the true-best arch (regret 0) vs the 5-epoch proxy's
+regret 0.0195 — the zero-cost ranker **dominates** the failed proxy. New: `eval/zerocost.py`
+(descriptors/`rank_report`/`__main__`) + `precision_at_k`/`top1_regret` in `eval/shortft.py` (254 tests
+green). **Two paths now exist for CP 2.4 — repair (warm-head re-test, GPU) vs reframe (zero-cost ranker,
+no GPU); the choice + the DoD-gate change (τ-on-10 → Spearman+precision@k) touch D4 → user decides.**
+
 ### Open design decisions (do not resolve unilaterally)
 
 | ID | Decision | Blocks |
