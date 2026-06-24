@@ -79,3 +79,5 @@ experiments/
 runs/
 wandb/
 *.tfevents.*
+
+dataset.zip
