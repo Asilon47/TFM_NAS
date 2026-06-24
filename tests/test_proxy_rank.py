@@ -240,3 +240,57 @@ def test_run_protocol_reset_proxy_recomputes_warm_keeps_full(tmp_path, monkeypat
     assert len(calls) == 2
     assert all(c["head_weights"] == "gate.pt" and c["freeze_head"] is True for c in calls)
     assert v["n_complete"] == 2
+
+
+# --- seed-averaging (CP 2.4 repair, "Variation Matters"): the proxy map is the mean over N seeds
+#     to cut run-to-run variance. Resumable per-seed; backward-compatible (proxy_seeds=1). ---
+
+def test_run_protocol_proxy_seeds_averages_over_seeds(tmp_path, monkeypatch):
+    import eval.proxy_rank as pr
+    import eval.shortft as shortft_mod
+
+    monkeypatch.setattr(pr, "sample_archs", lambda sn, n, seed: [{"d": [2]}, {"d": [4]}][:n])
+    seeds_seen: dict[tuple, list[int]] = {}
+
+    def _stub_finetune(arch, **kw):  # seed-dependent so the mean is non-trivial
+        seeds_seen.setdefault(tuple(arch["d"]), []).append(kw["seed"])
+        return {"map": 0.10 * kw["seed"], "map50": 0.5}
+
+    monkeypatch.setattr(shortft_mod, "short_finetune", _stub_finetune)
+
+    out = tmp_path / "p.json"
+    run_protocol(n_archs=2, out=out, run_full=False, run_repro=False, proxy_seeds=3,
+                 seed=0, supernet=object())
+
+    reread = {r.index: r for r in load_results(out)}
+    # mean over seeds 0,1,2 of 0.1*seed = mean(0.0, 0.1, 0.2) = 0.1
+    assert reread[0].proxy_map == pytest.approx(0.1)
+    assert reread[1].proxy_map == pytest.approx(0.1)
+    assert reread[0].proxy_seed_maps == pytest.approx([0.0, 0.1, 0.2])  # per-seed kept for resume
+    assert seeds_seen[(2,)] == [0, 1, 2]
+
+
+def test_run_protocol_proxy_seeds_resumes_midway(tmp_path, monkeypatch):
+    import eval.proxy_rank as pr
+    import eval.shortft as shortft_mod
+
+    monkeypatch.setattr(pr, "sample_archs", lambda sn, n, seed: [{"d": [2]}][:n])
+    seeds_seen: list[int] = []
+
+    def _stub_finetune(arch, **kw):
+        seeds_seen.append(kw["seed"])
+        return {"map": 0.10 * kw["seed"], "map50": 0.5}
+
+    monkeypatch.setattr(shortft_mod, "short_finetune", _stub_finetune)
+
+    out = tmp_path / "p.json"
+    # one of three seeds already done (proxy_map still None until all seeds land)
+    save_results(out, [ArchResult(index=0, arch={"d": [2]}, proxy_seed_maps=[0.0])])
+
+    run_protocol(n_archs=1, out=out, run_full=False, run_repro=False, proxy_seeds=3,
+                 seed=0, supernet=object())
+
+    assert seeds_seen == [1, 2]  # only the two missing seeds ran
+    reread = {r.index: r for r in load_results(out)}
+    assert reread[0].proxy_seed_maps == pytest.approx([0.0, 0.1, 0.2])
+    assert reread[0].proxy_map == pytest.approx(0.1)

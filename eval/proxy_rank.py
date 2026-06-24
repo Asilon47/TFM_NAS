@@ -55,6 +55,7 @@ class ArchResult:
     index: int
     arch: dict
     proxy_map: float | None = None
+    proxy_seed_maps: list[float] | None = None  # per-seed proxy mAPs when --proxy-seeds>1 (resume)
     full_map: float | None = None
     full_map_reseed: float | None = None
 
@@ -212,13 +213,18 @@ def run_protocol(
     head_weights: Any = None,
     freeze_head: bool = False,
     reset_proxy: bool = False,
+    proxy_seeds: int = 1,
 ) -> dict[str, Any]:
     """Score ``n_archs`` under proxy + full, return the CP 2.4 verdict (resumable).
 
     ``head_weights``/``freeze_head`` warm-start + freeze the Pose head for the proxy fine-tune
     (CP 2.4 repair). ``reset_proxy`` nulls every loaded ``proxy_map`` (keeping the expensive
     ``full_map``) so a warm-head re-test recomputes the proxy and re-correlates against the
-    existing full maps — run it on a *copy* of the results file.
+    existing full maps — run it on a *copy* of the results file. ``proxy_seeds`` averages each
+    arch's proxy mAP over that many seeds (``seed … seed+proxy_seeds-1``) to cut run-to-run
+    variance (the reproducibility-Δ repair, "Variation Matters"); per-seed maps are flushed so an
+    averaging run resumes mid-arch. The repro rerun then compares two *independent* averaged
+    estimates. ``proxy_seeds=1`` is the original single-run behavior.
     """
     from eval.shortft import short_finetune
 
@@ -229,9 +235,10 @@ def run_protocol(
         sn = load_supernet()
     archs = sample_archs(sn, n_archs, seed)
     by_index = {r.index: r for r in load_results(out)}
-    if reset_proxy:  # warm-head re-test: drop stale proxy maps, keep the seed-0 full maps
+    if reset_proxy:  # warm-head re-test: drop stale proxy maps (+ per-seed), keep seed-0 full maps
         for r in by_index.values():
             r.proxy_map = None
+            r.proxy_seed_maps = None
 
     def _ft(arch: dict, epochs: int, run_seed: int) -> float:
         return short_finetune(arch, epochs=epochs, seed=run_seed, imgsz=imgsz, batch=batch,
@@ -241,11 +248,21 @@ def run_protocol(
     def _flush() -> None:
         save_results(out, [by_index[i] for i in sorted(by_index)])
 
+    def _avg_proxy(arch: dict, r: ArchResult, base_seed: int) -> float:
+        """Mean proxy mAP over ``proxy_seeds`` seeds (resumes from flushed per-seed maps)."""
+        maps = list(r.proxy_seed_maps or [])
+        for s in range(len(maps), proxy_seeds):
+            maps.append(_ft(arch, proxy_epochs, base_seed + s))
+            r.proxy_seed_maps = maps
+            _flush()
+        return statistics.mean(maps)
+
     for i, arch in enumerate(archs):
         r = by_index.setdefault(i, ArchResult(index=i, arch=arch))
         if r.proxy_map is None:
-            print(f"[proxy {i + 1}/{len(archs)}] d={arch['d']} ({proxy_epochs} ep)")
-            r.proxy_map = _ft(arch, proxy_epochs, seed)
+            print(f"[proxy {i + 1}/{len(archs)}] d={arch['d']} "
+                  f"({proxy_epochs} ep × {proxy_seeds} seed)")
+            r.proxy_map = _avg_proxy(arch, r, seed)
             _flush()
         if run_full and r.full_map is None:
             print(f"[full  {i + 1}/{len(archs)}] d={arch['d']} ({full_epochs} ep)")
@@ -255,8 +272,11 @@ def run_protocol(
     ordered = [by_index[i] for i in range(len(archs))]
     repro_pair = None
     if run_repro:
-        print("[repro] arch 0, seed+1 (run-to-run noise floor)")
-        repro_pair = (ordered[0].proxy_map or 0.0, _ft(archs[0], proxy_epochs, seed + 1))
+        print(f"[repro] arch 0, next {proxy_seeds}-seed block (run-to-run noise floor)")
+        b = statistics.mean(
+            _ft(archs[0], proxy_epochs, seed + proxy_seeds + j) for j in range(proxy_seeds)
+        )
+        repro_pair = (ordered[0].proxy_map or 0.0, b)
 
     verdict = assemble_verdict(ordered, repro_pair=repro_pair)
     Path(str(out) + ".verdict.json").write_text(json.dumps(verdict, indent=2))
@@ -389,6 +409,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="freeze the (warm-started) head so the proxy trains only backbone+adapter")
     p.add_argument("--reset-proxy", action="store_true",
                    help="null loaded proxy maps (keep full maps) for a warm-head re-test on a copy")
+    p.add_argument("--proxy-seeds", type=int, default=1,
+                   help="average the proxy mAP over N seeds to cut run-to-run variance (repairs Δ)")
     p.add_argument("--diagnose-full", action="store_true",
                    help="measure the full-train noise floor (rerun --indices at seed+1) instead "
                         "of the proxy protocol")
@@ -410,6 +432,7 @@ def main(argv: list[str] | None = None) -> int:
         device=a.device, imgsz=a.imgsz, batch=a.batch, out=a.out, run_full=not a.no_full,
         run_repro=not a.no_repro, max_steps=a.max_steps,
         head_weights=a.head_weights, freeze_head=a.freeze_head, reset_proxy=a.reset_proxy,
+        proxy_seeds=a.proxy_seeds,
     )
     _print_verdict(verdict, a.out)
     return 0 if verdict["dod_passes"] else 1
