@@ -79,6 +79,51 @@ def reproducible(
     return abs(run_a - run_b) <= abs_tol
 
 
+def precision_at_k(
+    proxy_scores: Sequence[float], full_scores: Sequence[float], k: int
+) -> float:
+    """Fraction of the true top-``k`` architectures recovered in the proxy's top-``k``.
+
+    The search-relevant success metric Kendall-τ misses (CP 2.4 Tier-1B): ``1.0`` means
+    the ranker surfaced exactly the top-``k`` archs (order within the ``k`` ignored), so a
+    BO loop seeded from the proxy's leaders would start on genuinely good architectures.
+    ``proxy_scores[i]`` / ``full_scores[i]`` are scores of the same arch ``i``; higher is
+    better. The CP 2.4 zero-cost descriptors hit precision@3 = 1.0 while their τ "failed".
+    """
+    if len(proxy_scores) != len(full_scores):
+        raise ValueError(
+            f"proxy_scores and full_scores must have the same length: "
+            f"{len(proxy_scores)} != {len(full_scores)}"
+        )
+    n = len(full_scores)
+    if not 1 <= k <= n:
+        raise ValueError(f"k must be in [1, {n}], got {k}")
+
+    def topk(scores: Sequence[float]) -> set[int]:
+        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        return set(order[:k])
+
+    return len(topk(proxy_scores) & topk(full_scores)) / k
+
+
+def top1_regret(proxy_scores: Sequence[float], full_scores: Sequence[float]) -> float:
+    """Full-train mAP gap between the true-best arch and the one the proxy ranks #1.
+
+    ``0.0`` iff the proxy's argmax is a true-best arch — the headline cost of trusting the
+    ranker to pick a single winner. In CP 2.4 the zero-cost descriptors had regret 0.0
+    (picked the true best) while the 5-epoch proxy had regret ~0.02.
+    """
+    if len(proxy_scores) != len(full_scores):
+        raise ValueError(
+            f"proxy_scores and full_scores must have the same length: "
+            f"{len(proxy_scores)} != {len(full_scores)}"
+        )
+    if not proxy_scores:
+        raise ValueError("need at least 1 architecture to compute top-1 regret")
+    pick = max(range(len(proxy_scores)), key=lambda i: proxy_scores[i])
+    return max(full_scores) - full_scores[pick]
+
+
 # --------------------------------------------------------------------------------------------
 # Integration: the actual short fine-tune. Heavy imports are lazy so importing this module (for
 # the DoD helpers above) stays torch/ultralytics/ofa-free under .venv / CI. GPU-gated to run.
