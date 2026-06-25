@@ -125,10 +125,11 @@ weights (Phase 8).
 
 - **CUDA / `.venv-nas` (laptop).** `torch.cuda.is_available()` is False here, `nvidia-smi`
   isn't on PATH, and **`.venv-nas` is not currently built** (only `.venv` exists) — so every
-  OFA/ultralytics integration (the fine-tune, the warm-head re-test) runs on **Kaggle /
-  the Jetson**, not locally. The CP 2.4 GPU run is **done and failed** (see Current state); the
-  next GPU step is the **head-warm-start re-test** (`--reset-proxy --head-weights … --freeze-head`,
-  proxy-only). Pure logic (`full_noise_verdict`, the DoD gates) is unit-tested in `.venv`/CI, and
+  OFA/ultralytics integration (the fine-tune, the warm-head re-test) runs on **Colab free T4**
+  (Kaggle GPU quota exhausted; TPU can't run this stack), not locally. The CP 2.4 GPU run is **done and
+  failed** (see Current state); the gate donor is now **trained** (`best.pt`, epoch 1359), so the
+  next GPU step is the **head-warm-start re-test** (`--reset-proxy --head-weights best.pt --freeze-head`,
+  proxy-only, on Colab). Pure logic (`full_noise_verdict`, the DoD gates) is unit-tested in `.venv`/CI, and
   both `run_full_diagnostic`'s and `run_protocol`'s (incl. `--reset-proxy` + warm-start threading)
   resume/guard/verdict paths are covered by **stubbed-fine-tune** tests, so the orchestration is
   verified without a GPU. The
@@ -138,14 +139,17 @@ weights (Phase 8).
 ### Lowest-friction next build
 
 The CP 2.4 proxy failed (τ=0.20) because of a **random Pose head**; the **head-warm-start repair is
-built** (see CP 2.4 bullet). The next step is the **warm-head re-test** (one command, Kaggle; needs
-the deployed **gate** `yolo11n-pose.pt` as `--head-weights`, and a *copy* of the prior results):
+built** and the **gate donor is now trained** (`best.pt`, epoch 1359). The next step is the **warm-head
+re-test** (one command, **Colab free T4** — Kaggle GPU quota is out and TPU can't run the
+PyTorch/OFA/Ultralytics stack). Stage `best.pt` + `dataset.zip` + the seed-0 `cp24_proxy_rank.json` on
+Google Drive (`D=/content/drive/MyDrive/cp24`); proxy_rank's per-arch flush + a Drive `--out` make Colab
+disconnects resumable. Run on a *copy* of the prior results:
 ```
-cp data/cp24_proxy_rank.json /kaggle/working/cp24_warmstart.json   # never touch the original
+cp data/cp24_proxy_rank.json $D/cp24_warmstart.json   # never touch the original seed-0 maps
 python -m eval.proxy_rank --reset-proxy \
-    --head-weights runs/pose/experiments/gate_baseline/weights/best.pt --freeze-head \
+    --head-weights $D/best.pt --freeze-head \
     --proxy-seeds 3 --no-full --device cuda --imgsz 640 --batch 16 \
-    --out /kaggle/working/cp24_warmstart.json
+    --out $D/cp24_warmstart.json
 ```
 `--reset-proxy` nulls the proxy maps (keeps the expensive seed-0 full maps), recomputes the proxy
 with the warm+frozen head **averaged over 3 seeds** (`--proxy-seeds`, the Δ fix), then re-correlates.

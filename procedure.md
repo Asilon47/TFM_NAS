@@ -1860,3 +1860,37 @@ the backbone (`eval/zerocost.py` is the CPU descriptor half). State stays **2.4*
   is the adopted accuracy signal.
 - `check.sh` fast lane **261 passed**, 2 skipped, ruff + mypy clean. State stays **2.4** (the reframe
   gate + zero-cost ranker are the proposed close; the warm-head re-test is the GPU cross-check).
+
+## CP 2.4 — donor trained, warm-head re-test scheduled on Colab (2026-06-22)
+
+Not a checkpoint advance (state stays **2.4**). The blocker for the warm-head re-test was the donor:
+the team had only the **deployed model as a fused ONNX** — unusable (Ultralytics export folds BN into
+Conv, so the un-fused head `state_dict` keys `warm_start_head` matches on are gone; it is also a
+flattened, non-differentiable graph). The repo-root `yolo11n-pose.pt` is the stock COCO release
+(`train_args.data=coco-pose.yaml`, 17-kpt, `epoch:-1`) — the `--pretrained` seed, not a donor. So we
+**trained our own gate donor** (user decision, AskUserQuestion). See [[cp24-donor-must-be-trained]].
+
+**Donor run — `runs/pose/experiments/gate_baseline/` (1396 epochs, D1 gate dataset, exp15 recipe:
+nc=1/8-kpt, `pose=50`, `kobj=10`, SGD, imgsz 640, `multi_scale`).** Trajectory (read from
+`results.csv`, no GPU):
+
+- **Keypoint branch converged ~epoch 300** — pose mAP50-95 peaked **0.886 @1139**, flat since (Δ +0.0015
+  over the last 400 ep); pose mAP50 peaked 0.945 @201. For a *frozen* pose donor this is the metric that
+  matters, and it's been done for ~1000 epochs.
+- **Box branch still creeping** (+0.04 over the last 400 ep, decelerating) — kept Ultralytics' fitness
+  rising, which is why `best.pt` landed late, but it's irrelevant to donor competence (the **deployed
+  ONNX is the true baseline anchor**, not this model).
+- **Donor = `best.pt` (epoch 1359, fitness 1.608):** best box mAP50-95 0.728 + near-peak pose 0.878 →
+  dominates the custom `best_img640.pt` (@321: same pose 0.878 but box ~0.646). **Conclusion: stop
+  training; `best.pt` is a strong converged donor.**
+
+**Execution = Google Colab free T4** (user decision, AskUserQuestion). Kaggle weekly GPU quota is
+exhausted and **TPU cannot run the PyTorch/OFA/Ultralytics stack** (no `torch_xla` path in the code,
+Ultralytics has no TPU device, OFA's dynamic elastic ops force XLA recompiles). Colab's local disk is
+ephemeral, so inputs + outputs sit on **Google Drive**; combined with `proxy_rank`'s per-arch flush, a
+dropped session resumes on re-run. Re-test (on a COPY of the seed-0 maps, never the original):
+`python -m eval.proxy_rank --reset-proxy --head-weights best.pt --freeze-head --proxy-seeds 3 --no-full
+--device cuda --imgsz 640 --batch 16 --out <drive>/cp24_warmstart.json`. Verify the printed
+`warm_start_head` copied/skipped is ~all-copied (donor is nc=1/8-kpt → whole head shape-matches the
+graft). Gate: **τ≥0.70 & Δ≤0.005 → CP 2.4 closes**; miss → the built `--diagnose-full`. `check.sh`
+fast lane re-confirmed **261 passed** before handoff. See plan `ticklish-popping-mountain.md`.
