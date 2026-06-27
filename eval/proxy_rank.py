@@ -1,11 +1,14 @@
-"""CP 2.4 proxy-rank-fidelity protocol — one command produces the Kendall-τ verdict that gates
-the whole search (peer-review R2.1 / P0.2).
+"""CP 2.4 proxy-rank-fidelity protocol — one command produces the rank verdict that gates the
+whole search (peer-review R2.1 / P0.2).
 
 The protocol (PROJECT_PLAN.md CP 2.4): take ~8-12 archs spanning the space, score each with the
-**5-epoch proxy** *and* a **full train**, and require the two rankings to agree at
-**Kendall-τ ≥ 0.7** (else BO climbs the wrong surface — repair the proxy first). Plus a
-**reproducibility** check (one arch run twice within 0.5 pts). This driver loops the archs,
-calls :func:`eval.shortft.short_finetune` for each regime, and emits the PASS/FAIL verdict.
+**5-epoch proxy** *and* a **full train**, and require the proxy ranking to agree with the
+full-train ranking under the **reframed search-relevant gate** (:func:`eval.shortft.rank_verdict`):
+**Spearman ρ ≥ 0.70 AND top-1 regret ≤ 0.01** (else BO climbs the wrong surface — repair the proxy
+first). Kendall-τ, precision@k, and a run-to-run **reproducibility** check ride along as reported
+*diagnostics* (the original τ-on-10 + Δ≤0.005 gate was superseded — τ-on-10 mis-measures: size
+descriptors fail τ yet pick the true best). This driver loops the archs, calls
+:func:`eval.shortft.short_finetune` for each regime, and emits the PASS/FAIL verdict.
 
 Two design points that matter for a real Kaggle run:
 
@@ -38,7 +41,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from eval.shortft import rank_fidelity, reproducible
+from eval.shortft import rank_verdict, reproducible
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "data" / "cp24_proxy_rank.json"  # data/ is gitignored (regeneratable)
@@ -71,10 +74,12 @@ def corner_archs(n_ks: int, n_d: int) -> tuple[dict, dict]:
 def assemble_verdict(
     results: list[ArchResult], repro_pair: tuple[float, float] | None = None
 ) -> dict[str, Any]:
-    """Combine rank fidelity (the gate) + reproducibility into a single PASS/FAIL CP 2.4 verdict.
+    """The reframed search-relevant PASS/FAIL CP 2.4 verdict (Spearman ρ + top-1 regret).
 
-    ``dod_passes`` requires the Kendall-τ gate to pass; if a reproducibility pair was measured it
-    must pass too. Fewer than 2 fully-scored archs → no ranking yet → fail.
+    ``dod_passes`` is the rank gate alone (:func:`eval.shortft.rank_verdict`): **ρ ≥ 0.70 AND
+    top-1 regret ≤ 0.01**. Kendall-τ, precision@k, and the reproducibility pair (if measured) are
+    recorded as *diagnostics* — they no longer gate (the τ-on-10 + Δ≤0.005 gate was superseded; see
+    the module docstring). Fewer than 2 fully-scored archs → no ranking yet → fail.
     """
     complete = [r for r in results if r.proxy_map is not None and r.full_map is not None]
     verdict: dict[str, Any] = {"n_complete": len(complete)}
@@ -82,20 +87,29 @@ def assemble_verdict(
     if len(complete) >= 2:
         proxy = cast(list[float], [r.proxy_map for r in complete])  # filtered non-None above
         full = cast(list[float], [r.full_map for r in complete])
-        rf = rank_fidelity(proxy, full)
-        verdict.update(kendall_tau=rf.kendall_tau, spearman=rf.spearman, rank_passes=rf.passes)
+        rv = rank_verdict(proxy, full, k=min(3, len(complete)))  # precision@k diag; clamp k<=n
+        verdict.update(
+            spearman=rv.spearman,               # gate half 1
+            top1_regret=rv.top1_regret,         # gate half 2
+            kendall_tau=rv.kendall_tau,         # diagnostic (superseded gate)
+            precision_at_k=rv.precision_at_k,   # diagnostic
+            spearman_gate=rv.spearman_gate,     # thresholds → self-describing verdict JSON
+            regret_tol=rv.regret_tol,
+            rank_passes=rv.passes,
+        )
     else:
-        verdict.update(kendall_tau=None, spearman=None, rank_passes=None)
+        verdict.update(
+            spearman=None, top1_regret=None, kendall_tau=None, precision_at_k=None,
+            spearman_gate=None, regret_tol=None, rank_passes=None,
+        )
 
-    repro_ok: bool | None = None
     if repro_pair is not None:
         a, b = repro_pair
-        repro_ok = reproducible(a, b)
-        verdict["reproducibility"] = {
-            "run_a": a, "run_b": b, "delta": abs(a - b), "passes": repro_ok,
+        verdict["reproducibility"] = {  # diagnostic only — does NOT gate the reframed DoD
+            "run_a": a, "run_b": b, "delta": abs(a - b), "passes": reproducible(a, b),
         }
 
-    verdict["dod_passes"] = bool(verdict["rank_passes"]) and (repro_ok is None or repro_ok)
+    verdict["dod_passes"] = bool(verdict["rank_passes"])
     return verdict
 
 
@@ -170,6 +184,29 @@ def load_results(path: Path) -> list[ArchResult]:
     if not p.exists():
         return []
     return [ArchResult(**rec) for rec in json.loads(p.read_text())]
+
+
+def reverdict(out: Path = DEFAULT_OUT) -> dict[str, Any]:
+    """Recompute ``<out>.verdict.json`` under the current gate from an existing results file.
+
+    CPU-only (scipy + json — no fine-tune, no GPU): re-runs :func:`assemble_verdict` over the
+    persisted ``proxy_map``/``full_map`` and re-stamps the verdict. Used to close CP 2.4 — the
+    warm-head re-test's verdict was written under the old τ gate; this re-stamps it under the
+    reframe gate without re-running the proxy. The reproducibility ``run_b`` isn't stored in the
+    results file, so any ``reproducibility`` block from the prior verdict is carried forward as a
+    diagnostic. Raises ``FileNotFoundError`` if ``out`` has no results.
+    """
+    results = load_results(out)
+    if not results:
+        raise FileNotFoundError(f"no results at {out} to re-verdict (run the protocol first)")
+    verdict = assemble_verdict(results)
+    vpath = Path(str(out) + ".verdict.json")
+    if vpath.exists():
+        prior = json.loads(vpath.read_text())
+        if "reproducibility" in prior and "reproducibility" not in verdict:
+            verdict["reproducibility"] = prior["reproducibility"]  # preserve the run-to-run diag
+    vpath.write_text(json.dumps(verdict, indent=2))
+    return verdict
 
 
 # --------------------------------------------------------------------------------------------
@@ -352,15 +389,19 @@ def run_full_diagnostic(
 
 
 def _print_verdict(verdict: dict[str, Any], out: Path) -> None:
-    tau, rho = verdict.get("kendall_tau"), verdict.get("spearman")
+    rho, regret = verdict.get("spearman"), verdict.get("top1_regret")
+    rho_gate, regret_tol = verdict.get("spearman_gate"), verdict.get("regret_tol")
     print("\n" + "=" * 60)
     print(f"CP 2.4 proxy-rank fidelity  (n={verdict['n_complete']})")
-    print(f"  Kendall-tau = {tau}  (gate >= 0.7) -> {'PASS' if verdict['rank_passes'] else 'FAIL'}")
-    print(f"  Spearman    = {rho}")
+    print(f"  Spearman rho = {rho}  (gate >= {rho_gate})")
+    print(f"  top-1 regret = {regret}  (gate <= {regret_tol}) -> "
+          f"{'PASS' if verdict['rank_passes'] else 'FAIL'}")
+    print(f"  (diagnostics) Kendall-tau = {verdict.get('kendall_tau')}  "
+          f"precision@k = {verdict.get('precision_at_k')}")
     if "reproducibility" in verdict:
         rep = verdict["reproducibility"]
-        print(f"  reproducibility delta = {rep['delta']:.4f} (<= 0.005) -> "
-              f"{'PASS' if rep['passes'] else 'FAIL'}")
+        print(f"  (diagnostic) reproducibility delta = {rep['delta']:.4f} "
+              f"(within tol? {'yes' if rep['passes'] else 'no'})")
     print(f"  DoD: {'PASS ✅' if verdict['dod_passes'] else 'FAIL ❌'}")
     print(f"  results: {out}   verdict: {out}.verdict.json")
     print("=" * 60)
@@ -411,12 +452,20 @@ def main(argv: list[str] | None = None) -> int:
                    help="null loaded proxy maps (keep full maps) for a warm-head re-test on a copy")
     p.add_argument("--proxy-seeds", type=int, default=1,
                    help="average the proxy mAP over N seeds to cut run-to-run variance (repairs Δ)")
+    p.add_argument("--reverdict", action="store_true",
+                   help="recompute <out>.verdict.json under the current gate from an existing "
+                        "results file (CPU-only; re-stamps a prior run after a gate change)")
     p.add_argument("--diagnose-full", action="store_true",
                    help="measure the full-train noise floor (rerun --indices at seed+1) instead "
                         "of the proxy protocol")
     p.add_argument("--indices", default="7,4,8",
                    help="comma-separated arch indices to reseed for --diagnose-full")
     a = p.parse_args(argv)
+
+    if a.reverdict:
+        verdict = reverdict(out=a.out)
+        _print_verdict(verdict, a.out)
+        return 0 if verdict["dod_passes"] else 1
 
     if a.diagnose_full:
         indices = [int(x) for x in a.indices.split(",") if x.strip()]

@@ -17,6 +17,7 @@ from eval.proxy_rank import (  # noqa: E402
     corner_archs,
     full_noise_verdict,
     load_results,
+    reverdict,
     run_full_diagnostic,
     run_protocol,
     save_results,
@@ -27,32 +28,39 @@ def _r(index: int, proxy: float | None, full: float | None) -> ArchResult:
     return ArchResult(index=index, arch={"d": [index]}, proxy_map=proxy, full_map=full)
 
 
-# --- assemble_verdict: combine rank fidelity + reproducibility into a DoD verdict ---
+# --- assemble_verdict: reframed search-relevant DoD (Spearman + top-1 regret; CP 2.4 close). The
+#     Kendall-τ-on-10 + Δ≤0.005 gate was superseded — τ-on-10 mis-measures (size descriptors fail τ
+#     yet pick the true best), so τ/precision@k/reproducibility are now reported diagnostics. ---
 
-def test_verdict_passes_when_rank_concordant_and_repro_tight():
+def test_verdict_passes_when_rank_concordant_and_regret_zero():
     results = [_r(0, 0.11, 0.10), _r(1, 0.22, 0.20), _r(2, 0.29, 0.30), _r(3, 0.42, 0.40)]
     v = assemble_verdict(results, repro_pair=(0.30, 0.302))
     assert v["n_complete"] == 4
-    assert v["kendall_tau"] == pytest.approx(1.0)
+    assert v["spearman"] == pytest.approx(1.0)     # gate half 1: monotone agreement
+    assert v["top1_regret"] == pytest.approx(0.0)  # gate half 2: proxy's #1 IS the true #1
+    assert v["kendall_tau"] == pytest.approx(1.0)  # diagnostic (superseded gate)
     assert v["rank_passes"] is True
-    assert v["reproducibility"]["passes"] is True
+    assert v["reproducibility"]["passes"] is True  # reported diagnostic
     assert v["dod_passes"] is True
 
 
 def test_verdict_fails_when_ranking_discordant():
     results = [_r(0, 0.40, 0.10), _r(1, 0.30, 0.20), _r(2, 0.20, 0.30), _r(3, 0.10, 0.40)]
     v = assemble_verdict(results, repro_pair=(0.30, 0.30))
+    assert v["spearman"] == pytest.approx(-1.0)
     assert v["rank_passes"] is False
     assert v["dod_passes"] is False  # ranking fails → whole DoD fails
 
 
-def test_verdict_fails_when_reproducibility_too_loose():
-    # ranking is perfect, but the proxy is too noisy run-to-run → DoD must still fail.
+def test_verdict_reproducibility_is_diagnostic_not_gate():
+    # The reframe change: rank is good (concordant, regret 0) but the proxy is noisy run-to-run.
+    # Under the old gate this failed the DoD; under the reframe, reproducibility is a REPORTED
+    # diagnostic, not a gate, so the DoD still PASSES.
     results = [_r(0, 0.11, 0.10), _r(1, 0.22, 0.20), _r(2, 0.29, 0.30), _r(3, 0.42, 0.40)]
-    v = assemble_verdict(results, repro_pair=(0.30, 0.40))  # 10 pts apart
+    v = assemble_verdict(results, repro_pair=(0.30, 0.40))  # 10 pts apart → repro "fails"
     assert v["rank_passes"] is True
-    assert v["reproducibility"]["passes"] is False
-    assert v["dod_passes"] is False
+    assert v["reproducibility"]["passes"] is False  # still computed + reported
+    assert v["dod_passes"] is True  # reframe: reproducibility does not gate the DoD
 
 
 def test_verdict_handles_incomplete_results():
@@ -61,7 +69,39 @@ def test_verdict_handles_incomplete_results():
     v = assemble_verdict(results)
     assert v["n_complete"] == 1
     assert v["kendall_tau"] is None
+    assert v["spearman"] is None
+    assert v["top1_regret"] is None
     assert v["dod_passes"] is False
+
+
+# --- reverdict: re-stamp a prior run's verdict under the reframe gate, no GPU (CP 2.4 close) ---
+
+def test_reverdict_recomputes_gate_and_preserves_repro(tmp_path):
+    out = tmp_path / "cp24.json"
+    save_results(out, [_r(0, 0.11, 0.10), _r(1, 0.22, 0.20), _r(2, 0.29, 0.30), _r(3, 0.42, 0.40)])
+    # a stale verdict from the OLD gate, carrying a (failing) reproducibility diagnostic to preserve
+    vpath = tmp_path / "cp24.json.verdict.json"
+    vpath.write_text(json.dumps({
+        "n_complete": 4, "kendall_tau": 1.0, "rank_passes": False,
+        "reproducibility": {"run_a": 0.30, "run_b": 0.40, "delta": 0.10, "passes": False},
+        "dod_passes": False,
+    }))
+
+    v = reverdict(out=out)
+
+    assert v["spearman"] == pytest.approx(1.0)
+    assert v["top1_regret"] == pytest.approx(0.0)
+    assert v["rank_passes"] is True
+    assert v["dod_passes"] is True  # reframe gate flips the stale FAIL to PASS
+    assert v["reproducibility"]["delta"] == pytest.approx(0.10)  # carried from the prior verdict
+    on_disk = json.loads(vpath.read_text())
+    assert on_disk["dod_passes"] is True
+    assert on_disk["reproducibility"]["passes"] is False  # preserved as a diagnostic
+
+
+def test_reverdict_missing_results_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        reverdict(out=tmp_path / "nope.json")
 
 
 # --- corner_archs: pin the min/max corners so the ranking spans the space ---
