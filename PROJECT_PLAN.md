@@ -214,8 +214,10 @@ a Pareto frontier of `(accuracy, latency_ms)` for the Jetson.
 
 - **CP 3.2 — Evolutionary search baseline**
   - `search/evolution.py`: NSGA-II over `(accuracy, latency_ms)`.
-  - 100 generations × 50 population; **depth_sum (zero-cost) + LUT latency** — a CPU-free
+  - 200 generations × 150 population; **depth_sum (zero-cost) + LUT latency** — a CPU-free
     structural baseline (*not* short-FT; the accuracy axis is the structural prior, see D2).
+    (pop=150 reaches the true global front; pop=50 under-converges regardless of n_gen —
+    see procedure.md "CP 3.2 ... Convergence".)
   - **DoD:** Frontier has ≥ 10 non-dominated points.
 
 - **CP 3.3 — Bayesian Optimization**

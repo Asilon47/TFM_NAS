@@ -9,7 +9,7 @@ pymoo; run_search lazy-imports pymoo, so importing this module never requires it
 """
 import pytest
 
-from catalog.ofa_mbv3 import MAX_DEPTH, STAGES, D
+from catalog.ofa_mbv3 import KS, MAX_DEPTH, STAGES, D, E
 from search.cost import CostError
 from search.cost_preview import nondominated_indices
 from search.evolution import _nondominated_dedup, evaluate_objectives, run_search
@@ -89,3 +89,28 @@ def test_run_search_is_seed_reproducible(lut_path):
     fa = sorted((fp.depth_sum, round(fp.latency_ms, 6)) for fp in a.frontier)
     fb = sorted((fp.depth_sum, round(fp.latency_ms, 6)) for fp in b.frontier)
     assert fa == fb
+
+
+@pytest.mark.slow
+def test_default_budget_reaches_true_pareto_front(lut_path):
+    """The default budget (pop=150) converges to the GLOBAL front: every point is
+    at min ks/e (ks=3, e=3 on all active blocks) — the true min-latency arch at its
+    depth. pop=50 finds >=10 non-dominated points but leaves ~9 of them ~1.5% above
+    optimal, so this locks the population fix (see run_search docstring)."""
+    pytest.importorskip("pymoo")
+    from lut.loader import load_lut
+
+    lut = load_lut(lut_path, precision="fp32")
+    try:
+        result = run_search(lut, seed=0)  # defaults: pop_size=150, n_gen=200
+    except CostError:
+        pytest.skip("LUT partial — some blocks missing")
+    assert result.n_nondominated >= 10
+    for fp in result.frontier:
+        a = fp.arch
+        active_all_min = all(
+            a["ks"][MAX_DEPTH * s + j] == KS[0] and a["e"][MAX_DEPTH * s + j] == E[0]
+            for s, d in enumerate(a["d"])
+            for j in range(d)
+        )
+        assert active_all_min, f"depth {fp.depth_sum} point is not at min ks/e (under-converged)"

@@ -2063,8 +2063,10 @@ CPU-only / local / no Colab.** D4 (λ/μ) stays open → CP 3.3.
 
 `search/evolution.py`: NSGA-II over `(maximize depth_sum, minimize latency_ms)`, producing the Phase-3
 Pareto frontier. **CPU-only / local** — reads the fp32 `data/lut.jsonl`, no GPU/Colab/Jetson. **DoD
-PASS:** `python -m search.evolution` yields **11 non-dominated points** (≥10) in ~2.3 s (3603 unique
-archs, memoized). `check.sh`: **279 passed, 2 skipped**, ruff + mypy clean. Commit `c83d22a`.
+PASS:** `python -m search.evolution` yields **11 non-dominated points** (≥10), the **true global front**
+(every point at min ks/e — see the convergence note below), in ~5 s (~20k unique archs, memoized).
+`check.sh`: **280 passed, 2 skipped**, ruff + mypy clean. Commits `c83d22a` (build) + the convergence
+follow-up.
 
 ### Implementation: pymoo (user decision)
 
@@ -2086,7 +2088,7 @@ for the CP 3.3 BO warm-start.
 ### Result: the analytic depth staircase (as expected)
 
 The front is exactly the **11-point depth staircase** — `depth_sum` 10→20, each at its min-latency config
-(`ks`/`e` driven to their smallest), latency rising monotonically **1.73 → 3.35 ms**. This is the
+(`ks`/`e` driven to their smallest), latency rising monotonically **1.73 → 3.26 ms**. This is the
 analytic Pareto front of `(depth_sum, latency)`: at a fixed depth, varying `ks/e` only moves latency
 (same "accuracy"), so those points are dominated; across depths, more blocks ⇒ strictly more latency ⇒ 11
 mutually non-dominated steps. It is **intentionally thin** — the documented structural-baseline role.
@@ -2094,12 +2096,26 @@ mutually non-dominated steps. It is **intentionally thin** — the documented st
 accuracy-richness comes from the **CP 3.3 BO over the warm-head proxy** (where mAP responds to `ks/e`).
 CP 3.2's lasting value is the **reusable NSGA-II machinery**, re-run on the enriched op-space at CP 7.2.
 
+### Convergence: population size, not generations (smoke-test follow-up)
+
+A post-close smoke test caught that the first run (`pop=50, gen=100`) returned a front that was
+*self-consistently* non-dominated but **not globally optimal** — only **2/11** points sat at the true
+min ks/e, the other 9 ~1.5 % above optimal latency (a faithful approximation, not the Pareto front). A
+budget sweep found the lever is **population, not generations**: `gen` 100→300 at `pop=50` changed
+nothing (2/11), but `pop` 50→100→150 converged 2→7→**11/11**, robust across 5 seeds, by `gen=200`. Cause:
+a 50-individual pool is too small to *hold* the all-min-ks/e config at every depth, so selection can't
+fix what mutation rarely generates; a larger pool does. **Defaults bumped to `pop_size=150, n_gen=200`**
+(~5 s, still trivial/CPU) and locked by `test_default_budget_reaches_true_pareto_front` (asserts every
+frontier point is at min ks/e). The lesson carries to CP 7.2: size the population to the space, don't
+just add generations.
+
 ### Tests (`tests/test_evolution.py`, TDD)
 
 Pure (always run, no pymoo/LUT): `_nondominated_dedup` skyline + dedup, cross-checked against
 `search.cost_preview.nondominated_indices`. LUT-only (no pymoo): `evaluate_objectives` depth-sign +
 latency monotonicity. pymoo+LUT (`importorskip` + `lut_path` fixture + `slow`): reduced run
-(`pop=40,gen=40`) → ≥10 non-dominated points, frontier internally non-dominated; plus seed
-reproducibility. `CostError`→skip guards keep them green on a partial LUT. Next: **CP 3.3 BO**
+(`pop=40,gen=40`) → ≥10 non-dominated points, frontier internally non-dominated; seed reproducibility;
+and the full-budget true-front check (every frontier point at min ks/e). `CostError`→skip guards keep
+them green on a partial LUT. Next: **CP 3.3 BO**
 (`search/bo.py`) — needs D4 (λ/μ) + the warm-head proxy budget (B=50) + the Jetson 640-res LUT/baseline
 for the absolute objective.
