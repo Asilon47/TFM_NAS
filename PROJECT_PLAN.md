@@ -214,12 +214,16 @@ a Pareto frontier of `(accuracy, latency_ms)` for the Jetson.
 
 - **CP 3.2 — Evolutionary search baseline**
   - `search/evolution.py`: NSGA-II over `(accuracy, latency_ms)`.
-  - 100 generations × 50 population; LUT cost + short-FT accuracy.
+  - 100 generations × 50 population; **depth_sum (zero-cost) + LUT latency** — a CPU-free
+    structural baseline (*not* short-FT; the accuracy axis is the structural prior, see D2).
   - **DoD:** Frontier has ≥ 10 non-dominated points.
 
 - **CP 3.3 — Bayesian Optimization**
   - `search/bo.py`: GP surrogate with a structured kernel
     (Hamming + Matérn), Expected Improvement acquisition.
+  - **Budget (D2):** B=50/run, n_init=20 → ~400 warm-head fine-tunes across 5 seeds
+    (incl. the same-budget random-search control; 1 seed/eval). Step 0 = one timed
+    calibration eval on Colab (no per-eval wall-clock is recorded yet).
   - **DoD:** over ≥5 seeds at a fixed budget, BO's Pareto **hypervolume**
     exceeds the same-budget random-search control's with non-overlapping
     across-seed dispersion (dominance-across-seeds, per the protocol above) —
@@ -574,8 +578,16 @@ winner on a Jetson.
   at the deployment resolution is owed (the append-only schema absorbs it). See
   `procedure.md` "D1 resolved — pose pivot".
 
-- **D2 — Search-budget target** (blocks CP 3.2 / 7.2).
-  Default: 100 candidates for Phase 3, 200 for Phase 7.
+- **D2 — Search-budget target** — **RESOLVED 2026-06-27 → B=50.**
+  Under the "cheap NSGA-II + expensive BO" design the binding budget is the BO **per-run
+  budget B**; NSGA-II is CPU-free (`depth_sum` + LUT) and not budget-constrained.
+  **CP 3.3: B=50, n_init=20** → total `5·(2B−n_init)` = **400** warm-head 5-epoch proxy
+  fine-tunes across 5 seeds — already including the same-budget random-search control,
+  whose evals double as the GP's shared init. 1 seed per eval (the GP absorbs proxy noise
+  via its nugget term; 3-seed averaging is reserved for the CP 3.5 winner check). The old
+  "100 candidates" default was infeasible: read as B=100 the 5-seed protocol costs ~900
+  Colab fine-tunes. Phase-7's budget is re-decided at CP 7.2 against the same protocol.
+  See `procedure.md` "D2 RESOLVED".
 
 - **D3 — Which SOTA blocks to inject** (blocks CP 5.3).
 

@@ -2009,3 +2009,52 @@ stable).
 - **Still owed, Jetson-gated, not blocking the encoder:** 640-res LUT re-sweep (rows keyed @224; pose
   @640 — fine for *relative* ranking in CP 3.2, needed for the *absolute* `λ·latency` term in CP 3.3) +
   baseline yolo11n-pose anchor. **D4 (λ/μ) stays open → CP 3.3.**
+
+## D2 RESOLVED — Phase-3 search budget B=50 (2026-06-27)
+
+D2 ("Search-budget target") closed in a user conversation. The plan's "100 candidates" default
+predated the locked 5-seed statistical protocol and was infeasible under it; the chosen "cheap NSGA-II
++ expensive BO" design also means a single "candidate count" no longer describes the budget — the two
+search stages have completely different costs.
+
+### What the budget actually is
+
+- **NSGA-II (CP 3.2) — free.** Scored on `depth_sum` (zero-cost) + LUT latency; both CPU-only (verified:
+  `search/cost.py` and `eval/zerocost.py` import no torch). The 100 gen × 50 pop ≈ 5,000 evals cost **$0
+  GPU** and are not budget-constrained. (Plan text at PROJECT_PLAN.md:217 corrected from "short-FT
+  accuracy" → depth_sum+LUT to match this.)
+- **BO (CP 3.3) — the real budget.** Each eval = one warm-head 5-epoch proxy fine-tune on Colab T4. The
+  protocol multiplies it: **total = `5 × (2B − n_init)`** (5 seeds × {random-search control + BO}, the
+  GP's `n_init` initial design *shared* with the control's evals, counted once).
+
+### The decision: B = 50, n_init = 20
+
+→ `5 × (2·50 − 20)` = **400 warm-head fine-tunes** for CP 3.3 (covers BO **and** its same-budget random
+control). Lands in the band procedure.md already flagged "feasible"; B=100 would have been ~900 ("likely
+too much"). Estimated ~20–40 GPU-hours, but **no per-eval wall-clock was ever recorded** (CP 2.4 logged
+only mAP) — the figure is inferred from config (5 ep × ~178 steps/ep + ~9 val batches @ ~3–6 it/s, T4,
+`workers=0` ≈ ~3–6 min/eval). On *free* Colab that is multiples longer in calendar time
+(sessions + quotas); resumable per-arch flush (`eval/proxy_rank.save_results`) makes it survivable.
+
+### Fixed knobs (recorded so CP 3.3 inherits them, not re-litigated)
+
+- **1 seed per eval**, not 3. A GP models observation noise natively via its nugget term, so feeding it
+  1-seed noisy proxy mAPs is principled; CP 2.4 showed single-eval noise (Δ=0.0145 on the worst arch)
+  doesn't reorder ranks. 3-seed averaging would triple cost to denoise what the surrogate already
+  handles — reserved for the CP 3.5 winner verification (1 arch, cheap).
+- **qEI batch-of-4 = diversification, not parallelism.** On one free T4 the 4 picks evaluate
+  *sequentially*; batching only cuts GP refits / near-duplicate picks. It does **not** reduce eval count,
+  so it does not change the `5·(2B−n_init)` formula.
+- **NSGA-II frontier + `eval/zerocost.py` prefilter warm-start BO's init** (free) so B is spent near the
+  frontier, not on blind random draws.
+- **M3 "≥50 BO rounds" = ≥50 evals** (round = candidate). The real CP 3.3 gate is the
+  hypervolume-dominance test, not a round count.
+- **Step 0 of CP 3.3 = one timed calibration eval** on Colab to replace the ~3–6 min estimate before
+  spending the 400-eval budget (lever: dataloader `workers` 0→2).
+
+### Scope of the close
+
+D2's **Phase-7** budget (was "200") is deliberately *not* set here — it's re-decided at CP 7.2 against
+the same protocol. Recorded in PROJECT_PLAN.md (D2 entry + CP 3.2/3.3), CLAUDE.md (open-decisions table),
+and plan_state.yaml. **CP 3.2 (NSGA-II, `search/evolution.py`) is now the next buildable checkpoint —
+CPU-only / local / no Colab.** D4 (λ/μ) stays open → CP 3.3.

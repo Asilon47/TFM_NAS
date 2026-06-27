@@ -159,7 +159,7 @@ whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 | ID | Decision | Blocks |
 |---|---|---|
 | ~~D1~~ | **RESOLVED 2026-06-18 → gate-pose** (`dataset/`; OFA backbone + YOLO11-pose head) | — |
-| D2 | Search budget (default: 100 candidates Phase 3, 200 Phase 7) | CP 3.2 / 7.2 |
+| ~~D2~~ | **RESOLVED 2026-06-27 → B=50** (CP 3.3 BO per-run budget; `5·(2B−n_init)`=400 warm-head fine-tunes / 5 seeds; NSGA-II free). Phase-7 budget → CP 7.2 | — |
 | D3 | Which SOTA blocks to inject (FusedMBConv, ConvNeXt, MobileViT) | CP 5.3 |
 | D4 | λ, μ in `J(α) = acc − λ·latency − μ·max(0, mem−budget)²` | CP 3.3 |
 | D5 | Multi-device extension (out of scope for v1/v2) | v3 |
@@ -261,7 +261,7 @@ CUDA variant from PyPI).
 - Update the golden hashes in `tests/test_row_key.py` without a decision
   recorded in `procedure.md` — they pin the LUT key contract.
 - Commit anything in `data/` (it's gitignored for a reason — 50+ MB).
-- Resolve open decisions D2–D5 without a user conversation (D1 is resolved).
+- Resolve open decisions D3–D5 without a user conversation (D1, D2 resolved).
 - Name a local Python package `ofa/` — it shadows the pip-installed OFA library.
   The wrapper is in `supernet/` for this reason.
 - Add Claude as a commit co-author, or include `Co-Authored-By:` /
