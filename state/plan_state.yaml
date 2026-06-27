@@ -1,7 +1,7 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "2.4"   # CP 2.2 PASSED + predictor calibrated; CP 2.3 skipped. CP 2.4 CPU slice BUILT 2026-06-18. CP 2.4 GPU run FAILED both DoDs 2026-06-21 (Kendall-τ=0.20 vs ≥0.7; repro Δ=0.0149 vs ≤0.005) — full-train mAPs clustered 0.823–0.850. INVESTIGATION (read-only): full_map tracks size (depth τ=0.767, latency τ=0.733 — both pass the gate, ordered even in-cluster) → ground truth real, NOT flat; the random Pose head is the root cause (idx8: best backbone, worst proxy). DECISION (AskUserQuestion → fix-head-first): built head warm-start+freeze (--head-weights/--freeze-head/--reset-proxy); GPU warm re-test owed (pass τ≥0.7 & Δ≤0.005 → close; miss → the already-built --diagnose-full). DONOR TRAINED 2026-06-22 (runs/pose/experiments/gate_baseline/weights/best.pt, epoch 1359, pose mAP50-95 0.878, box 0.728 — keypoints converged ~ep300); warm re-test now runs on COLAB free T4 (Kaggle GPU quota out, TPU can't run the OFA/Ultralytics stack). D1 RESOLVED → gate-pose.
-last_completed: "2.2"       # measured-vs-summed additivity DoD passed on-device; latency predictor calibrated
+current_checkpoint: "3.1"   # CP 2.4 CLOSED 2026-06-27 on the REFRAMED gate (Spearman ρ≥0.70 AND top-1 regret≤0.01), superseding Kendall-τ-on-10 + repro-Δ≤0.005 (τ-on-10 mis-measures). Warm-head re-test (Colab, data/cp24_warmstart.json: warm-start+freeze gate head, 3-seed avg) ρ=0.77, regret 0.0 → PASS (τ=0.60, Δ=0.0145 now diagnostics). Cross-checked no-GPU by eval/zerocost.py (depth_sum ρ=0.843, regret 0). DoD-gate sub-decision resolved; D4 proper (λ/μ in J(α)) stays OPEN → CP 3.3. Next: CP 3.1 search-space encoder. Owed (Phase-3-adjacent, not a blocker): 640-res LUT re-sweep + baseline yolo11n-pose anchor (Jetson-gated).
+last_completed: "2.4"       # CP 2.4 proxy-rank fidelity closed on the reframed search-relevant gate (warm-head proxy + zero-cost cross-check)
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
@@ -10,6 +10,7 @@ completed:
   - "1.4"    # ImageNet sanity (rank fidelity): Spearman rho=0.919, p=1.1e-08, 20 archs
   - "2.1"    # Arch -> block list translator (search/arch_to_blocks.py)
   - "2.2"    # LUT composite-cost + depth-binned additivity DoD (PASS) + latency calibration
+  - "2.4"    # Proxy-rank fidelity: warm-head proxy ρ=0.77/regret 0 + zero-cost cross-check (reframe gate)
 # NOTE: CP 1.4 (ImageNet sanity) CLOSED 2026-06-18 — backfilled out of order.
 # Re-framed from an absolute-bar DoD to a rank-fidelity gate (the OFA accuracy
 # predictor is a ranking model with a ~constant absolute offset). Spearman

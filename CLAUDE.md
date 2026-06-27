@@ -32,7 +32,7 @@ weights (Phase 8).
 
 ---
 
-## Current state (as of last update: CP 2.4 FAILED → head-warm-start repair built, GPU re-test owed, 2026-06-21)
+## Current state (as of last update: CP 2.4 CLOSED on the reframed gate — warm-head proxy passes, 2026-06-27)
 
 - **Phase 0 (LUT):** COMPLETE. `data/lut.jsonl` holds all 2710 *measured* rows
   (`source=jetson_trt`, fp32, TRT 10.3.0, clocks locked); the original dummy lives
@@ -99,90 +99,60 @@ weights (Phase 8).
   a **2nd LUT sweep at the deploy resolution** is owed (append-only schema absorbs
   it; `cost.py` offset generalizes to stem + pose head). See `procedure.md`
   "D1 resolved — pose pivot".
-- **CP 2.4 (eval harness — first GPU run FAILED both DoDs 2026-06-21; head-warm-start repair built):**
-  The CPU slice (built 2026-06-18) is the trainable graft `detect.pose_model.GraftedPoseModel`
-  + `detect.evaluate.pose_map_model` + the `eval/shortft.py` harness with the two DoD gates
-  `rank_fidelity`/`reproducible`, plus the one-command driver `eval/proxy_rank.py`. **The Kaggle
-  GPU run failed both gates** (`data/cp24_proxy_rank.json`): proxy-rank **Kendall-τ = 0.20**
-  (gate ≥ 0.7) and reproducibility **Δ = 0.0149** (≤ 0.005). **Investigation (read-only, no GPU —
-  correlated the 10 archs vs zero-cost LUT descriptors):** `full_map` tracks size strongly — depth
-  τ=0.767, Jetson latency τ=0.733 (both *pass* the gate; ordered even inside the cluster) — so the
-  ground truth is **real, not flat**; the 5-epoch proxy correlates with **nothing** (τ=0.20; −0.08
-  w/o the min corner; τ=0.07 vs FLOPs). Root cause = the **randomly-initialized** Pose head
-  (`eval/shortft.py` trains it from scratch in 5 epochs → head-init luck; idx8 = best backbone but
-  worst proxy). **Decision (AskUserQuestion → "fix the head first"):** built the **head warm-start +
-  freeze** repair — `detect.pose_model.warm_start_head` / `freeze_module` / `_donor_head_state`,
-  `build_grafted_pose_model(head_weights=, freeze_head=)`, `short_finetune` trains only trainable
-  params, and `eval/proxy_rank.py` gains `--head-weights/--freeze-head/--reset-proxy` (242 tests
-  green). **GPU re-test owed (Kaggle, on a *copy* of the results file):** `python -m eval.proxy_rank
-  --reset-proxy --head-weights <gate-yolo11n-pose.pt> --freeze-head --no-full --device cuda --imgsz
-  640 --batch 16 --out .../cp24_warmstart.json` → re-correlates the warm proxy vs the existing full
-  maps. **Pass = τ≥0.7 & Δ≤0.005 → CP 2.4 closes;** miss → run the (already-built) `--diagnose-full`
-  noise floor. `current_checkpoint` stays 2.4. See `procedure.md` "CP 2.4 — repair: head warm-start".
+- **CP 2.4 (eval harness — CLOSED 2026-06-27 on the reframed gate):** The CPU slice (graft
+  `detect.pose_model.GraftedPoseModel` + `detect.evaluate.pose_map_model` + `eval/shortft.py`
+  harness + the `eval/proxy_rank.py` driver) plus the head warm-start+freeze repair
+  (`warm_start_head`/`freeze_module`, `build_grafted_pose_model(head_weights=, freeze_head=)`). The
+  first GPU run failed both old DoDs (Kendall-τ=0.20) — root cause = the **randomly-initialized Pose
+  head** (LP-FT distortion; idx8 = best backbone, worst proxy). The **warm-head re-test** (Colab,
+  `data/cp24_warmstart.json`: warm-start + **freeze** the trained gate head, **3-seed** avg) fixed
+  it: **Spearman ρ=0.77, top-1 regret 0.0 → PASS** (Kendall-τ=0.60, repro-Δ=0.0145 are now
+  diagnostics). **DoD reframed (D4-adjacent, user-approved): Spearman ρ≥0.70 AND top-1 regret≤0.01**
+  (`eval.shortft.rank_verdict`), superseding τ-on-10 + Δ≤0.005 (which mis-measures — size descriptors
+  fail τ yet pick the true best). Cross-checked **no-GPU** by `eval/zerocost.py` (depth_sum ρ=0.843,
+  regret 0). The close was CPU-only: `assemble_verdict` now gates on `rank_verdict`, new
+  `reverdict()`/`--reverdict` re-stamps the verdict offline (266 tests green). Carries into Phase 3:
+  warm-head proxy = accuracy signal, zero-cost = free cold-start prefilter; **J(α) λ/μ deferred to
+  CP 3.3 (D4 proper, still open)**. See `procedure.md` "CP 2.4 CLOSED — warm-head re-test + reframe gate".
 - **Phases 3–9:** Planned (see `PROJECT_PLAN.md`).
 
 ### Known blockers
 
 - **CUDA / `.venv-nas` (laptop).** `torch.cuda.is_available()` is False here, `nvidia-smi`
   isn't on PATH, and **`.venv-nas` is not currently built** (only `.venv` exists) — so every
-  OFA/ultralytics integration (the fine-tune, the warm-head re-test) runs on **Colab free T4**
-  (Kaggle GPU quota exhausted; TPU can't run this stack), not locally. The CP 2.4 GPU run is **done and
-  failed** (see Current state); the gate donor is now **trained** (`best.pt`, epoch 1359), so the
-  next GPU step is the **head-warm-start re-test** (`--reset-proxy --head-weights best.pt --freeze-head`,
-  proxy-only, on Colab). Pure logic (`full_noise_verdict`, the DoD gates) is unit-tested in `.venv`/CI, and
-  both `run_full_diagnostic`'s and `run_protocol`'s (incl. `--reset-proxy` + warm-start threading)
-  resume/guard/verdict paths are covered by **stubbed-fine-tune** tests, so the orchestration is
-  verified without a GPU. The
-  owed **640 LUT re-sweep** + **baseline yolo11n-pose anchor** stay Jetson-gated (anchor's *mAP
-  half* runs on CPU via `detect.evaluate.pose_map`).
+  OFA/ultralytics fine-tune runs on **Colab free T4** (Kaggle GPU quota exhausted; TPU can't run this
+  stack), not locally. The CP 2.4 warm-head re-test is **done** (closed CP 2.4 — see Current state),
+  and its close re-stamp ran **CPU-only** in `.venv` (`--reverdict`). Pure logic (`rank_verdict`,
+  `full_noise_verdict`, `assemble_verdict`) is unit-tested in `.venv`/CI, and `run_protocol`'s /
+  `run_full_diagnostic`'s resume/guard/verdict paths are covered by **stubbed-fine-tune** tests, so
+  the orchestration is verified without a GPU. **Next GPU work is Phase-3-adjacent, not a CP 2.4
+  blocker:** the owed **640-res LUT re-sweep** + **baseline yolo11n-pose anchor** stay Jetson-gated
+  (anchor's *mAP half* runs on CPU via `detect.evaluate.pose_map`); Phase 3 search fine-tunes run on
+  Colab.
 
 ### Lowest-friction next build
 
-The CP 2.4 proxy failed (τ=0.20) because of a **random Pose head**; the **head-warm-start repair is
-built** and the **gate donor is now trained** (`best.pt`, epoch 1359). The next step is the **warm-head
-re-test** (one command, **Colab free T4** — Kaggle GPU quota is out and TPU can't run the
-PyTorch/OFA/Ultralytics stack). Stage `best.pt` + `dataset.zip` + the seed-0 `cp24_proxy_rank.json` on
-Google Drive (`D=/content/drive/MyDrive/cp24`); proxy_rank's per-arch flush + a Drive `--out` make Colab
-disconnects resumable. Run on a *copy* of the prior results:
-```
-cp data/cp24_proxy_rank.json $D/cp24_warmstart.json   # never touch the original seed-0 maps
-python -m eval.proxy_rank --reset-proxy \
-    --head-weights $D/best.pt --freeze-head \
-    --proxy-seeds 3 --no-full --device cuda --imgsz 640 --batch 16 \
-    --out $D/cp24_warmstart.json
-```
-`--reset-proxy` nulls the proxy maps (keeps the expensive seed-0 full maps), recomputes the proxy
-with the warm+frozen head **averaged over 3 seeds** (`--proxy-seeds`, the Δ fix), then re-correlates.
-Read `…cp24_warmstart.json.verdict.json`:
-- **τ ≥ 0.7 & Δ ≤ 0.005** → CP 2.4 **closes** (advance state + `procedure.md`).
-- **miss** → run the (already-built) `python -m eval.proxy_rank --diagnose-full --indices 7,4,8
-  --full-epochs 100 --device cuda` to decide repair-more vs **reframe** (D4 → ask the user).
+CP 2.4 is **closed** (reframe gate; see Current state). Next is **CP 3.1 — search-space encoder**
+(`search/space.py`), the first Phase-3 checkpoint and **pure / CPU-only / no GPU**: encode/decode an
+OFA arch_dict ↔ a flat surrogate vector, tracking categorical axes (`ks∈{3,5,7}`, `e∈{3,4,6}`) vs the
+integer depth axis (`d∈{2,3,4}`) and OFA's conditional structure (per-stage depth `d` gates how many of
+its blocks are active). **DoD: `decode(encode(arch)) == arch` for 100 random archs.** Reuse
+`supernet.sampler.random_arch` for the 100-arch round-trip (needs `.venv-nas`/ofa) and the arch_dict
+shape from `search/arch_to_blocks.py`; the encode/decode logic is pure → TDD it in `.venv` with
+synthetic arch dicts, then run the 100-arch DoD under `.venv-nas`. It's the surrogate's input surface
+for CP 3.2 (NSGA-II) / CP 3.3 (BO).
 
-**Reframe is already built + validated (no GPU, 2026-06-25 — "both"):** `eval/zerocost.py` (zero-cost
-ranker, `python -m eval.zerocost`) + the search-relevant gate `rank_verdict` (Spearman ≥ 0.70 AND
-top1_regret ≤ 0.01) in `eval/shortft.py`. depth_sum/latency_ms/flops pass; the failed proxy fails.
-See `procedure.md` "Both paths implemented". The warm-head re-test above is now the GPU **cross-check**.
+**Accuracy + cost signals are ready** (no new eval work needed to start Phase 3): the **warm-head
+5-epoch proxy** (`eval.proxy_rank` / `eval.shortft.short_finetune` with `--head-weights <gate best.pt>
+--freeze-head`, Colab) is the accuracy signal; `eval/zerocost.py` (depth_sum / Jetson `latency_ms`, no
+GPU) is the free cold-start prefilter + BO warm-start; `search.cost.cost` composes the LUT latency.
+**J(α) λ/μ (D4) is decided at CP 3.3**, not before.
 
-Donor note: the **gate** checkpoint (nc=1, 8-kpt) makes the whole head transfer + freeze cleanly;
-with only generic COCO `yolo11n-pose.pt` (17-kpt) the keypoint branch reinitializes → run **without**
-`--freeze-head`. CPU-runnable in parallel: anchor the **baseline yolo11n-pose** mAP via
-`detect.evaluate.pose_map` (latency half stays Jetson-gated).
-
-**Donor now trained (2026-06-22):** `runs/pose/experiments/gate_baseline/weights/best.pt` (epoch 1359,
-gate dataset, pose mAP50-95 0.878) — the team had only a fused ONNX (unusable donor), so we trained our
-own ([[cp24-donor-must-be-trained]]). Keypoints converged ~epoch 300; it's a ready donor for the
-warm-head re-test above.
-
-**Validated no-GPU alternative (2026-06-22, deep-research) — `eval/zerocost.py`.** A literature pass
-(plan `~/.claude/plans/mode-full-research-piped-sunrise.md`) found the failure is two named effects:
-random-head distortion (Kumar et al., LP-FT, ICLR 2022) + top-k/cluster collapse (Zero-Shot NAS survey
-2307.01998), and that **zero-cost/size descriptors are the literature-favored ranker**. Built + validated
-against `data/cp24_proxy_rank.json` (no GPU): `depth_sum` ranks at **τ=0.767** (passes), Jetson
-`latency_ms` at 0.733, and *every* descriptor picks the true-best arch (regret 0) vs the 5-epoch proxy's
-regret 0.0195 — the zero-cost ranker **dominates** the failed proxy. New: `eval/zerocost.py`
-(descriptors/`rank_report`/`__main__`) + `precision_at_k`/`top1_regret` in `eval/shortft.py` (254 tests
-green). **Two paths now exist for CP 2.4 — repair (warm-head re-test, GPU) vs reframe (zero-cost ranker,
-no GPU); the choice + the DoD-gate change (τ-on-10 → Spearman+precision@k) touch D4 → user decides.**
+**Still owed, Jetson-gated (Phase-3-adjacent, not blocking CP 3.1):** the **640-res LUT re-sweep**
+(pose runs @640; per-block rows are keyed @224 — append-only schema absorbs it) + the **baseline
+yolo11n-pose anchor** (mAP half runs on CPU via `detect.evaluate.pose_map`; latency half Jetson-gated).
+Donor for the warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
+whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 
 ### Open design decisions (do not resolve unilaterally)
 

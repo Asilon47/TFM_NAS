@@ -1894,3 +1894,70 @@ dropped session resumes on re-run. Re-test (on a COPY of the seed-0 maps, never 
 `warm_start_head` copied/skipped is ~all-copied (donor is nc=1/8-kpt → whole head shape-matches the
 graft). Gate: **τ≥0.70 & Δ≤0.005 → CP 2.4 closes**; miss → the built `--diagnose-full`. `check.sh`
 fast lane re-confirmed **261 passed** before handoff. See plan `ticklish-popping-mountain.md`.
+
+## CP 2.4 CLOSED — warm-head re-test + reframe gate (2026-06-27)
+
+**`current_checkpoint` 2.4 → 3.1, `last_completed` 2.2 → 2.4, `completed += "2.4"`.** The warm-head
+re-test ran on Colab (the file landed `data/cp24_warmstart.json`, 3 proxy seeds/arch ⇒ `--proxy-seeds 3`,
+full maps byte-identical to the seed-0 originals ⇒ `--reset-proxy` kept the expensive ground truth). The
+docs that called it "owed" were stale.
+
+### The result — the repair worked
+
+Warm proxy (warm-started + frozen gate head, 3-seed mean) vs the original seed-0 full maps, 10 archs:
+
+| metric | original (random head, 1 seed) | warm-head (frozen, 3-seed) | old gate | reframe gate |
+|---|---|---|---|---|
+| Kendall-τ | 0.20 | **0.60** | ≥0.7 ✗ | diagnostic |
+| Spearman ρ | 0.21 | **0.77** | — | ≥0.70 ✓ |
+| top-1 regret | 0.0195 | **0.00** | — | ≤0.01 ✓ |
+| precision@3 | 0.33 | 0.67 | — | diagnostic |
+| reproducibility Δ | 0.0149 | 0.0145 | ≤0.005 ✗ | diagnostic |
+
+Freezing a competent head tripled τ (0.20→0.60), nearly 4×'d ρ (0.21→0.77), and the proxy now picks the
+**true-best arch** (idx1, the max corner; top-1 regret 0). Direct empirical confirmation of the LP-FT
+random-head-distortion root cause — the original proxy scored head-init luck, not backbone quality.
+
+### Decision (D4-adjacent, AskUserQuestion → "Close on reframe gate")
+
+CP 2.4's DoD is **reframed**: **Spearman ρ ≥ 0.70 AND top-1 regret ≤ 0.01** (`eval.shortft.rank_verdict`),
+superseding the Kendall-τ-on-10 + Δ≤0.005 gate. Rationale (literature pass + the data): τ-on-10 has very
+wide CIs at n=10 and punishes mid-rank disagreements the search ignores — it *mis-measures* (size
+descriptors fail τ yet have regret 0 / pick the true best). Both the warm-head proxy (ρ=0.77, regret 0)
+**and** the zero-cost ranker (depth_sum ρ=0.843, latency_ms ρ=0.855, regret 0) pass the reframe gate ⇒
+CP 2.4 closes. **Only the DoD-gate sub-decision is resolved; D4 proper (λ/μ in J(α)) stays open** (CP 3.3).
+
+### Reproducibility — re-characterized as a diagnostic, not a gate
+
+Δ=0.0145 is two independent 3-seed-block means of **idx0, the min corner** — the smallest / most
+under-trained arch at 5 epochs, the worst case. Seed-averaging (N=3) did *not* reduce it vs the 1-seed
+run (0.0149→0.0145): within a block the spread is ~0.002 (std), but two blocks differ by 0.0145 — i.e. the
+noise is **non-i.i.d.** (a correlated/systematic component averaging can't shrink; σ/√N only kills i.i.d.
+noise). It is therefore not cheaply fixable by more seeds, and — crucially — it does not affect *rank*
+quality (the proxy's ordering is stable; it picks the true best). Under the reframe it is reported, not
+gated. Honest caveat for the thesis: report Δ on the min corner as run-to-run noise; the rank robustness
+(ρ=0.77, regret 0) is the search-relevant claim.
+
+### Carries into Phase 3
+
+- **Accuracy signal = the warm-head 5-epoch proxy** (warm-start + freeze the gate head). It is a *real*
+  accuracy estimate, partially independent of size — what a latency↔accuracy Pareto search needs. (A
+  zero-cost ranker that is a monotone function of latency would collapse the Pareto front to a line.)
+- **Zero-cost descriptors = free cold-start prefilter** (depth_sum / Jetson latency_ms; `eval/zerocost.py`,
+  no GPU) — they agree with the proxy (both pick the true best), a cheap robustness cross-check and a
+  warm-start for BO before any fine-tune is spent.
+- **J(α) λ/μ integration deferred to CP 3.3** (D4 proper) — `zerocost_score`/`rank_verdict` are the
+  building blocks; normalizing into an accuracy term + choosing λ/μ is the next user decision.
+
+### Built (CPU-only close — no further GPU)
+
+`eval/proxy_rank.assemble_verdict` now gates on `rank_verdict` (emits `spearman`/`top1_regret` as the
+gate + `kendall_tau`/`precision_at_k`/`reproducibility` as diagnostics; `dod_passes = rank_passes`;
+precision@k clamped to k≤n; verdict JSON carries `spearman_gate`/`regret_tol` ⇒ self-describing). New
+`reverdict()` + `--reverdict` re-stamp an existing results file's verdict under the current gate with no
+fine-tune (scipy+json, runs in `.venv`), preserving the prior reproducibility block. Re-stamped
+`data/cp24_warmstart.json.verdict.json` → `dod_passes: true`. Tests updated to the reframe semantics
+(`test_verdict_reproducibility_is_diagnostic_not_gate` is the flipped behavioral spec) + `reverdict`
+round-trip/guard. `check.sh` green: **266 passed, 2 skipped** (ofa/ultralytics → `.venv-nas`), ruff +
+mypy clean. Commit `53ff58a`. The owed 640-res LUT re-sweep + baseline yolo11n-pose anchor remain
+Jetson-gated (Phase-3-adjacent, not a CP 2.4 blocker).
