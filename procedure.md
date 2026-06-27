@@ -1961,3 +1961,51 @@ fine-tune (scipy+json, runs in `.venv`), preserving the prior reproducibility bl
 round-trip/guard. `check.sh` green: **266 passed, 2 skipped** (ofa/ultralytics → `.venv-nas`), ruff +
 mypy clean. Commit `53ff58a`. The owed 640-res LUT re-sweep + baseline yolo11n-pose anchor remain
 Jetson-gated (Phase-3-adjacent, not a CP 2.4 blocker).
+
+## CP 3.1 CLOSED — search-space encoder (2026-06-27)
+
+First Phase-3 checkpoint, and the only one with zero blockers (pure / CPU-only / no GPU / no Jetson).
+`search/space.py` encodes an OFA `arch_dict` to a length-45 flat vector of **category indices**
+(`[ ks(20) | e(20) | d(5) ]`) and back — the input surface the CP 3.2/3.3 surrogate searches over.
+Lengths derive from `catalog/ofa_mbv3` (`KS/E/D/MAX_DEPTH/STAGES`), never hardcoded, so CP 7.1 extends
+this same file for new op choices. **DoD PASS:** `decode(encode(arch)) == arch` for 100 random archs
+(`python -m search.space` → 100/100; `random_arch_dict` is the documented torch-free equivalent of
+`supernet.sampler.random_arch`, so the DoD runs in `.venv`). `check.sh` green: **271 passed, 2 skipped**
+(ofa/ultralytics → `.venv-nas`), ruff + mypy clean. Commit `1cbe574`.
+
+### The load-bearing design call: lossless bijection vs. canonical encoding
+
+OFA's `sample_active_subnet` fills **all 20** `ks` and **all 20** `e` slots with random values, even the
+trailing slots a stage's depth `d` switches off — and `arch_to_blocks` only ever reads `range(d[s])`, so
+those inactive slots are **don't-cares** (proven by `test_arch_to_blocks.test_depth_truncation_ignores_
+inactive_slots`). Consequence: the DoD's exact-equality round-trip over `random_arch` output **forces a
+lossless 45-slot bijection** — `encode`/`decode` must preserve the don't-cares verbatim or any `d<4` arch
+fails to round-trip. But that lossless vector is the *wrong* input for the CP 3.3 GP: two archs differing
+only in inactive slots are the *same* network (same blocks, same latency, same mAP) yet sit at different
+points → **phantom dimensions** that inflate the Hamming distance and waste the surrogate's ≤20-dim
+budget. Resolution: keep `encode`/`decode` lossless (no masking) **and** add a separate `canonical()` that
+masks inactive ks/e slots to `INACTIVE=-1`, so functionally-identical archs collapse to one point. Masking
+lives only in `canonical()` — that is what lets the bijection (DoD) and the surrogate's distance metric
+coexist instead of fighting. `AXIS_TYPES`/`AXIS_CARDINALITIES` expose the categorical (ks,e) vs ordinal
+(d) split for the CP 3.3 Hamming+Matérn kernel. Pure Python (no torch/numpy); `decode` emits plain `int`
+so its output passes `validate_arch_dict` (which rejects `np.int64`/`bool` to keep the LUT `row_key`
+stable).
+
+### Phase-3 audit decisions taken entering CP 3.1 (recorded so 3.2/3.3 inherit them)
+
+- **Scope:** Phase 3 is **five** checkpoints (3.1–3.5), not three — 3.4 (TPE/Optuna fallback) and 3.5
+  (winner export to `state/winner_v1/`) are part of it.
+- **Accuracy signal = cheap NSGA-II + expensive BO** (user decision, *not* the OFA-predictor path).
+  CP 3.2 NSGA-II runs on zero-cost `depth_sum` + LUT latency (free / CPU) — a *structural baseline* that
+  warm-starts BO, **not** the headline accuracy frontier (its two axes are correlated, so expect a thin
+  front that just clears "≥10 non-dominated points"). CP 3.3 BO spends the warm-head 5-epoch proxy on a
+  small candidate budget. Do **not** use `latency_ms` as the accuracy axis (monotone-in-latency → Pareto
+  front collapses to a line); `depth_sum` is the defensible cheap proxy (ρ≈0.84 vs full mAP, CP 2.4).
+- **D2 budget multiplier (the binding Phase-3 GPU cost):** the ≥5-seed protocol makes CP 3.3 cost
+  ≈ `5 × (2B − n_init)` warm-head proxy fine-tunes (5 seeds × {random control + BO}, GP seeded from the
+  shared random evals). On Colab-only T4 that means `B≈40–50` → ~400–500 evals (feasible); `B=100` →
+  ~1000 (likely too much). Size D2 against this; use `eval/zerocost.py` to prefilter before any proxy
+  eval. **D2 stays open — bring the chosen `B` to the user.**
+- **Still owed, Jetson-gated, not blocking the encoder:** 640-res LUT re-sweep (rows keyed @224; pose
+  @640 — fine for *relative* ranking in CP 3.2, needed for the *absolute* `λ·latency` term in CP 3.3) +
+  baseline yolo11n-pose anchor. **D4 (λ/μ) stays open → CP 3.3.**

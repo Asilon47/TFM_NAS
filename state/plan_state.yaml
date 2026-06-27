@@ -1,7 +1,7 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "3.1"   # CP 2.4 CLOSED 2026-06-27 on the REFRAMED gate (Spearman ρ≥0.70 AND top-1 regret≤0.01), superseding Kendall-τ-on-10 + repro-Δ≤0.005 (τ-on-10 mis-measures). Warm-head re-test (Colab, data/cp24_warmstart.json: warm-start+freeze gate head, 3-seed avg) ρ=0.77, regret 0.0 → PASS (τ=0.60, Δ=0.0145 now diagnostics). Cross-checked no-GPU by eval/zerocost.py (depth_sum ρ=0.843, regret 0). DoD-gate sub-decision resolved; D4 proper (λ/μ in J(α)) stays OPEN → CP 3.3. Next: CP 3.1 search-space encoder. Owed (Phase-3-adjacent, not a blocker): 640-res LUT re-sweep + baseline yolo11n-pose anchor (Jetson-gated).
-last_completed: "2.4"       # CP 2.4 proxy-rank fidelity closed on the reframed search-relevant gate (warm-head proxy + zero-cost cross-check)
+current_checkpoint: "3.2"   # CP 3.1 CLOSED 2026-06-27 — search/space.py: OFA arch_dict <-> length-45 flat vector of category indices [ks(20)|e(20)|d(5)]; DoD decode(encode(arch))==arch 100/100 in .venv (no GPU). encode/decode LOSSLESS (preserves OFA's depth-inactive don't-care slots — required for exact round-trip); separate canonical() masks them to INACTIVE=-1 for the CP 3.3 surrogate. check.sh 271 passed, ruff+mypy clean, commit 1cbe574. Phase-3 decisions: accuracy signal = cheap NSGA-II (depth_sum+LUT) + expensive BO (warm-head proxy); D2 budget B~=40-50 (5-seed protocol cost ~= 5*(2B-n_init)) STAYS OPEN; D4 (lambda/mu in J) -> CP 3.3. Next: CP 3.2 NSGA-II (search/evolution.py), blocked on D2. Owed Jetson-gated: 640-res LUT re-sweep + baseline yolo11n-pose anchor.
+last_completed: "3.1"       # CP 3.1 search-space encoder closed (decode(encode(arch))==arch, 100/100, .venv/no-GPU)
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
@@ -11,6 +11,7 @@ completed:
   - "2.1"    # Arch -> block list translator (search/arch_to_blocks.py)
   - "2.2"    # LUT composite-cost + depth-binned additivity DoD (PASS) + latency calibration
   - "2.4"    # Proxy-rank fidelity: warm-head proxy ρ=0.77/regret 0 + zero-cost cross-check (reframe gate)
+  - "3.1"    # Search-space encoder (search/space.py): decode(encode(arch))==arch 100/100 (CPU)
 # NOTE: CP 1.4 (ImageNet sanity) CLOSED 2026-06-18 — backfilled out of order.
 # Re-framed from an absolute-bar DoD to a rank-fidelity gate (the OFA accuracy
 # predictor is a ranking model with a ~constant absolute offset). Spearman
