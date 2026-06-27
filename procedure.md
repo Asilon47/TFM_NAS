@@ -2058,3 +2058,48 @@ D2's **Phase-7** budget (was "200") is deliberately *not* set here — it's re-d
 the same protocol. Recorded in PROJECT_PLAN.md (D2 entry + CP 3.2/3.3), CLAUDE.md (open-decisions table),
 and plan_state.yaml. **CP 3.2 (NSGA-II, `search/evolution.py`) is now the next buildable checkpoint —
 CPU-only / local / no Colab.** D4 (λ/μ) stays open → CP 3.3.
+
+## CP 3.2 CLOSED — NSGA-II evolutionary baseline (2026-06-27)
+
+`search/evolution.py`: NSGA-II over `(maximize depth_sum, minimize latency_ms)`, producing the Phase-3
+Pareto frontier. **CPU-only / local** — reads the fp32 `data/lut.jsonl`, no GPU/Colab/Jetson. **DoD
+PASS:** `python -m search.evolution` yields **11 non-dominated points** (≥10) in ~2.3 s (3603 unique
+archs, memoized). `check.sh`: **279 passed, 2 skipped**, ruff + mypy clean. Commit `c83d22a`.
+
+### Implementation: pymoo (user decision)
+
+The user chose **pymoo** (the standard library) over a hand-rolled NSGA-II — it reads well in a methods
+section, at the cost of a new dependency. `pymoo>=0.6.1` added to `requirements.txt` (CPU `.venv`; pulls
+numpy/scipy — already pinned — + matplotlib/autograd/cma) and `pymoo.*` to the mypy
+`ignore_missing_imports` overrides. **Verified no venv drift** ([[venv-drift-onnxscript]]): `torch`
+stayed `2.3.1+cpu`, numpy/scipy unchanged, all 274 prior tests still green. pymoo is **lazy-imported
+inside `run_search`** (mirrors `eval/shortft.py`'s lazy torch), so the module + its pure helpers
+(`evaluate_objectives`, `_nondominated_dedup`) import and unit-test in `.venv`/CI without pymoo.
+
+The GA searches the CP 3.1 length-45 **integer category-index** vector (uniform box `[0,2]`, all axes
+cardinality 3) via the documented pymoo integer recipe (`IntegerRandomSampling` + `SBX`/`PM` with
+`RoundingRepair`, `eliminate_duplicates=True`). `evaluate_objectives` returns `(-depth_sum, latency_ms)`
+to minimize; objectives are memoized per genotype. The final frontier is deduped by objective value
+(collapsing depth-inactive don't-care twins) and written to a **gitignored** `data/phase3_nsga2_frontier.json`
+for the CP 3.3 BO warm-start.
+
+### Result: the analytic depth staircase (as expected)
+
+The front is exactly the **11-point depth staircase** — `depth_sum` 10→20, each at its min-latency config
+(`ks`/`e` driven to their smallest), latency rising monotonically **1.73 → 3.35 ms**. This is the
+analytic Pareto front of `(depth_sum, latency)`: at a fixed depth, varying `ks/e` only moves latency
+(same "accuracy"), so those points are dominated; across depths, more blocks ⇒ strictly more latency ⇒ 11
+mutually non-dominated steps. It is **intentionally thin** — the documented structural-baseline role.
+`depth_sum`'s ρ≈0.84 vs real mAP makes it a defensible cheap axis, but it can't reward `ks/e`, so the
+accuracy-richness comes from the **CP 3.3 BO over the warm-head proxy** (where mAP responds to `ks/e`).
+CP 3.2's lasting value is the **reusable NSGA-II machinery**, re-run on the enriched op-space at CP 7.2.
+
+### Tests (`tests/test_evolution.py`, TDD)
+
+Pure (always run, no pymoo/LUT): `_nondominated_dedup` skyline + dedup, cross-checked against
+`search.cost_preview.nondominated_indices`. LUT-only (no pymoo): `evaluate_objectives` depth-sign +
+latency monotonicity. pymoo+LUT (`importorskip` + `lut_path` fixture + `slow`): reduced run
+(`pop=40,gen=40`) → ≥10 non-dominated points, frontier internally non-dominated; plus seed
+reproducibility. `CostError`→skip guards keep them green on a partial LUT. Next: **CP 3.3 BO**
+(`search/bo.py`) — needs D4 (λ/μ) + the warm-head proxy budget (B=50) + the Jetson 640-res LUT/baseline
+for the absolute objective.

@@ -1,7 +1,7 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "3.2"   # CP 3.1 CLOSED 2026-06-27 — search/space.py: OFA arch_dict <-> length-45 flat vector of category indices [ks(20)|e(20)|d(5)]; DoD decode(encode(arch))==arch 100/100 in .venv (no GPU). encode/decode LOSSLESS (preserves OFA's depth-inactive don't-care slots — required for exact round-trip); separate canonical() masks them to INACTIVE=-1 for the CP 3.3 surrogate. check.sh 271 passed, ruff+mypy clean, commit 1cbe574. Phase-3 decisions: accuracy signal = cheap NSGA-II (depth_sum+LUT) + expensive BO (warm-head proxy); D2 RESOLVED 2026-06-27 B=50,n_init=20 -> CP 3.3 cost 5*(2B-n_init)=400 warm-head fine-tunes (incl. same-budget random control; 1 seed/eval); D4 (lambda/mu in J) STILL OPEN -> CP 3.3. Next: CP 3.2 NSGA-II (search/evolution.py) — now buildable, CPU-only/local (depth_sum+LUT, free). Owed Jetson-gated: 640-res LUT re-sweep + baseline yolo11n-pose anchor.
-last_completed: "3.1"       # CP 3.1 search-space encoder closed (decode(encode(arch))==arch, 100/100, .venv/no-GPU)
+current_checkpoint: "3.3"   # CP 3.2 CLOSED 2026-06-27 — search/evolution.py: pymoo NSGA-II over (max depth_sum, min latency_ms). DoD: python -m search.evolution -> 11 non-dominated points (>=10) in ~2.3s. Front = analytic depth staircase (depth_sum 10->20, latency 1.73->3.35ms, all min ks/e) — intentionally thin structural baseline; written to gitignored data/phase3_nsga2_frontier.json for the CP 3.3 BO warm-start. pymoo>=0.6.1 added to .venv (torch 2.3.1+cpu pin verified intact), lazy-imported in run_search. check.sh 279 passed, ruff+mypy clean, commit c83d22a. Next: CP 3.3 BO (search/bo.py) — needs D4 (lambda/mu, OPEN) + warm-head proxy budget B=50 + Jetson 640-res LUT/baseline for the absolute objective.
+last_completed: "3.2"       # CP 3.2 NSGA-II baseline closed (11-point depth-staircase frontier, >=10 DoD; pymoo, CPU)
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
@@ -12,6 +12,7 @@ completed:
   - "2.2"    # LUT composite-cost + depth-binned additivity DoD (PASS) + latency calibration
   - "2.4"    # Proxy-rank fidelity: warm-head proxy ρ=0.77/regret 0 + zero-cost cross-check (reframe gate)
   - "3.1"    # Search-space encoder (search/space.py): decode(encode(arch))==arch 100/100 (CPU)
+  - "3.2"    # NSGA-II evolutionary baseline (search/evolution.py): 11 non-dominated points (pymoo, CPU)
 # NOTE: CP 1.4 (ImageNet sanity) CLOSED 2026-06-18 — backfilled out of order.
 # Re-framed from an absolute-bar DoD to a rank-fidelity gate (the OFA accuracy
 # predictor is a ranking model with a ~constant absolute offset). Spearman
