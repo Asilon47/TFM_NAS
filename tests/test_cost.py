@@ -96,6 +96,21 @@ def test_stem_head_none_defaults_to_no_offset():
     assert cost(arch, lut) == cost(arch, lut, stem_head=None)
 
 
+def test_cost_at_640_uses_the_deploy_resolution_keys():
+    """Pose costs against the @640 grid: res=640 keys must drive the lookup.
+
+    The @224 LUT (default res) cannot satisfy an @640 arch and vice-versa — the
+    resolutions re-key disjointly, so each is costed against its own rows.
+    """
+    arch = _random_arch_dict(random.Random(8))
+    lut_640 = {k: _row(mean=1.0, key=k) for k in arch_to_keys(arch, res=640)}
+    n_blocks = len(arch_to_blocks(arch, res=640))
+    assert cost(arch, lut_640, res=640)["latency_ms"] == pytest.approx(float(n_blocks))
+    # the @640 LUT does not cover the @224 keys (disjoint resolutions)
+    with pytest.raises(CostError):
+        cost(arch, lut_640)  # default res=224
+
+
 # ---- precision filtering via cost_from_path ---------------------------------
 
 def test_precision_filter_selects_matching_rows(tmp_path):

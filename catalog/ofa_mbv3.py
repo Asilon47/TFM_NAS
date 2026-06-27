@@ -58,14 +58,64 @@ def stage_in_c(stage_idx: int) -> int:
     return _FIRST_STAGE_IN_C if stage_idx == 0 else STAGES[stage_idx - 1]["out_c"]
 
 
-def reachable_mbconv_configs() -> list[dict]:
-    """Every MBConv cfg the OFA-MBv3-w1.0 search space can produce.
+# ---- Resolution scaling (D1 pose pivot) -------------------------------------
+# The constants above describe the OFA ImageNet input (224). Pose runs the same
+# backbone at 640, where every per-block input resolution re-keys. The spatial
+# part of a stage (res_in) is fully *derived* — it is ``stem_res`` walked through
+# the per-stage strides — so these helpers reproduce the @224 tables EXACTLY at
+# res=224 (one source of truth; the legacy STAGES/FIRST_BLOCK are derived-equal,
+# verified in tests/test_resolution.py) and yield the @640 grid for the owed
+# deploy-resolution sweep. Channels/strides/SE are resolution-invariant.
+
+BASE_RESOLUTION = 224   # the input the module-level constants describe
+STEM_STRIDE = 2         # the 3->16 stem is stride-2 (res -> res // 2)
+
+# Resolution-invariant part of each stage + the first block, derived from the
+# legacy constants so out_c/stride/se can never drift from STAGES/FIRST_BLOCK.
+_STAGE_SHAPES = [{"out_c": s["out_c"], "stride": s["stride"], "se": s["se"]}
+                 for s in STAGES]
+_FIRST_BLOCK_SHAPE = {k: v for k, v in FIRST_BLOCK.items() if k != "res"}
+
+
+def stem_res_for(res: int) -> int:
+    """Spatial resolution after the stride-2 stem (``res -> res // STEM_STRIDE``)."""
+    return res // STEM_STRIDE
+
+
+def stages_for_resolution(res: int) -> list[dict]:
+    """The five searchable stages with ``res_in`` derived for input ``res``.
+
+    ``out_c``/``stride``/``se`` are resolution-invariant; only ``res_in`` scales.
+    Each stage's ``res_in`` is the previous stage's post-stride resolution,
+    seeded from the post-stem resolution. ``stages_for_resolution(224)``
+    reproduces the module-level :data:`STAGES` table exactly.
+    """
+    stages: list[dict] = []
+    r = stem_res_for(res)
+    for shape in _STAGE_SHAPES:
+        stages.append({**shape, "res_in": r})
+        r = r // shape["stride"]
+    return stages
+
+
+def first_block_for(res: int) -> dict:
+    """The fixed first block at input ``res`` (its ``res`` = the post-stem resolution).
+
+    ``first_block_for(224)`` reproduces :data:`FIRST_BLOCK`.
+    """
+    return {**_FIRST_BLOCK_SHAPE, "res": stem_res_for(res)}
+
+
+def reachable_mbconv_configs(res: int = BASE_RESOLUTION) -> list[dict]:
+    """Every MBConv cfg the OFA-MBv3-w1.0 search space can produce at input ``res``.
 
     One fixed first block, plus per stage an *entry* block (prev_w -> out_w at
     the stage stride) and a *repeat* block (out_w -> out_w, stride 1), each over
     ``KS x E``. Returns cfg dicts in the catalog's MBConv schema
     ``{in_c, out_c, kernel, stride, expand, se, res}``, de-duplicated and order
-    preserved. Size: ``1 + 5 * 2 * |KS| * |E| = 91``.
+    preserved. Size: ``1 + 5 * 2 * |KS| * |E| = 91`` at any single resolution.
+    ``res`` defaults to 224 (the ImageNet grid); ``res=640`` is the pose deploy
+    grid — disjoint from 224, so unioning it into the catalog is append-only.
     """
     configs: list[dict] = []
     seen: set = set()
@@ -76,9 +126,9 @@ def reachable_mbconv_configs() -> list[dict]:
             seen.add(key)
             configs.append(cfg)
 
-    add(dict(FIRST_BLOCK))
+    add(dict(first_block_for(res)))
 
-    for s, stage in enumerate(STAGES):
+    for s, stage in enumerate(stages_for_resolution(res)):
         out_c, se = stage["out_c"], stage["se"]
         res_in = stage["res_in"]
         res_out = res_in // stage["stride"]

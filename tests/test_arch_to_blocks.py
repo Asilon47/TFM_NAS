@@ -74,6 +74,21 @@ def test_strides_and_resolutions_follow_stage_table():
     assert i == len(blocks)
 
 
+def test_res_640_scales_every_block_resolution():
+    """res=640 emits the pose deploy grid: same structure, scaled resolutions."""
+    arch = _random_arch_dict(random.Random(8))
+    blocks_224 = arch_to_blocks(arch, res=224)
+    blocks_640 = arch_to_blocks(arch, res=640)
+    assert len(blocks_640) == len(blocks_224)  # identical structure
+    # every @640 cfg differs from its @224 twin only in res (channels/k/stride same)
+    for (_, c224, _), (_, c640, _) in zip(blocks_224, blocks_640, strict=True):
+        assert c640["res"] != c224["res"]
+        assert {k: v for k, v in c640.items() if k != "res"} == {
+            k: v for k, v in c224.items() if k != "res"}
+    # the first block sits at the post-stem 320, stage entries start there too
+    assert blocks_640[0][1]["res"] == 320
+
+
 def test_depth_truncation_ignores_inactive_slots():
     """With d=2 everywhere, slots 2..3 of each stage must not affect output."""
     n = 5 * MAX_DEPTH

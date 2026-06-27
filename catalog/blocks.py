@@ -83,6 +83,14 @@ _MBCONV_GRID = [c for c in _MBCONV_GRID if c["out_c"] >= c["in_c"]]
 _MBCONV_GRID = _MBCONV_GRID + [c for c in reachable_mbconv_configs()
                                if c not in _MBCONV_GRID]
 
+# D1 pose pivot: the backbone deploys at 640, where every per-block resolution
+# re-keys vs the @224 ImageNet grid (stem 320; stages [320,160,80,40,40] -> taps
+# 80/40/20). Union the @640-reachable OFA configs so the owed deploy-resolution
+# sweep has rows. Append-only: the @640 res values {320,160,80,40,20} are
+# disjoint from @224, so new input_shapes -> new row_keys; @224 rows untouched.
+_MBCONV_GRID = _MBCONV_GRID + [c for c in reachable_mbconv_configs(640)
+                               if c not in _MBCONV_GRID]
+
 _CONV3X3_GRID = _grid(in_c=[16, 32, 64, 96, 160], out_c=[16, 32, 64, 96, 160],
                       stride=[1, 2], res=[112, 56, 28, 14])
 _CONV1X1_GRID = _grid(in_c=[16, 32, 64, 96, 160, 320], out_c=[16, 32, 64, 96, 160, 320],

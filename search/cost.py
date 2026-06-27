@@ -121,6 +121,7 @@ def _aggregate(rows: list[LutRow], offset: CostOffset,
 
 
 def cost(arch_dict: ArchDict, lut: dict[str, LutRow], *,
+         res: int = 224,
          stem_head: CostOffset | None = None,
          calibration: LatencyCalibration | None = None) -> CostDict:
     """Composite cost of ``arch_dict`` from a pre-loaded, precision-filtered LUT.
@@ -128,6 +129,10 @@ def cost(arch_dict: ArchDict, lut: dict[str, LutRow], *,
     Args:
         arch_dict: canonical OFA arch spec (see catalog/contracts.ArchDict).
         lut: ``row_key -> LutRow``, e.g. ``load_lut(path, precision="fp16")``.
+        res: network input resolution keying the per-block lookups — 224 (default,
+            the CP 3.2 ImageNet grid) or 640 (the D1 pose deploy grid). The LUT
+            passed in must hold rows at this resolution (the @640 rows come from
+            the owed deploy-resolution sweep); a mismatch raises ``CostError``.
         stem_head: constant stem+head offset to add; ``None`` -> no-op
             (``ZERO_OFFSET``). The default is correct for *ranking*; supply a
             measured offset for absolute-cost reporting.
@@ -143,7 +148,7 @@ def cost(arch_dict: ArchDict, lut: dict[str, LutRow], *,
     offset = ZERO_OFFSET if stem_head is None else stem_head
     calib = IDENTITY_CALIBRATION if calibration is None else calibration
     rows: list[LutRow] = []
-    for name, cfg, shape in arch_to_blocks(arch_dict):
+    for name, cfg, shape in arch_to_blocks(arch_dict, res):
         key = row_key(name, cfg, shape)
         try:
             rows.append(lut[key])
@@ -159,7 +164,7 @@ def cost(arch_dict: ArchDict, lut: dict[str, LutRow], *,
 
 
 def cost_from_path(arch_dict: ArchDict, lut_path: Path, precision: str | None = None,
-                   *, stem_head: CostOffset | None = None,
+                   *, res: int = 224, stem_head: CostOffset | None = None,
                    calibration: LatencyCalibration | None = None) -> CostDict:
     """Load the LUT from ``lut_path`` (filtered to ``precision``) then ``cost``.
 
@@ -167,7 +172,7 @@ def cost_from_path(arch_dict: ArchDict, lut_path: Path, precision: str | None = 
     :func:`cost` with a once-loaded dict instead of re-reading the file per arch.
     """
     lut = load_lut(lut_path, precision=precision)
-    return cost(arch_dict, lut, stem_head=stem_head, calibration=calibration)
+    return cost(arch_dict, lut, res=res, stem_head=stem_head, calibration=calibration)
 
 
 def resident_mem_mib(cost_dict: CostDict, bytes_per_param: int) -> float:

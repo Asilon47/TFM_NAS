@@ -22,7 +22,16 @@ import random
 
 from catalog.blocks import input_shape_for
 from catalog.contracts import ArchDict, Block
-from catalog.ofa_mbv3 import FIRST_BLOCK, KS, MAX_DEPTH, STAGES, D, E, stage_in_c
+from catalog.ofa_mbv3 import (
+    KS,
+    MAX_DEPTH,
+    STAGES,
+    D,
+    E,
+    first_block_for,
+    stage_in_c,
+    stages_for_resolution,
+)
 from catalog.sweep import row_key
 
 
@@ -54,7 +63,7 @@ def validate_arch_dict(arch_dict: ArchDict) -> None:
         raise ValueError("invalid arch_dict: " + "; ".join(problems))
 
 
-def arch_to_blocks(arch_dict: ArchDict) -> list[Block]:
+def arch_to_blocks(arch_dict: ArchDict, res: int = 224) -> list[Block]:
     """OFA ``arch_dict`` -> ordered list of ``("mbconv", cfg, input_shape)``.
 
     ``ks`` / ``e`` are length ``5 * MAX_DEPTH`` (one slot per block position);
@@ -62,6 +71,10 @@ def arch_to_blocks(arch_dict: ArchDict) -> list[Block]:
     ``j in range(d[s])`` reads slot ``MAX_DEPTH * s + j``. Block 0 is the entry
     (prev_w -> out_w at the stage stride, at ``res_in``); blocks 1+ are repeats
     (out_w -> out_w, stride 1, at ``res_in // stride``).
+
+    ``res`` is the network input resolution: 224 (default, the OFA ImageNet grid
+    CP 3.2 searches) or 640 (the D1 pose deploy grid). It only scales the per-block
+    spatial resolutions — the emitted cfgs re-key but the structure is identical.
 
     Raises ``ValueError`` on a malformed ``arch_dict`` (see
     :func:`validate_arch_dict`).
@@ -73,9 +86,9 @@ def arch_to_blocks(arch_dict: ArchDict) -> list[Block]:
     def emit(cfg: dict) -> None:
         blocks.append(("mbconv", cfg, input_shape_for("mbconv", cfg)))
 
-    emit(dict(FIRST_BLOCK))  # fixed, non-elastic
+    emit(dict(first_block_for(res)))  # fixed, non-elastic
 
-    for s, stage in enumerate(STAGES):
+    for s, stage in enumerate(stages_for_resolution(res)):
         out_c, se = stage["out_c"], stage["se"]
         res_in = stage["res_in"]
         res_out = res_in // stage["stride"]
@@ -91,9 +104,9 @@ def arch_to_blocks(arch_dict: ArchDict) -> list[Block]:
     return blocks
 
 
-def arch_to_keys(arch_dict: ArchDict) -> list[str]:
+def arch_to_keys(arch_dict: ArchDict, res: int = 224) -> list[str]:
     """The LUT ``row_key`` for each block in the arch's ordered block list."""
-    return [row_key(b, cfg, shape) for b, cfg, shape in arch_to_blocks(arch_dict)]
+    return [row_key(b, cfg, shape) for b, cfg, shape in arch_to_blocks(arch_dict, res)]
 
 
 def random_arch_dict(rng: random.Random) -> ArchDict:

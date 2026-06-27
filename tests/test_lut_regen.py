@@ -35,7 +35,7 @@ def regen_rows(tmp_path_factory, repo_root):
 
 
 def test_regen_writes_full_catalog(regen_rows):
-    assert len(regen_rows) == 2710
+    assert len(regen_rows) == 2801   # @224 (2710) + @640 pose grid (91); see test_catalog
 
 
 def test_regen_keys_match_catalog(regen_rows):

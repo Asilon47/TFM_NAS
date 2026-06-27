@@ -17,16 +17,21 @@ from catalog.ofa_mbv3 import reachable_mbconv_configs
 from catalog.sweep import iter_sweep, sweep_size
 
 
+# Pins bumped 2026-06-28 (CP 3.3 prep): the @640 pose deploy grid was unioned in
+# (+91 MBConv rows, res {320,160,80,40,20}, disjoint from @224 → append-only). The
+# golden row_key hashes (test_row_key.py) are unchanged; only these counts move.
+# Decision recorded in procedure.md "CP 3.3 — @640 LUT re-key".
 def test_sweep_size_pinned():
-    assert sweep_size() == 2710
+    assert sweep_size() == 2801   # was 2710 @224-only; +91 @640
 
 
 def test_mbconv_grid_size_pinned():
-    assert len(BLOCK_REGISTRY["mbconv"]["grid"]) == 2107
+    assert len(BLOCK_REGISTRY["mbconv"]["grid"]) == 2198   # was 2107; +91 @640
 
 
 def test_reachable_ofa_configs_pinned():
-    assert len(reachable_mbconv_configs()) == 91
+    assert len(reachable_mbconv_configs()) == 91          # per single resolution
+    assert len(reachable_mbconv_configs(640)) == 91       # @640 mirrors @224
 
 
 @pytest.mark.parametrize("name", sorted(BLOCK_REGISTRY))
@@ -47,7 +52,7 @@ def test_ofa_reachable_configs_are_in_mbconv_grid():
 
 def test_iter_sweep_keys_globally_unique():
     keys = [k for *_, k in iter_sweep()]
-    assert len(keys) == len(set(keys)) == 2710
+    assert len(keys) == len(set(keys)) == 2801   # @224 (2710) + @640 (91)
 
 
 @pytest.mark.parametrize("name", sorted(BLOCK_REGISTRY))
