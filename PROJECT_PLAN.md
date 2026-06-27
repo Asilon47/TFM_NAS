@@ -223,6 +223,10 @@ a Pareto frontier of `(accuracy, latency_ms)` for the Jetson.
 - **CP 3.3 — Bayesian Optimization**
   - `search/bo.py`: GP surrogate with a structured kernel
     (Hamming + Matérn), Expected Improvement acquisition.
+  - **Objective (D4, RESOLVED):** multi-objective `(acc_eff, latency_ms)` with a hard ceiling
+    `latency ≤ T_max = min(baseline, fps_to_ms(60)=16.7 ms)`; soft μ² memory penalty folded into
+    `acc_eff` (budget 512 MiB, ≡0 in v1); λ ParEGO-sampled, calibrated at selection via two-anchor
+    iso-J. Formula locked in `search/objective.py`; λ/μ numbers set here (need the @640 latency scale).
   - **Budget (D2):** B=50/run, n_init=20 → ~400 warm-head fine-tunes across 5 seeds
     (incl. the same-budget random-search control; 1 seed/eval). Step 0 = one timed
     calibration eval on Colab (no per-eval wall-clock is recorded yet).
@@ -624,9 +628,13 @@ winner on a Jetson.
   in *that* direction. Don't inject both directions speculatively —
   fine-tune budget (Phase 6) is the bottleneck, not supernet size.
 
-- **D4 — λ, μ in `J(α)`** (blocks CP 3.3 onward).
-  Calibrate via two anchor points: "MobileNetV3-large at X ms" and
-  "EfficientNet-B0 at Y ms"; fit λ so both lie on the same iso-J contour.
+- **D4 — λ, μ in `J(α)`** — **RESOLVED 2026-06-27 → Pareto + hard latency ceiling.** Search is
+  multi-objective `(acc_eff, latency)` bounded by `latency ≤ T_max = min(baseline, 60 FPS→16.7 ms)`;
+  the soft μ² memory penalty folds into `acc_eff` (budget 512 MiB; ≡0 across v1). λ is ParEGO-sampled
+  while searching and calibrated for the deploy winner via the two-anchor iso-J fit
+  ("MobileNetV3-large at X ms" vs "EfficientNet-B0 at Y ms": `λ = Δacc/Δlat`), reported as a
+  sensitivity sweep. Formula in `search/objective.py`; λ/μ *numbers* land at CP 3.3 (need the @640
+  latency scale). See procedure.md "D4 RESOLVED".
 
 - **D5 — Multi-device extension** (v3, out of scope for v1/v2).
   Current LUT is Jetson-only. Future: per-device LUTs + a

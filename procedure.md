@@ -2117,5 +2117,59 @@ latency monotonicity. pymoo+LUT (`importorskip` + `lut_path` fixture + `slow`): 
 (`pop=40,gen=40`) → ≥10 non-dominated points, frontier internally non-dominated; seed reproducibility;
 and the full-budget true-front check (every frontier point at min ks/e). `CostError`→skip guards keep
 them green on a partial LUT. Next: **CP 3.3 BO**
-(`search/bo.py`) — needs D4 (λ/μ) + the warm-head proxy budget (B=50) + the Jetson 640-res LUT/baseline
-for the absolute objective.
+(`search/bo.py`) — needs the D4 **numbers** (λ/μ, calibrated here — the formulation is now fixed, below)
++ the warm-head proxy budget (B=50) + the Jetson 640-res LUT/baseline for the absolute objective.
+
+---
+
+## D4 RESOLVED — J(α) = Pareto search + hard latency ceiling (2026-06-27)
+
+D4 (the λ, μ in `J(α) = acc − λ·latency − μ·max(0, mem−budget)²`) was the last open decision blocking
+CP 3.3. Settled by AskUserQuestion (full briefing → user choice), mirroring D1/D2. The user also asked
+explicitly for "a method to select a maximum latency" — answered by the **ε-constraint hard ceiling**
+(OFA's own "best accuracy under a latency budget" method), now part of the resolution.
+
+### Three findings that reshaped the choice
+1. **The memory term never binds in v1.** OFA-MBv3-w1.0 subnets are ≤24 MiB fp32 (tens of MiB fp16) vs
+   the 8 GB device, so `μ·max(0, mem−budget)²` is identically 0 for every v1 subnet — it only matters
+   after Phase-5 expansion. The μ/budget half of D4 is a near-non-decision for v1.
+2. **The numeric λ can't be honestly pinned yet — and needn't be.** λ has units of mAP-per-ms,
+   meaningless without the *deploy* (@640) latency scale. That scale is owed/Jetson-gated (the 640-res
+   LUT re-sweep + the yolo11n-pose baseline anchor — no measured baseline latency exists yet). The
+   NSGA-II frontier numbers (1.73→3.26 ms) are backbone-only @224, not what λ multiplies. So we fix the
+   *method* now; the *number* lands at CP 3.3.
+3. **CP 3.3's DoD is already Pareto hypervolume** (PROJECT_PLAN.md), explicitly *"not a single-run
+   accuracy − λ·latency comparison"* — so λ is a sampled / selection knob, not a fixed search constant.
+
+### The decision (user-selected)
+- **Objective form = Pareto + hard latency ceiling.** CP 3.3 runs *multi-objective* BO over
+  `(acc_eff, latency_ms)` bounded by `latency ≤ T_max`. The soft μ² penalty is **retained** (user
+  choice) and folded into the accuracy axis — `acc_eff = acc − μ·max(0, resident_mem_mib − budget)²` —
+  so the front stays 2-D while honouring the penalty (≡ acc for all v1 subnets). The scalar
+  `J = acc_eff − λ·latency` is both the **ParEGO random-weight scalarization** (traces the front;
+  reconciles the EI acquisition with the hypervolume DoD) and the **final-winner selector** (CP 3.5).
+- **λ — sampled during search, calibrated at selection.** ParEGO samples the weight while searching (no
+  fixed λ committed up front). The deploy winner is picked by calibrating λ from two reference models on
+  a common iso-J contour (MobileNetV3-large vs EfficientNet-B0: `λ = Δacc/Δlat`), reported as a
+  **sensitivity sweep**, not one magic value.
+- **Memory — soft μ² retained, budget = 512 MiB resident (fp16).** A conservative model reservation on
+  the shared 8 GB; μ calibrated with λ at CP 3.3. Keeping it (vs a hard filter) preserves one uniform
+  `J(α)` across Phase 3 and Phase 7.
+
+### Maximum latency T_max (the user's explicit second question)
+`T_max = min(baseline_latency, fps_cap)` — the tighter of two anchors (user chose "both"):
+- **baseline** = measured yolo11n-pose latency @640, FP16 TRT, Orin Nano — the literal "dominate the
+  deployed baseline" bar (Jetson-gated, owed).
+- **fps_cap** = the perception-node frame budget; provisional **60 FPS → 16.7 ms** (`fps_to_ms`),
+  decidable now without the Jetson (confirm/adjust the FPS target).
+
+The ceiling is a hard box constraint on the search — interpretable, and it stops the 50-eval budget
+chasing accurate-but-slow models that can't dominate the baseline.
+
+### Built — `search/objective.py` (pure, CPU, TDD; commit 335c4c4)
+Locks the formula as a tested contract CP 3.3 just calls: `mem_penalty`, `effective_accuracy`,
+`scalarize` (the scalar J), `within_ceiling` + `fps_to_ms` (the hard ceiling), `lambda_from_anchors`
+(two-anchor iso-J λ — signed slope; raises on equal latency). λ/μ stay caller args (no deferred number
+hard-coded); `DEFAULT_BUDGET_MIB = 512.0`. 13 tests (`tests/test_objective.py`); check.sh green (293
+passed). This is decision-recording + a formula lock, **not** CP 3.3: `search/bo.py` stays gated on the
+@640 sweep, the baseline anchor, and the timed Colab calibration eval.

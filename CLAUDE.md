@@ -112,8 +112,9 @@ weights (Phase 8).
   fail τ yet pick the true best). Cross-checked **no-GPU** by `eval/zerocost.py` (depth_sum ρ=0.843,
   regret 0). The close was CPU-only: `assemble_verdict` now gates on `rank_verdict`, new
   `reverdict()`/`--reverdict` re-stamps the verdict offline (266 tests green). Carries into Phase 3:
-  warm-head proxy = accuracy signal, zero-cost = free cold-start prefilter; **J(α) λ/μ deferred to
-  CP 3.3 (D4 proper, still open)**. See `procedure.md` "CP 2.4 CLOSED — warm-head re-test + reframe gate".
+  warm-head proxy = accuracy signal, zero-cost = free cold-start prefilter; **J(α) formulation resolved
+  (D4 → Pareto + hard latency ceiling; `search/objective.py`); λ/μ *numbers* calibrated at CP 3.3**. See
+  `procedure.md` "CP 2.4 CLOSED — warm-head re-test + reframe gate" + "D4 RESOLVED".
 - **Phases 3–9:** Planned (see `PROJECT_PLAN.md`).
 
 ### Known blockers
@@ -146,7 +147,8 @@ for CP 3.2 (NSGA-II) / CP 3.3 (BO).
 5-epoch proxy** (`eval.proxy_rank` / `eval.shortft.short_finetune` with `--head-weights <gate best.pt>
 --freeze-head`, Colab) is the accuracy signal; `eval/zerocost.py` (depth_sum / Jetson `latency_ms`, no
 GPU) is the free cold-start prefilter + BO warm-start; `search.cost.cost` composes the LUT latency.
-**J(α) λ/μ (D4) is decided at CP 3.3**, not before.
+**J(α) formulation resolved (D4 → Pareto search + hard latency ceiling; `search/objective.py`); λ/μ
+*numbers* calibrated at CP 3.3.**
 
 **Still owed, Jetson-gated (Phase-3-adjacent, not blocking CP 3.1):** the **640-res LUT re-sweep**
 (pose runs @640; per-block rows are keyed @224 — append-only schema absorbs it) + the **baseline
@@ -161,7 +163,7 @@ whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 | ~~D1~~ | **RESOLVED 2026-06-18 → gate-pose** (`dataset/`; OFA backbone + YOLO11-pose head) | — |
 | ~~D2~~ | **RESOLVED 2026-06-27 → B=50** (CP 3.3 BO per-run budget; `5·(2B−n_init)`=400 warm-head fine-tunes / 5 seeds; NSGA-II free). Phase-7 budget → CP 7.2 | — |
 | D3 | Which SOTA blocks to inject (FusedMBConv, ConvNeXt, MobileViT) | CP 5.3 |
-| D4 | λ, μ in `J(α) = acc − λ·latency − μ·max(0, mem−budget)²` | CP 3.3 |
+| ~~D4~~ | **RESOLVED 2026-06-27 → Pareto + hard latency ceiling** (multi-objective `(acc_eff, latency)`, `latency ≤ T_max=min(baseline, 60 FPS→16.7 ms)`; soft μ² folded into `acc_eff`, budget 512 MiB; λ ParEGO-sampled, calibrated at selection via two-anchor iso-J). Formula in `search/objective.py`; λ/μ *numbers* at CP 3.3 (need @640 latency) | — |
 | D5 | Multi-device extension (out of scope for v1/v2) | v3 |
 
 ---
@@ -261,7 +263,7 @@ CUDA variant from PyPI).
 - Update the golden hashes in `tests/test_row_key.py` without a decision
   recorded in `procedure.md` — they pin the LUT key contract.
 - Commit anything in `data/` (it's gitignored for a reason — 50+ MB).
-- Resolve open decisions D3–D5 without a user conversation (D1, D2 resolved).
+- Resolve open decisions D3, D5 without a user conversation (D1, D2, D4 resolved).
 - Name a local Python package `ofa/` — it shadows the pip-installed OFA library.
   The wrapper is in `supernet/` for this reason.
 - Add Claude as a commit co-author, or include `Co-Authored-By:` /
