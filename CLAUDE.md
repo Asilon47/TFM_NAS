@@ -32,7 +32,7 @@ weights (Phase 8).
 
 ---
 
-## Current state (as of last update: CP 2.4 CLOSED on the reframed gate — warm-head proxy passes, 2026-06-27)
+## Current state (as of last update: CP 3.1/3.2 CLOSED + CP 3.3 buildable slice BUILT — search runnable, awaiting Jetson/Kaggle runs, 2026-06-28)
 
 - **Phase 0 (LUT):** COMPLETE. `data/lut.jsonl` holds all 2710 *measured* rows
   (`source=jetson_trt`, fp32, TRT 10.3.0, clocks locked); the original dummy lives
@@ -115,7 +115,20 @@ weights (Phase 8).
   warm-head proxy = accuracy signal, zero-cost = free cold-start prefilter; **J(α) formulation resolved
   (D4 → Pareto + hard latency ceiling; `search/objective.py`); λ/μ *numbers* calibrated at CP 3.3**. See
   `procedure.md` "CP 2.4 CLOSED — warm-head re-test + reframe gate" + "D4 RESOLVED".
-- **Phases 3–9:** Planned (see `PROJECT_PLAN.md`).
+- **CP 3.1:** CLOSED (2026-06-27) — `search/space.py`: OFA arch_dict ↔ flat surrogate vector;
+  `decode(encode(arch))==arch` 100/100. Tracks categorical ks/e vs ordinal depth + `canonical`
+  masks depth-inactive don't-cares.
+- **CP 3.2:** CLOSED (2026-06-27) — `search/evolution.py`: pymoo NSGA-II over `(depth_sum, latency_ms)`,
+  11-point depth-staircase frontier (≥10 DoD). The reusable structural baseline + BO warm-start seeds
+  (`data/phase3_nsga2_frontier.json`).
+- **CP 3.3 (BO):** buildable slice **BUILT, still OPEN** (2026-06-28). `search/bo.py` = ParEGO + BoTorch
+  `MixedSingleTaskGP` + `qLogEI` over the feasible pool (latency exact from the LUT, only accuracy
+  GP-modeled; hard ceiling pre-filters); CPU structural smoke beats random (HV 9.69 vs 3.66, DoD PASS).
+  Catalog made resolution-aware for the @640 pose grid (append-only, 2710→2801 rows). Jetson artifacts
+  (`lut/orchestrate/bench_model.py`, `detect/export_baseline_onnx.py`, `lut/docs/jetson_640_runbook.md`)
+  + Kaggle push automation (`kaggle/`) prepared. **CLOSE needs:** the Jetson @640 sweep + yolo11n-pose
+  baseline, then the Kaggle 5-seed warm-head BO-vs-random DoD. See `procedure.md` "CP 3.3 — buildable slice".
+- **Phases 4–9:** Planned (see `PROJECT_PLAN.md`).
 
 ### Known blockers
 
@@ -133,26 +146,26 @@ weights (Phase 8).
 
 ### Lowest-friction next build
 
-CP 2.4 is **closed** (reframe gate; see Current state). Next is **CP 3.1 — search-space encoder**
-(`search/space.py`), the first Phase-3 checkpoint and **pure / CPU-only / no GPU**: encode/decode an
-OFA arch_dict ↔ a flat surrogate vector, tracking categorical axes (`ks∈{3,5,7}`, `e∈{3,4,6}`) vs the
-integer depth axis (`d∈{2,3,4}`) and OFA's conditional structure (per-stage depth `d` gates how many of
-its blocks are active). **DoD: `decode(encode(arch)) == arch` for 100 random archs.** Reuse
-`supernet.sampler.random_arch` for the 100-arch round-trip (needs `.venv-nas`/ofa) and the arch_dict
-shape from `search/arch_to_blocks.py`; the encode/decode logic is pure → TDD it in `.venv` with
-synthetic arch dicts, then run the 100-arch DoD under `.venv-nas`. It's the surrogate's input surface
-for CP 3.2 (NSGA-II) / CP 3.3 (BO).
+**CP 3.3 is code-complete (`search/bo.py`) but OPEN** — closing it is now *running* the prepared remote
+artifacts, not writing code. Three steps, in order:
 
-**Accuracy + cost signals are ready** (no new eval work needed to start Phase 3): the **warm-head
-5-epoch proxy** (`eval.proxy_rank` / `eval.shortft.short_finetune` with `--head-weights <gate best.pt>
---freeze-head`, Colab) is the accuracy signal; `eval/zerocost.py` (depth_sum / Jetson `latency_ms`, no
-GPU) is the free cold-start prefilter + BO warm-start; `search.cost.cost` composes the LUT latency.
-**J(α) formulation resolved (D4 → Pareto search + hard latency ceiling; `search/objective.py`); λ/μ
-*numbers* calibrated at CP 3.3.**
+1. **Jetson (run `lut/docs/jetson_640_runbook.md`).** `bash scripts/setup_jetson.sh` →
+   `python -m lut.orchestrate.run_sweep` (idempotent — measures only the 91 new @640 rows; the 2710 @224
+   rows are skipped) → export yolo11n-pose ONNX (`python -m detect.export_baseline_onnx`, where ultralytics
+   lives) → `python -m lut.orchestrate.bench_model --onnx … --imgsz 640` → `data/baseline_anchor.json`.
+   Gives the @640 LUT + the `T_max = min(baseline, 16.7 ms)` ceiling.
+2. **Kaggle (`kaggle/README.md`).** Drop the token at `secrets/kaggle.json`, `bash kaggle/push.sh --data`
+   (uploads dataset/ + the @640 LUT + seeds + gate head), then `bash kaggle/push.sh`. `run.py`'s CONFIG
+   defaults to a cheap proving run (`--calibrate` + 1 seed); bump to `SEEDS=5, BUDGET=50, RES=640` for the
+   real DoD → `cp33_bo.json` (BO-vs-random hypervolume verdict). `bash kaggle/push.sh --pull` fetches it.
+3. **Record CP 3.3 CLOSED** if the verdict passes (advance `state/plan_state.yaml`, `procedure.md`); also
+   set the λ/μ *numbers* from the @640 baseline (the iso-J anchors).
 
-**Still owed, Jetson-gated (Phase-3-adjacent, not blocking CP 3.1):** the **640-res LUT re-sweep**
-(pose runs @640; per-block rows are keyed @224 — append-only schema absorbs it) + the **baseline
-yolo11n-pose anchor** (mAP half runs on CPU via `detect.evaluate.pose_map`; latency half Jetson-gated).
+**No CPU work remains for CP 3.3.** The signals are wired: warm-head proxy = accuracy
+(`eval.shortft.short_finetune --head-weights <gate best.pt> --freeze-head`), `search.cost.cost(…, res=640)`
+= LUT latency, `search.objective` = the D4 J(α). `python -m search.bo --structural` is the no-GPU smoke.
+After CP 3.3 closes, **CP 3.4 (TPE fallback)** / **CP 3.5 (winner export)**, then **D3** (CP 5.3 SOTA-block
+injection) is the only remaining open design fork.
 Donor for the warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
 whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 

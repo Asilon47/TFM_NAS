@@ -221,6 +221,11 @@ a Pareto frontier of `(accuracy, latency_ms)` for the Jetson.
   - **DoD:** Frontier has ≥ 10 non-dominated points.
 
 - **CP 3.3 — Bayesian Optimization**
+  - **Status (2026-06-28): buildable slice BUILT, still OPEN.** `search/bo.py` done
+    (ParEGO + BoTorch `MixedSingleTaskGP` + `qLogEI`; CPU smoke beats random, DoD PASS);
+    @640 catalog + Jetson `bench_model.py`/runbook + `kaggle/` push automation prepared.
+    CLOSE awaits the Jetson @640 sweep + yolo11n-pose baseline, then the Kaggle 5-seed
+    warm-head BO-vs-random hypervolume DoD. See `procedure.md` "CP 3.3 — buildable slice".
   - `search/bo.py`: GP surrogate with a structured kernel
     (Hamming + Matérn), Expected Improvement acquisition.
   - **Objective (D4, RESOLVED):** multi-objective `(acc_eff, latency_ms)` with a hard ceiling

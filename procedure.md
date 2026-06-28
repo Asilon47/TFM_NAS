@@ -2173,3 +2173,64 @@ Locks the formula as a tested contract CP 3.3 just calls: `mem_penalty`, `effect
 hard-coded); `DEFAULT_BUDGET_MIB = 512.0`. 13 tests (`tests/test_objective.py`); check.sh green (293
 passed). This is decision-recording + a formula lock, **not** CP 3.3: `search/bo.py` stays gated on the
 @640 sweep, the baseline anchor, and the timed Colab calibration eval.
+
+## CP 3.3 — buildable slice BUILT (2026-06-28)
+
+The whole CPU-buildable half of CP 3.3 plus the two remote-run artifacts that produce its numbers.
+**CP 3.3 stays OPEN** — its DoD (5-seed Pareto hypervolume beating same-budget random search on the
+*real* warm-head proxy) closes only after the Jetson @640 latencies + the Kaggle GPU runs land.
+`current_checkpoint`/`last_completed`/`completed` are unchanged (still 3.3 / 3.2). User chose, against
+the recommendations (the [[decision-briefing-then-choose]] pattern): **BoTorch+GPyTorch** for the
+surrogate, and **git-clone + a data-only Kaggle Dataset** for delivery.
+
+### @640 LUT re-key — the sanctioned count-pin bump (the decision test_catalog points to)
+The pose backbone deploys at 640, not the OFA ImageNet 224, so every per-block input resolution
+re-keys (`catalog.ofa_mbv3.stages_for_resolution`: stem 320; stage res_in `[112,56,28,14,14] →
+[320,160,80,40,40]`; taps 80/40/20, confirmed by `supernet/pose_backbone.py`). Made the catalog
+resolution-aware and **unioned the @640-reachable MBConv configs into the grid** (`catalog/blocks.py`),
+threading `res:int=224` through `search.arch_to_blocks`/`search.cost` (640 for pose; 224 default
+preserves CP 3.1/3.2). **Append-only**: the @640 res values `{320,160,80,40,20}` are disjoint from @224,
+so the 91 new configs add 91 new `row_key`s; every measured @224 row + the golden hashes in
+`tests/test_row_key.py` are untouched. The deliberate count-pin moves (per `test_catalog.py`'s own
+"conscious act" rule): `sweep_size` **2710 → 2801**, `mbconv` grid **2107 → 2198**;
+`test_lut_keydrift` correctly flips to SKIP at 2710/2801 until the @640 sweep fills the rows. TDD:
+`tests/test_resolution.py` (8) + @640 cases in `test_arch_to_blocks`/`test_cost`. Commit `988e543`.
+
+### `search/bo.py` — the BO loop (commits, BoTorch)
+Split like `search/evolution.py`: pure numpy/stdlib helpers (unit-tested in `.venv`/CI without botorch
+or a GPU) + a lazy-imported driver. **Pure** (`tests/test_bo.py`, commit `458a993`): `parego_weights`
+(uniform-simplex), `tchebycheff_scalarize` (augmented Tchebycheff — recovers concave front regions),
+`nondominated_indices` + `hypervolume_2d` + `pareto_hypervolume` (the DoD metric over `(acc_eff↑,
+latency↓)`), `feasible`/`mutate_arch`/`candidate_pool` (discrete candidates under the hard ceiling,
+canonical-deduped), `bo_verdict` (dominance-across-seeds: BO HV band entirely above random's).
+**Driver** (`run_bo`, commit `331741e`): **classic ParEGO with BoTorch as the GP+EI engine** — each step
+draws a random simplex weight, re-scalarizes the observed objectives (observed accuracy + the *exact*
+LUT latency) via augmented Tchebycheff, fits a `MixedSingleTaskGP` (CategoricalKernel≈Hamming on the 40
+ks/e dims, Matérn on the 5 ordinal depths) to the scalar values, and maximizes `qLogEI` over the
+feasible pool. Latency is deterministic, so only accuracy is GP-modeled and the ceiling pre-filters.
+Resumable (JSONL cache, skips done evals). CLI: `--structural` (no-GPU depth_sum smoke), `--calibrate N`
+(per-eval wall-clock + 5-seed GPU-h estimate), real (`--device cuda --head-weights <gate best.pt>
+--freeze-head --imgsz 640`); warm-starts from the CP 3.2 NSGA-II frontier. **CPU structural smoke @224
+(t_max 2.5 ms binding): BO HV 9.69±0.06 vs random 3.66±0.35 → DoD PASS over 3 seeds.** Surrogate stack
+`botorch>=0.11`/`gpytorch>=1.12` added to `requirements.txt` under the `torch==2.3.1+cpu` pin (that exact
+pin is the constraint; tested botorch 0.17.2 / gpytorch 1.15.2 — torch/numpy unchanged,
+[[venv-drift-onnxscript]]). 19 tests (+2 botorch-gated integration: run + resume).
+
+### Jetson + Kaggle artifacts (the owed-numbers producers)
+**Jetson** (commit `e05a86e`, `lut/orchestrate/bench_model.py` + `detect/export_baseline_onnx.py` +
+`lut/docs/jetson_640_runbook.md`): export yolo11n-pose → static ONNX @640, then benchmark any whole
+model on-device by reusing `run_sweep.run_remote_bench` verbatim → `data/baseline_anchor.json` (NOT a LUT
+row). Sets `T_max = min(baseline, 16.7 ms)`. Precision defaults to `sweep.precision` (fp32) so the
+ceiling is like-for-like with the fp32 LUT (the fp16 deploy figure is a separate Phase-8/9 number). The
+runbook ties setup → idempotent @640 re-sweep (`run_sweep` skips the 2710 @224 rows, measures the 91 @640)
+→ baseline → teardown. **Kaggle** (commit `02c194d`, `kaggle/`): a script kernel (`run.py`) clones the public repo, pins
+Kaggle's torch via a constraint, wires a data-only Kaggle Dataset (dataset/ + LUT + NSGA-II seeds + frozen
+gate head), re-downloads the SHA-pinned OFA ckpt, and runs `--calibrate` then the search; `push.sh`
+automates dataset create/version (hardlink-staged, no 1.6 GB copy) + kernel push, token from the gitignored
+`secrets/kaggle.json`. OFA ckpt is never uploaded (re-fetched in-kernel).
+
+### Still owed to CLOSE CP 3.3 (unchanged gates, now runnable)
+1. Jetson **@640 LUT re-sweep** + **yolo11n-pose baseline** (run the runbook).
+2. Kaggle **5-seed warm-head BO + random control** → `cp33_bo.json` verdict (the real DoD).
+3. The λ/μ **numbers** (need the @640 baseline scale; calibrated at selection via the iso-J anchors).
+`check.sh` green throughout (324 passed, 3 skipped). See CLAUDE.md "Current state".
