@@ -53,14 +53,40 @@ def main() -> None:
     sh(f"{sys.executable} -m pip install -q --constraint {constraint} "
        "'ofa==0.1.0.post202307202001' 'ultralytics>=8.3' gdown botorch gpytorch")
 
-    # 3. data: wire the attached Dataset into the paths the code expects
-    inp = Path(f"/kaggle/input/{DATASET}")
-    sh(f"rm -rf dataset && ln -s {inp}/dataset dataset")     # detect.evaluate.DEFAULT_DATA_YAML
+    # 3. data: locate the attached Dataset ROBUSTLY. Kaggle's mount path is not
+    #    guaranteed to be /kaggle/input/<slug>, so search /kaggle/input and fail
+    #    loudly (printing the tree) rather than silently skip a missing file.
+    input_root = Path("/kaggle/input")
+    print("=== /kaggle/input (2 levels) ===", flush=True)
+    if input_root.exists():
+        for d in sorted(input_root.iterdir()):
+            print("  ", d, flush=True)
+            if d.is_dir():
+                for sub in sorted(d.iterdir())[:25]:
+                    print("      ", sub, flush=True)
+    else:
+        print("  (/kaggle/input missing — no dataset attached)", flush=True)
+    print("=== end tree ===", flush=True)
+
+    def find(name: str):
+        hits = sorted(input_root.rglob(name)) if input_root.exists() else []
+        return hits[0] if hits else None
+
+    lut_src = find("lut.jsonl")
+    frontier_src = find("phase3_nsga2_frontier.json")
+    head = find("gate_best.pt")                              # warm-head donor (frozen)
+    yaml_src = find("dataset.yaml")                          # the gate-pose data root
+    missing = [n for n, v in (("lut.jsonl", lut_src), ("gate_best.pt", head),
+                              ("dataset.yaml", yaml_src)) if v is None]
+    if missing:
+        raise SystemExit(f"FATAL: {missing} not found under /kaggle/input — is the "
+                         f"'{DATASET}' dataset attached? See the tree above.")
+
+    sh(f"rm -rf dataset && ln -s {yaml_src.parent} dataset")  # detect.evaluate.DEFAULT_DATA_YAML
     Path("data").mkdir(exist_ok=True)
-    for name in ("lut.jsonl", "phase3_nsga2_frontier.json"):
-        if (inp / name).exists():
-            sh(f"ln -sf {inp / name} data/{name}")
-    head = inp / "gate_best.pt"                              # warm-head donor (frozen)
+    sh(f"ln -sf {lut_src} data/lut.jsonl")
+    if frontier_src:
+        sh(f"ln -sf {frontier_src} data/phase3_nsga2_frontier.json")
 
     # 4. OFA supernet checkpoint (internet on; SHA-verified in supernet/download_ofa.py)
     sh(f"{sys.executable} -m supernet.download_ofa")
