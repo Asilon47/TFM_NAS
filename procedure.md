@@ -2227,7 +2227,8 @@ runbook ties setup → idempotent @640 re-sweep (`run_sweep` skips the 2710 @224
 Kaggle's torch via a constraint, wires a data-only Kaggle Dataset (dataset/ + LUT + NSGA-II seeds + frozen
 gate head), re-downloads the SHA-pinned OFA ckpt, and runs `--calibrate` then the search; `push.sh`
 automates dataset create/version (hardlink-staged, no 1.6 GB copy) + kernel push, token from the gitignored
-`secrets/kaggle.json`. OFA ckpt is never uploaded (re-fetched in-kernel).
+`secrets/access_token` (new-style `KGAT_`; username in `secrets/kaggle_username` — legacy `secrets/kaggle.json`
+still works). OFA ckpt is never uploaded (re-fetched in-kernel).
 
 ### Still owed to CLOSE CP 3.3 (unchanged gates, now runnable)
 1. Jetson **@640 LUT re-sweep** + **yolo11n-pose baseline** (run the runbook).

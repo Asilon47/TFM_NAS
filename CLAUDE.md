@@ -154,7 +154,8 @@ artifacts, not writing code. Three steps, in order:
    rows are skipped) → export yolo11n-pose ONNX (`python -m detect.export_baseline_onnx`, where ultralytics
    lives) → `python -m lut.orchestrate.bench_model --onnx … --imgsz 640` → `data/baseline_anchor.json`.
    Gives the @640 LUT + the `T_max = min(baseline, 16.7 ms)` ceiling.
-2. **Kaggle (`kaggle/README.md`).** Drop the token at `secrets/kaggle.json`, `bash kaggle/push.sh --data`
+2. **Kaggle (`kaggle/README.md`).** Save your `KGAT_` token at `secrets/access_token` + username at
+   `secrets/kaggle_username` (both gitignored), `bash kaggle/push.sh --data`
    (uploads dataset/ + the @640 LUT + seeds + gate head), then `bash kaggle/push.sh`. `run.py`'s CONFIG
    defaults to a cheap proving run (`--calibrate` + 1 seed); bump to `SEEDS=5, BUDGET=50, RES=640` for the
    real DoD → `cp33_bo.json` (BO-vs-random hypervolume verdict). `bash kaggle/push.sh --pull` fetches it.
