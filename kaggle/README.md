@@ -7,10 +7,11 @@ CP 3.3) on Kaggle GPU without uploading anything by hand. A **script kernel**
 
 ## One-time setup
 
-1. **Token** — Kaggle → *Account* → *Create New Token* downloads `kaggle.json`
-   (`{"username": "...", "key": "..."}`). Save it at **`secrets/kaggle.json`**
-   (the repo's `secrets/` is gitignored via `*secret*`; `push.sh` refuses to run if
-   the token is ever git-tracked).
+1. **Token + username** — Kaggle → *Settings* → *API* → *Create New Token* yields a
+   new-style token string (`KGAT_…`). Save just that string at **`secrets/access_token`**,
+   and put your Kaggle username at **`secrets/kaggle_username`** (the new token doesn't
+   embed it). `secrets/` is gitignored; `push.sh` refuses to run if any credential is
+   git-tracked. *(A legacy `secrets/kaggle.json` with `{"username","key"}` still works.)*
 2. **CLI** — `pip install kaggle` (also in `requirements.txt`).
 3. **Repo** — the GitHub repo is public, so the kernel clones it with no token. For a
    private repo, add a `GITHUB_TOKEN` Kaggle *Secret* to the kernel.

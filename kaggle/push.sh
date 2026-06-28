@@ -7,27 +7,46 @@
 #   bash kaggle/push.sh --status   # kernel run status
 #   bash kaggle/push.sh --pull     # download the kernel output into data/
 #
-# One-time: drop your token (Kaggle -> Account -> Create New Token) at
-# secrets/kaggle.json, and `pip install kaggle`. See kaggle/README.md.
+# One-time: save your KGAT_ token at secrets/access_token + your Kaggle username
+# at secrets/kaggle_username (or a legacy secrets/kaggle.json), then
+# `pip install kaggle`. See kaggle/README.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KAGGLE_DIR="$ROOT/kaggle"
-SECRETS="$ROOT/secrets/kaggle.json"
+SECRETS_DIR="$ROOT/secrets"
 BUILD="$KAGGLE_DIR/_build"
 DATASET_SLUG="tfm-nas-gate-pose"
 KERNEL_SLUG="tfm-nas-cp33-search"
 DONOR="$ROOT/runs/pose/experiments/gate_baseline/weights/best.pt"
 
 # --- credentials (local, gitignored) -----------------------------------------
-[ -f "$SECRETS" ] || { echo "Missing $SECRETS — Kaggle > Account > Create New Token, save it there. See kaggle/README.md"; exit 1; }
-if git -C "$ROOT" ls-files --error-unmatch secrets/kaggle.json >/dev/null 2>&1; then
-  echo "REFUSING: secrets/kaggle.json is git-tracked — untrack it before pushing credentials."; exit 1
+# New-style token (KGAT_...) at secrets/access_token + username at
+# secrets/kaggle_username; or a legacy secrets/kaggle.json ({username,key}).
+TOKEN_FILE="$SECRETS_DIR/access_token"
+LEGACY_JSON="$SECRETS_DIR/kaggle.json"
+USER_FILE="$SECRETS_DIR/kaggle_username"
+for f in access_token kaggle.json kaggle_username; do
+  if git -C "$ROOT" ls-files --error-unmatch "secrets/$f" >/dev/null 2>&1; then
+    echo "REFUSING: secrets/$f is git-tracked — untrack it before using credentials."; exit 1
+  fi
+done
+export KAGGLE_CONFIG_DIR="$SECRETS_DIR"              # legacy kaggle.json lookup
+if [ -f "$TOKEN_FILE" ]; then
+  chmod 600 "$TOKEN_FILE" 2>/dev/null || true
+  export KAGGLE_API_TOKEN="$(tr -d '[:space:]' < "$TOKEN_FILE")"
+elif [ -f "$LEGACY_JSON" ]; then
+  chmod 600 "$LEGACY_JSON" 2>/dev/null || true
+else
+  echo "Missing credentials — save a KGAT_ token at secrets/access_token (Kaggle > Settings > API > Create New Token). See kaggle/README.md"; exit 1
 fi
-chmod 600 "$SECRETS" 2>/dev/null || true
-export KAGGLE_CONFIG_DIR="$ROOT/secrets"
 command -v kaggle >/dev/null 2>&1 || { echo "kaggle CLI not found — pip install kaggle"; exit 1; }
-KUSER="$(python3 -c "import json; print(json.load(open('$SECRETS'))['username'])")"
+# Username for the dataset/kernel slugs (the KGAT_ token doesn't embed it).
+if   [ -n "${KAGGLE_USERNAME:-}" ]; then KUSER="$KAGGLE_USERNAME"
+elif [ -f "$USER_FILE" ];           then KUSER="$(tr -d '[:space:]' < "$USER_FILE")"
+elif [ -f "$LEGACY_JSON" ];         then KUSER="$(python3 -c "import json;print(json.load(open('$LEGACY_JSON'))['username'])")"
+else echo "Missing Kaggle username — put it in secrets/kaggle_username (e.g. asilarnous) or export KAGGLE_USERNAME."; exit 1
+fi
 
 sub() { sed "s/__KAGGLE_USERNAME__/$KUSER/g" "$1"; }   # username into the metadata templates
 
