@@ -1,0 +1,15 @@
+{
+  "id": "__KAGGLE_USERNAME__/tfm-nas-cp33-search",
+  "title": "TFM NAS CP3.3 search",
+  "code_file": "run.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["__KAGGLE_USERNAME__/tfm-nas-gate-pose"],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

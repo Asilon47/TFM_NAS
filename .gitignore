@@ -42,9 +42,13 @@ dataset/*
 # Secrets — never track credentials of any kind
 *credential*
 *secret*
+secrets/            # Kaggle token (secrets/kaggle.json) — read by kaggle/push.sh
 *.pem
 .env
 .env.*
+
+# Kaggle push staging (hardlinked data + substituted metadata) — kaggle/push.sh
+kaggle/_build/
 # Real Jetson endpoint (host/port/user) — merged over config.yaml by
 # lut/orchestrate/ssh_client.py and scripts/{setup,teardown}_jetson.sh
 config.local.yaml
