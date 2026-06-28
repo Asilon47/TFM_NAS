@@ -91,14 +91,22 @@ def main() -> None:
     # 4. OFA supernet checkpoint (internet on; SHA-verified in supernet/download_ofa.py)
     sh(f"{sys.executable} -m supernet.download_ofa")
 
-    # 5. search: timed calibration first (de-risks the budget), then the BO run
+    # 5. search: timed calibration first (de-risks the budget), then the BO run.
     common = (f"--device cuda --imgsz 640 --res {RES} --lut data/lut.jsonl "
               f"--head-weights {head} --freeze-head --t-max-ms {T_MAX_MS}")
     if CALIBRATE:
         sh(f"{sys.executable} -m search.bo --calibrate {CALIBRATE} {common}")
-    sh(f"{sys.executable} -m search.bo --seeds {SEEDS} --budget {BUDGET} --n-init {N_INIT} "
-       f"{common} --out {work}/cp33_bo.json --cache {work}/cp33_bo_cache")
-    print("done -> /kaggle/working/cp33_bo.json", flush=True)
+    out = work / "cp33_bo.json"
+    cmd = (f"{sys.executable} -m search.bo --seeds {SEEDS} --budget {BUDGET} "
+           f"--n-init {N_INIT} {common} --out {out} --cache {work}/cp33_bo_cache")
+    print("+", cmd, flush=True)
+    rc = subprocess.run(cmd, shell=True).returncode
+    # search.bo exits 1 on a DoD-FAIL *verdict* (a valid result — e.g. the cheap proving
+    # run). The kernel's job is to PRODUCE results, so only fail if none were written;
+    # the pass/fail verdict lives in the JSON.
+    if not out.exists():
+        raise SystemExit(f"search.bo produced no results (rc={rc})")
+    print(f"done (rc={rc}; DoD pass/fail is in the JSON) -> {out}", flush=True)
 
 
 if __name__ == "__main__":
