@@ -20,12 +20,14 @@ from search.bo import (
     BoVerdict,
     bo_verdict,
     candidate_pool,
+    depth_sum_accuracy,
     feasible,
     hypervolume_2d,
     mutate_arch,
     nondominated_indices,
     parego_weights,
     pareto_hypervolume,
+    run_bo,
     tchebycheff_scalarize,
 )
 from search.space import canonical, encode
@@ -171,3 +173,39 @@ def test_bo_verdict_passes_when_bo_dominates_with_separation():
 def test_bo_verdict_fails_when_dispersions_overlap():
     v = bo_verdict(bo_hvs=[1.00, 0.60], rs_hvs=[0.95, 0.55])
     assert not v.passes
+
+
+# ---- run_bo integration (needs the BoTorch surrogate; CI-skips if absent) -----
+
+def test_run_bo_drives_the_gp_loop_to_a_frontier(synth_lut):
+    """The full ParEGO -> MixedSingleTaskGP -> qLogEI -> discrete-pool loop runs."""
+    pytest.importorskip("botorch")
+    bo = run_bo(depth_sum_accuracy, synth_lut, budget=8, n_init=4, seed=0,
+                t_max=0.18, res=224)
+    assert bo.n_evals == 8
+    assert bo.hypervolume > 0.0
+    assert bo.frontier  # at least one non-dominated point
+    # every evaluated arch honored the hard latency ceiling
+    assert all(e["latency_ms"] <= 0.18 + 1e-9 for e in bo.evals)
+
+
+def test_run_bo_resume_skips_already_evaluated(synth_lut, tmp_path):
+    """A re-run with the same cache loads prior evals and never re-evaluates them."""
+    pytest.importorskip("botorch")
+    cache = tmp_path / "bo_cache.jsonl"
+    calls = {"n": 0}
+
+    def counting_eval(arch):
+        calls["n"] += 1
+        return depth_sum_accuracy(arch)
+
+    run_bo(counting_eval, synth_lut, budget=6, n_init=3, seed=0,
+           t_max=0.18, res=224, cache_path=cache)
+    first = calls["n"]
+    assert first == 6 and cache.exists()
+
+    # second run with the same cache: all 6 are already done -> zero new eval calls
+    bo2 = run_bo(counting_eval, synth_lut, budget=6, n_init=3, seed=0,
+                 t_max=0.18, res=224, cache_path=cache)
+    assert calls["n"] == first      # no re-evaluation
+    assert bo2.n_evals == 6         # the cached evals populate the run

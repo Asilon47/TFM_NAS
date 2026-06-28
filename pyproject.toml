@@ -34,8 +34,9 @@ files = ["catalog", "detect", "eval", "search", "supernet", "lut", "tests"]
 exclude = "lut/bench/"
 
 [[tool.mypy.overrides]]
-# ofa/torchvision/ultralytics live only in .venv-nas; fabric/tqdm/yaml/pandas/scipy/pymoo ship no
-# (complete) type stubs (numpy does; pandas-stubs is a separate opt-in package we don't depend on).
+# ofa/torchvision/ultralytics live only in .venv-nas; fabric/tqdm/yaml/pandas/scipy/pymoo/botorch/
+# gpytorch ship no (complete) type stubs (numpy does; pandas-stubs is a separate opt-in package we
+# don't depend on).
 module = ["ofa.*", "torchvision.*", "ultralytics.*", "fabric.*", "tqdm.*", "yaml.*",
-          "pandas.*", "scipy.*", "pymoo.*"]
+          "pandas.*", "scipy.*", "pymoo.*", "botorch.*", "gpytorch.*"]
 ignore_missing_imports = true
