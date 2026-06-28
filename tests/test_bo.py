@@ -12,6 +12,7 @@ the ceiling filter (and its boundary) deterministic to test.
 """
 import json
 import random
+import time
 
 import pytest
 
@@ -30,6 +31,7 @@ from search.bo import (
     nondominated_indices,
     parego_weights,
     pareto_hypervolume,
+    random_search_control,
     run_bo,
     tchebycheff_scalarize,
 )
@@ -186,6 +188,7 @@ def test_run_bo_drives_the_gp_loop_to_a_frontier(synth_lut):
     bo = run_bo(depth_sum_accuracy, synth_lut, budget=8, n_init=4, seed=0,
                 t_max=0.18, res=224)
     assert bo.n_evals == 8
+    assert bo.complete is True  # spent the full budget within (no) deadline
     assert bo.hypervolume > 0.0
     assert bo.frontier  # at least one non-dominated point
     # every evaluated arch honored the hard latency ceiling
@@ -263,3 +266,73 @@ def test_merge_cli_short_circuits_before_the_lut_and_writes_combined(tmp_path):
     merged = json.loads(out.read_text())
     assert [r["seed"] for r in merged["runs"]] == [0, 1, 2]
     assert merged["n_seeds"] == 3
+
+
+# ---- cross-session resume: cache the random control, bound a session, track done -
+
+def test_random_search_control_resume_skips_already_evaluated(synth_lut, tmp_path):
+    """The random-search control caches + resumes too, so the DoD's baseline half
+    survives a Kaggle session boundary instead of restarting from zero."""
+    cache = tmp_path / "rs_cache.jsonl"
+    calls = {"n": 0}
+
+    def counting_eval(arch):
+        calls["n"] += 1
+        return depth_sum_accuracy(arch)
+
+    rs1 = random_search_control(counting_eval, synth_lut, budget=6, seed=1000,
+                                t_max=0.18, res=224, cache_path=cache)
+    first = calls["n"]
+    assert first == 6 and cache.exists() and rs1.n_evals == 6
+
+    rs2 = random_search_control(counting_eval, synth_lut, budget=6, seed=1000,
+                                t_max=0.18, res=224, cache_path=cache)
+    assert calls["n"] == first      # nothing re-evaluated
+    assert rs2.n_evals == 6         # the cache repopulates the run
+
+
+def test_load_eval_cache_tolerates_a_truncated_final_line(tmp_path):
+    """A session killed mid-append leaves a partial last line; resume must not choke."""
+    from search.bo import _load_eval_cache
+    rec = {"arch": _random_arch_dict(random.Random(0)), "acc": 0.5,
+           "latency_ms": 0.1, "acc_eff": 0.5}
+    cache = tmp_path / "c.jsonl"
+    cache.write_text(json.dumps(rec) + "\n" + '{"arch": {"d": [2, 3')  # truncated write
+    evals, done = _load_eval_cache(cache)
+    assert len(evals) == 1 and len(done) == 1
+
+
+def test_run_bo_stops_at_the_deadline_and_reports_incomplete(synth_lut):
+    """A past deadline makes run_bo return at once with complete=False, so the caller
+    knows the seed must be resumed next session."""
+    pytest.importorskip("botorch")
+    bo = run_bo(depth_sum_accuracy, synth_lut, budget=50, n_init=4, seed=0,
+                t_max=0.18, res=224, deadline=time.monotonic() - 1.0)
+    assert bo.n_evals < 50
+    assert bo.complete is False
+
+
+def test_random_search_control_stops_at_the_deadline_and_reports_incomplete(synth_lut):
+    rs = random_search_control(depth_sum_accuracy, synth_lut, budget=50, seed=1000,
+                               t_max=0.18, res=224, deadline=time.monotonic() - 1.0)
+    assert rs.n_evals < 50
+    assert rs.complete is False
+
+
+def test_merge_reports_incomplete_when_any_seed_is_unfinished():
+    """A multi-session DoD is valid only once every seed has spent its full budget;
+    the merge surfaces that as ``complete`` so a runner knows when to stop resuming."""
+    def run(seed, complete):
+        return {"seed": seed, "bo_hv": 1.0, "rs_hv": 0.7, "bo_frontier": [],
+                "complete": complete}
+
+    def payload(runs):
+        return {"passes": False, "n_seeds": len(runs), "bo_hv_mean": 0.0,
+                "bo_hv_std": 0.0, "rs_hv_mean": 0.0, "rs_hv_std": 0.0,
+                "t_max_ms": 16.7, "res": 224, "budget": 50, "structural": False,
+                "runs": runs}
+
+    done = merge_bo_outputs([payload([run(0, True), run(1, True)])])
+    assert done["complete"] is True
+    partial = merge_bo_outputs([payload([run(0, True), run(1, False)])])
+    assert partial["complete"] is False

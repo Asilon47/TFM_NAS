@@ -255,7 +255,9 @@ def merge_bo_outputs(payloads: Sequence[dict]) -> dict:
         "bo_hv_mean": v.bo_hv_mean, "bo_hv_std": v.bo_hv_std,
         "rs_hv_mean": v.rs_hv_mean, "rs_hv_std": v.rs_hv_std,
         "t_max_ms": base["t_max_ms"], "res": base["res"], "budget": base["budget"],
-        "structural": base["structural"], "runs": runs,
+        "structural": base["structural"],
+        "complete": all(r.get("complete", True) for r in runs),
+        "runs": runs,
     }
 
 
@@ -281,6 +283,7 @@ class BoRun:
     frontier: list[dict]    # the non-dominated subset, ascending latency
     hypervolume: float
     n_evals: int
+    complete: bool = True   # False when a wall-clock deadline cut the budget short
 
 
 def _acc_eff_of(arch: ArchDict, acc: float, lut: dict[str, LutRow], *, res: int,
@@ -340,7 +343,10 @@ def _load_eval_cache(path: Path | None) -> tuple[list[dict], set[tuple[int, ...]
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
-        rec = json.loads(line)
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # a session killed mid-append leaves a partial last line; skip it
         evals.append(rec)
         done.add(tuple(canonical(encode(rec["arch"]))))
     return evals, done
@@ -363,6 +369,7 @@ def run_bo(
     seed_archs: Sequence[ArchDict] = (),
     pool_size: int = 128,
     cache_path: Path | None = None,
+    deadline: float | None = None,
 ) -> BoRun:
     """ParEGO Bayesian optimization of ``(acc_eff, latency)`` under ``latency ≤ t_max``.
 
@@ -375,6 +382,7 @@ def run_bo(
     botorch/gpytorch/torch are imported here so the pure helpers above stay importable
     without the surrogate stack.
     """
+    import time
     import warnings
 
     import torch
@@ -389,6 +397,10 @@ def run_bo(
     cat_dims = list(range(2 * N_SLOTS))
 
     evals, done = _load_eval_cache(cache_path)
+    stopped_for_time = False
+
+    def _past_deadline() -> bool:
+        return deadline is not None and time.monotonic() >= deadline
 
     def record(arch: ArchDict) -> None:
         key = tuple(canonical(encode(arch)))
@@ -410,9 +422,15 @@ def run_bo(
                                evaluated=list(done), seeds=seed_archs, size=n_init):
         if len(evals) >= min(n_init, budget):
             break
+        if _past_deadline():
+            stopped_for_time = True
+            break
         record(arch)
     _attempts = 0
     while len(evals) < min(n_init, budget) and _attempts < n_init * 200:
+        if _past_deadline():
+            stopped_for_time = True
+            break
         _attempts += 1
         cand = random_arch_dict(rng)
         if feasible(cand, lut, t_max, res=res):
@@ -420,6 +438,9 @@ def run_bo(
 
     # --- BO loop: ParEGO scalarization -> GP -> qLogEI over the feasible pool -----
     while len(evals) < budget:
+        if _past_deadline():
+            stopped_for_time = True
+            break
         weights = parego_weights(rng)
         costs = _normalized_costs([e["acc_eff"] for e in evals],
                                   [e["latency_ms"] for e in evals])
@@ -448,7 +469,7 @@ def run_bo(
     hv = pareto_hypervolume([(e["acc_eff"], e["latency_ms"]) for e in evals],
                             ref_acc=ref_acc, ref_lat=ref_lat)
     return BoRun(evals=evals, frontier=_frontier(evals), hypervolume=hv,
-                 n_evals=len(evals))
+                 n_evals=len(evals), complete=not stopped_for_time)
 
 
 def random_search_control(
@@ -464,6 +485,8 @@ def random_search_control(
     mu: float = 0.0,
     budget_mib: float = DEFAULT_BUDGET_MIB,
     bytes_per_param: int = 2,
+    cache_path: Path | None = None,
+    deadline: float | None = None,
 ) -> BoRun:
     """The same-budget random-search baseline the DoD compares BO against.
 
@@ -471,24 +494,38 @@ def random_search_control(
     ``evaluate_fn`` and reference point — so a hypervolume gap is attributable to the
     GP-guided search, not to a different objective or budget.
     """
+    import time
+
     rng = random.Random(seed)
     ref_lat = t_max if ref_lat is None else ref_lat
-    evals: list[dict] = []
+    evals, done = _load_eval_cache(cache_path)
+    stopped_for_time = False
     attempts = 0
     while len(evals) < budget and attempts < budget * 200:
+        if deadline is not None and time.monotonic() >= deadline:
+            stopped_for_time = True
+            break
         attempts += 1
         arch = random_arch_dict(rng)
         if not feasible(arch, lut, t_max, res=res):
             continue
+        key = tuple(canonical(encode(arch)))
+        if key in done:
+            continue  # already scored in a prior session — resume past it
         acc = evaluate_fn(arch)
         acc_eff, latency = _acc_eff_of(
             arch, acc, lut, res=res, mu=mu, budget_mib=budget_mib,
             bytes_per_param=bytes_per_param)
-        evals.append({"arch": arch, "acc": acc, "latency_ms": latency, "acc_eff": acc_eff})
+        rec = {"arch": arch, "acc": acc, "latency_ms": latency, "acc_eff": acc_eff}
+        evals.append(rec)
+        done.add(key)
+        if cache_path is not None:
+            with open(cache_path, "a") as f:
+                f.write(json.dumps(rec) + "\n")
     hv = pareto_hypervolume([(e["acc_eff"], e["latency_ms"]) for e in evals],
                             ref_acc=ref_acc, ref_lat=ref_lat)
     return BoRun(evals=evals, frontier=_frontier(evals), hypervolume=hv,
-                 n_evals=len(evals))
+                 n_evals=len(evals), complete=not stopped_for_time)
 
 
 # ---- CLI: structural CPU smoke / timed calibration / real warm-head search ----
@@ -546,6 +583,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--freeze-head", action="store_true")
     p.add_argument("--out", type=Path, default=ROOT / "data" / "cp33_bo.json")
     p.add_argument("--cache", type=Path, default=None)
+    p.add_argument("--deadline-s", type=int, default=None, metavar="SEC",
+                   help="stop starting new evals after SEC seconds and write partial "
+                        "state — a clean session boundary for resumable multi-session runs")
     p.add_argument("--merge", nargs="+", type=Path, default=None, metavar="PART",
                    help="merge per-worker output JSONs into --out and exit (no LUT/GPU)")
     a = p.parse_args(argv)
@@ -577,31 +617,40 @@ def main(argv: list[str] | None = None) -> int:
               f"-> 5-seed budget {a.budget} ~= {gpu_h:.1f} GPU-h")
         return 0
 
+    deadline = time.monotonic() + a.deadline_s if a.deadline_s else None
     bo_hvs, rs_hvs, runs = [], [], []
     for s in range(a.seed_start, a.seed_start + a.seeds):
-        cache = (a.cache.with_suffix(f".seed{s}.jsonl") if a.cache else None)
+        # separate bo/rs caches keep the two halves independent AND both resumable
+        bo_cache = a.cache.with_suffix(f".seed{s}.bo.jsonl") if a.cache else None
+        rs_cache = a.cache.with_suffix(f".seed{s}.rs.jsonl") if a.cache else None
         bo = run_bo(evaluate, lut, budget=a.budget, n_init=a.n_init, seed=s,
-                    t_max=a.t_max_ms, res=a.res, seed_archs=seed_archs, cache_path=cache)
+                    t_max=a.t_max_ms, res=a.res, seed_archs=seed_archs,
+                    cache_path=bo_cache, deadline=deadline)
         rs = random_search_control(evaluate, lut, budget=a.budget, seed=1000 + s,
-                                   t_max=a.t_max_ms, res=a.res)
+                                   t_max=a.t_max_ms, res=a.res,
+                                   cache_path=rs_cache, deadline=deadline)
         bo_hvs.append(bo.hypervolume)
         rs_hvs.append(rs.hypervolume)
+        done = bo.complete and rs.complete
         runs.append({"seed": s, "bo_hv": bo.hypervolume, "rs_hv": rs.hypervolume,
-                     "bo_frontier": bo.frontier})
-        print(f"seed {s}: BO HV={bo.hypervolume:.4f}  random HV={rs.hypervolume:.4f}")
+                     "complete": done, "bo_frontier": bo.frontier})
+        print(f"seed {s}: BO HV={bo.hypervolume:.4f}  random HV={rs.hypervolume:.4f}"
+              f"  {'complete' if done else 'PARTIAL (resume next session)'}")
 
     verdict = bo_verdict(bo_hvs, rs_hvs)
+    all_complete = all(r["complete"] for r in runs)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps({
         "passes": verdict.passes, "n_seeds": verdict.n_seeds,
         "bo_hv_mean": verdict.bo_hv_mean, "bo_hv_std": verdict.bo_hv_std,
         "rs_hv_mean": verdict.rs_hv_mean, "rs_hv_std": verdict.rs_hv_std,
         "t_max_ms": a.t_max_ms, "res": a.res, "budget": a.budget,
-        "structural": a.structural, "runs": runs,
+        "structural": a.structural, "complete": all_complete, "runs": runs,
     }, indent=2))
     print(f"BO HV {verdict.bo_hv_mean:.4f}±{verdict.bo_hv_std:.4f} vs "
           f"random {verdict.rs_hv_mean:.4f}±{verdict.rs_hv_std:.4f} -> "
-          f"{'DoD PASS' if verdict.passes else 'DoD FAIL'}")
+          f"{'DoD PASS' if verdict.passes else 'DoD FAIL'} "
+          f"({'COMPLETE' if all_complete else 'PARTIAL — re-run to resume'})")
     print(f"wrote {a.out}")
     return 0 if verdict.passes else 1
 
