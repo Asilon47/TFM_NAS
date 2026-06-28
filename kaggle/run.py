@@ -6,27 +6,31 @@ installs the NAS + BO stack *without* disturbing Kaggle's torch, wires the attac
 data Dataset (gate dataset + LUT + NSGA-II seeds + the frozen gate head donor), fetches
 the SHA-pinned OFA checkpoint, then runs the search (``search.bo``).
 
-Edit the CONFIG block for the full 5-seed DoD run; the defaults are a cheap *dual-GPU
-validation* (calibrate + a 2-seed split across both T4s) that exercises the parallel
-seed fan-out + merge on real hardware before the expensive full DoD.
-Outputs land in ``/kaggle/working`` and are downloadable as the kernel output / pulled
+The CONFIG block is the full 5-seed DoD, *resumable across Kaggle sessions*: each commit
+stops starting new evals after ``DEADLINE_H`` hours — a clean boundary under Kaggle's 12 h
+kill — having appended per-seed caches to ``/kaggle/working``. Re-run the kernel with its
+own previous output attached as an input to restore those caches and continue, until the
+merged JSON reports ``complete: true``. Outputs land in ``/kaggle/working`` and are pulled
 by ``push.sh --pull``.
 """
+import json
 import os
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-# ---- CONFIG (edit for the full DoD run) -------------------------------------
-REPO_URL  = "https://github.com/Asilon47/TFM_NAS.git"
-DATASET   = "tfm-nas-gate-pose"   # attached Kaggle Dataset slug (no <user>/ prefix)
-RES       = 224                   # LUT key resolution: 224 until the @640 sweep lands, then 640
-T_MAX_MS  = 16.7                  # hard latency ceiling = min(baseline, 60 FPS)
-CALIBRATE = 1                     # 1 warm-head eval first — warms ultralytics before the parallel split
-SEEDS     = 2                     # 2 -> exercises the dual-GPU split (GPU0<-seed0, GPU1<-seed1); -> 5 for the DoD
-BUDGET    = 4                     # cheap validation budget; -> 50 for the DoD
-N_INIT    = 2                     # cheap validation n_init; -> 20 for the DoD
+# ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
+REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
+DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
+RES        = 224                  # LUT key resolution: 224 until the @640 sweep lands
+T_MAX_MS   = 16.7                 # hard latency ceiling = min(baseline, 60 FPS)
+CALIBRATE  = 1                    # time N real evals first (also warms ultralytics)
+SEEDS      = 5                    # the 5-seed DoD
+BUDGET     = 50                   # BO budget per seed (decision D2)
+N_INIT     = 20                   # initial-design size
+DEADLINE_H = 10.5                 # stop new evals after this many h (clean resumable boundary)
 # -----------------------------------------------------------------------------
 
 
@@ -36,6 +40,7 @@ def sh(cmd: str) -> None:
 
 
 def main() -> None:
+    START = time.time()
     work = Path("/kaggle/working")
     repo = work / "TFM_NAS"
 
@@ -93,14 +98,29 @@ def main() -> None:
     # 4. OFA supernet checkpoint (internet on; SHA-verified in supernet/download_ofa.py)
     sh(f"{sys.executable} -m supernet.download_ofa")
 
+    # 4.5 resume: Kaggle wipes /kaggle/working between commits, so the eval caches must
+    #     round-trip through the persistent /kaggle/input plane. If a prior run's output
+    #     is attached as an input (Add Input -> Notebook -> this notebook), restore its
+    #     cache shards so the workers continue instead of restarting. First session: none.
+    restored = 0
+    for src in (sorted(input_root.rglob("cp33_bo_cache*.jsonl"))
+                if input_root.exists() else []):
+        dst = work / src.name
+        if not dst.exists():            # never clobber a shard this session already wrote
+            shutil.copy(src, dst)
+            restored += 1
+    print(f"[resume] restored {restored} eval-cache shard(s) from prior output", flush=True)
+
     # 5. search: timed calibration first (de-risks the budget), then the BO run.
     common = (f"--device cuda --imgsz 640 --res {RES} --lut data/lut.jsonl "
               f"--head-weights {head} --freeze-head --t-max-ms {T_MAX_MS}")
     if CALIBRATE:
         sh(f"{sys.executable} -m search.bo --calibrate {CALIBRATE} {common}")
     out = work / "cp33_bo.json"
-    cache = work / "cp33_bo_cache"
-    budget = f"--budget {BUDGET} --n-init {N_INIT}"
+    cache = work / f"cp33_bo_cache_r{RES}"   # RES-namespaced so @224 and @640 caches stay distinct
+    deadline_s = max(600, int(DEADLINE_H * 3600 - (time.time() - START)))
+    budget = f"--budget {BUDGET} --n-init {N_INIT} --deadline-s {deadline_s}"
+    print(f"[deadline] workers stop new evals after ~{deadline_s / 3600:.1f} h", flush=True)
     ngpu = int(subprocess.check_output(
         [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
     ).decode().strip() or "0")
@@ -142,7 +162,16 @@ def main() -> None:
         rc = subprocess.run(cmd, shell=True).returncode
         if not out.exists():
             raise SystemExit(f"search.bo produced no results (rc={rc})")
-    print(f"done -> {out} (DoD pass/fail is in the JSON)", flush=True)
+    # report completion so you know whether to re-run (resume) or stop
+    try:
+        payload = json.loads(out.read_text())
+        done = payload.get("complete")
+        nxt = ("COMPLETE — DoD final" if done else
+               "PARTIAL — re-run the kernel (with this output attached as input) to resume")
+        print(f"[done] {out.name}: complete={done} passes={payload.get('passes')} -> {nxt}",
+              flush=True)
+    except (OSError, ValueError) as e:
+        print(f"[done] wrote {out} (could not parse completion: {e})", flush=True)
 
 
 if __name__ == "__main__":

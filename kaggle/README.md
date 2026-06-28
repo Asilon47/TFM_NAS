@@ -33,20 +33,29 @@ donor `runs/.../best.pt` via **hardlinks** (no 1.6 GB copy) and uploads them as
 
 ## What the kernel runs
 
-`run.py`'s CONFIG block defaults to a cheap **proving run** (a timed calibration + a
-1-seed, budget-8 search) that verifies the whole pipeline inside one GPU session. For
-the real DoD, edit the CONFIG block and re-push:
+`run.py`'s CONFIG block is the **full 5-seed DoD** (`SEEDS=5, BUDGET=50, N_INIT=20`,
+`RES=224` until the Jetson @640 sweep lands). At ~700 s/eval it is **too big for one
+session** (~59 h wall-clock even on dual-T4), so it is **resumable across sessions**:
 
-| knob | proving | DoD |
-|---|---|---|
-| `SEEDS` | 1 | 5 |
-| `BUDGET` | 8 | 50 |
-| `N_INIT` | 4 | 20 |
-| `RES` / `T_MAX_MS` | 224 / 16.7 | 640 / `min(baseline, 16.7)` after the Jetson @640 sweep |
+- Each commit stops starting new evals after `DEADLINE_H` hours (default 10.5 — a clean
+  boundary under Kaggle's 12 h kill), having appended per-seed caches to `/kaggle/working`.
+- The merged `cp33_bo.json` carries a `complete` flag — `true` only once **every** seed has
+  spent its full budget. That, with `passes`, is the real DoD verdict.
 
-`CALIBRATE` first reports per-eval wall-clock so you can size the 5-seed budget against
-Kaggle's weekly GPU quota before committing. The run is **resumable** (`--cache`): a
-re-pushed kernel skips evals already in the output cache.
+### Resuming — the ~5-session protocol
+
+1. **Session 1** — set Accelerator to **GPU T4 x2**, Save & Run All. It runs ~10.5 h then
+   finishes `PARTIAL`, saving its caches as the kernel output.
+2. **Session 2+** — **+ Add Input → Notebook → this notebook** (its own latest output),
+   then Save & Run All again. `run.py` restores the cache shards from that input and the
+   workers continue from where they stopped.
+3. Repeat until the log prints `complete=True` (JSON `"complete": true`). Pull it with
+   `bash kaggle/push.sh --pull`.
+
+> The cache is namespaced by resolution (`cp33_bo_cache_r<RES>`), so switching to `RES=640`
+> after the sweep starts a **fresh** cache rather than reusing @224 latencies. For a
+> shorter calendar, lower `BUDGET` so a single dual-T4 session self-completes (re-opens D2).
+> `CALIBRATE` still reports per-eval wall-clock at the top of each run.
 
 **Dual-GPU:** on a **GPU T4 x2** session, `run.py` automatically fans the seeds across
 both GPUs (one `search.bo --seed-start … --seeds …` worker per device, `CUDA_VISIBLE_DEVICES`-pinned),
