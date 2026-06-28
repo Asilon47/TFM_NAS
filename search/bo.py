@@ -240,6 +240,25 @@ def bo_verdict(bo_hvs: Sequence[float], rs_hvs: Sequence[float]) -> BoVerdict:
     )
 
 
+def merge_bo_outputs(payloads: Sequence[dict]) -> dict:
+    """Combine per-worker CP 3.3 outputs (disjoint seeds) into one payload, recomputing
+    the across-seed verdict over EVERY seed. This is what lets the DoD fan its seeds
+    across GPUs (one worker per device) and rejoin them; run metadata (t_max/res/budget)
+    is carried from the first payload."""
+    if not payloads:
+        raise ValueError("need at least one payload to merge")
+    runs = sorted((r for p in payloads for r in p["runs"]), key=lambda r: r["seed"])
+    v = bo_verdict([r["bo_hv"] for r in runs], [r["rs_hv"] for r in runs])
+    base = payloads[0]
+    return {
+        "passes": v.passes, "n_seeds": v.n_seeds,
+        "bo_hv_mean": v.bo_hv_mean, "bo_hv_std": v.bo_hv_std,
+        "rs_hv_mean": v.rs_hv_mean, "rs_hv_std": v.rs_hv_std,
+        "t_max_ms": base["t_max_ms"], "res": base["res"], "budget": base["budget"],
+        "structural": base["structural"], "runs": runs,
+    }
+
+
 # Structural accuracy stub (CPU smoke / random-search control init): depth_sum is
 # the zero-cost capacity prior (ρ≈0.84 vs real pose mAP, CP 2.4) — lets the whole
 # BO+hypervolume machinery run end-to-end with no GPU, exactly as CP 3.2 does.
@@ -508,6 +527,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--calibrate", type=int, default=0, metavar="N",
                    help="time N real warm-head evals (per-eval wall-clock) and exit")
     p.add_argument("--seeds", type=int, default=5)
+    p.add_argument("--seed-start", type=int, default=0,
+                   help="first seed index; a worker runs [seed_start, seed_start+seeds) "
+                        "so seeds can be fanned across GPUs and merged")
     p.add_argument("--budget", type=int, default=50)
     p.add_argument("--n-init", type=int, default=20)
     p.add_argument("--t-max-ms", type=float, default=fps_to_ms(60),
@@ -524,7 +546,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--freeze-head", action="store_true")
     p.add_argument("--out", type=Path, default=ROOT / "data" / "cp33_bo.json")
     p.add_argument("--cache", type=Path, default=None)
+    p.add_argument("--merge", nargs="+", type=Path, default=None, metavar="PART",
+                   help="merge per-worker output JSONs into --out and exit (no LUT/GPU)")
     a = p.parse_args(argv)
+
+    if a.merge:
+        merged = merge_bo_outputs([json.loads(f.read_text()) for f in a.merge])
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps(merged, indent=2))
+        print(f"merged {len(a.merge)} part(s) -> {a.out} ({merged['n_seeds']} seeds, "
+              f"{'DoD PASS' if merged['passes'] else 'DoD FAIL'})")
+        return 0
 
     lut = load_lut(a.lut, precision=a.precision)
     seed_archs = _load_nsga_frontier()
@@ -546,7 +578,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     bo_hvs, rs_hvs, runs = [], [], []
-    for s in range(a.seeds):
+    for s in range(a.seed_start, a.seed_start + a.seeds):
         cache = (a.cache.with_suffix(f".seed{s}.jsonl") if a.cache else None)
         bo = run_bo(evaluate, lut, budget=a.budget, n_init=a.n_init, seed=s,
                     t_max=a.t_max_ms, res=a.res, seed_archs=seed_archs, cache_path=cache)

@@ -14,6 +14,7 @@ by ``push.sh --pull``.
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # ---- CONFIG (edit for the full DoD run) -------------------------------------
@@ -97,16 +98,50 @@ def main() -> None:
     if CALIBRATE:
         sh(f"{sys.executable} -m search.bo --calibrate {CALIBRATE} {common}")
     out = work / "cp33_bo.json"
-    cmd = (f"{sys.executable} -m search.bo --seeds {SEEDS} --budget {BUDGET} "
-           f"--n-init {N_INIT} {common} --out {out} --cache {work}/cp33_bo_cache")
-    print("+", cmd, flush=True)
-    rc = subprocess.run(cmd, shell=True).returncode
-    # search.bo exits 1 on a DoD-FAIL *verdict* (a valid result — e.g. the cheap proving
-    # run). The kernel's job is to PRODUCE results, so only fail if none were written;
-    # the pass/fail verdict lives in the JSON.
-    if not out.exists():
-        raise SystemExit(f"search.bo produced no results (rc={rc})")
-    print(f"done (rc={rc}; DoD pass/fail is in the JSON) -> {out}", flush=True)
+    cache = work / "cp33_bo_cache"
+    budget = f"--budget {BUDGET} --n-init {N_INIT}"
+    ngpu = int(subprocess.check_output(
+        [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
+    ).decode().strip() or "0")
+    print(f"[gpu] {ngpu} CUDA device(s) visible", flush=True)
+
+    if ngpu >= 2 and SEEDS > 1:
+        # Fan the seeds across GPUs (one worker per device) and run them in PARALLEL,
+        # then merge -> ~halves wall-clock AND Kaggle GPU quota. Seed indices stay
+        # disjoint, so the per-seed caches never collide and the run is reproducible.
+        # The calibrate step above already warmed ultralytics (settings.json + Arial.ttf);
+        # a short stagger makes any first-touch race a non-issue if calibrate was skipped.
+        per = -(-SEEDS // ngpu)  # ceil -> balance seeds across the GPUs
+        procs, parts, start = [], [], 0
+        for g in range(ngpu):
+            count = min(per, SEEDS - start)
+            if count <= 0:
+                break
+            part = work / f"cp33_bo.part{g}.json"
+            parts.append(part)
+            wcmd = (f"{sys.executable} -m search.bo --seed-start {start} --seeds {count} "
+                    f"{budget} {common} --out {part} --cache {cache}")
+            env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(g))
+            print(f"+ [gpu{g}] seeds {start}..{start + count - 1}", flush=True)
+            procs.append(subprocess.Popen(wcmd, shell=True, env=env))
+            start += count
+            time.sleep(10)  # let the first worker win any ultralytics first-touch race
+        for pr in procs:
+            pr.wait()  # ignore rc: a worker exits 1 on a partial DoD-FAIL; check outputs
+        missing = [str(p) for p in parts if not p.exists()]
+        if missing:
+            raise SystemExit(f"GPU worker(s) produced no output: {missing}")
+        sh(f"{sys.executable} -m search.bo --merge {' '.join(map(str, parts))} --out {out}")
+    else:
+        # 1 GPU (or 1 seed): run sequentially. search.bo exits 1 on a DoD-FAIL *verdict*
+        # (a valid result), so only fail if it wrote no output — the verdict is in the JSON.
+        cmd = (f"{sys.executable} -m search.bo --seeds {SEEDS} {budget} "
+               f"{common} --out {out} --cache {cache}")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        if not out.exists():
+            raise SystemExit(f"search.bo produced no results (rc={rc})")
+    print(f"done -> {out} (DoD pass/fail is in the JSON)", flush=True)
 
 
 if __name__ == "__main__":

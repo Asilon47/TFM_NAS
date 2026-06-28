@@ -48,6 +48,12 @@ the real DoD, edit the CONFIG block and re-push:
 Kaggle's weekly GPU quota before committing. The run is **resumable** (`--cache`): a
 re-pushed kernel skips evals already in the output cache.
 
+**Dual-GPU:** on a **GPU T4 x2** session, `run.py` automatically fans the seeds across
+both GPUs (one `search.bo --seed-start … --seeds …` worker per device, `CUDA_VISIBLE_DEVICES`-pinned),
+runs them in parallel, then `--merge`s the per-worker outputs into one verdict over all
+seeds — ~halving wall-clock **and** quota (Kaggle bills GPU *session* time). 1-GPU or
+1-seed sessions run sequentially. So for the DoD, pick **GPU T4 x2** in the UI.
+
 ## Outputs
 
 `/kaggle/working/cp33_bo.json` — per-seed Pareto hypervolume + the BO-vs-random verdict

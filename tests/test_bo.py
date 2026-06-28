@@ -10,6 +10,7 @@ The synthetic LUT gives every catalog MBConv row a constant 0.01 ms latency, so 
 subnet's predicted latency is ``0.01 * n_blocks`` — monotone in depth, which makes
 the ceiling filter (and its boundary) deterministic to test.
 """
+import json
 import random
 
 import pytest
@@ -23,6 +24,8 @@ from search.bo import (
     depth_sum_accuracy,
     feasible,
     hypervolume_2d,
+    main,
+    merge_bo_outputs,
     mutate_arch,
     nondominated_indices,
     parego_weights,
@@ -209,3 +212,54 @@ def test_run_bo_resume_skips_already_evaluated(synth_lut, tmp_path):
                  t_max=0.18, res=224, cache_path=cache)
     assert calls["n"] == first      # no re-evaluation
     assert bo2.n_evals == 6         # the cached evals populate the run
+
+
+def test_merge_bo_outputs_concatenates_seeds_and_recomputes_verdict():
+    """Per-worker outputs (disjoint seeds) combine into one, verdict over ALL seeds.
+
+    This is what lets the DoD fan its seeds across multiple GPUs and rejoin them:
+    each worker writes a slice, the merge recomputes the across-seed verdict.
+    """
+    def run(seed, bo, rs):
+        return {"seed": seed, "bo_hv": bo, "rs_hv": rs, "bo_frontier": []}
+
+    def payload(runs):
+        return {"passes": False, "n_seeds": len(runs), "bo_hv_mean": 0.0,
+                "bo_hv_std": 0.0, "rs_hv_mean": 0.0, "rs_hv_std": 0.0,
+                "t_max_ms": 16.7, "res": 640, "budget": 50, "structural": False,
+                "runs": runs}
+
+    a = payload([run(0, 1.00, 0.70), run(1, 1.02, 0.72), run(2, 0.98, 0.68)])
+    b = payload([run(3, 1.01, 0.69), run(4, 0.99, 0.71)])
+    merged = merge_bo_outputs([b, a])  # out of order -> must sort by seed
+
+    assert [r["seed"] for r in merged["runs"]] == [0, 1, 2, 3, 4]
+    assert merged["n_seeds"] == 5
+    expect = bo_verdict([1.00, 1.02, 0.98, 1.01, 0.99],
+                        [0.70, 0.72, 0.68, 0.69, 0.71])
+    assert merged["passes"] == expect.passes
+    assert merged["bo_hv_mean"] == pytest.approx(expect.bo_hv_mean)
+    assert merged["rs_hv_mean"] == pytest.approx(expect.rs_hv_mean)
+    assert (merged["res"], merged["budget"]) == (640, 50)  # metadata carried through
+
+
+def test_merge_cli_short_circuits_before_the_lut_and_writes_combined(tmp_path):
+    """`search.bo --merge a.json b.json --out m.json` needs no LUT/GPU."""
+    def part(path, runs):
+        path.write_text(json.dumps({
+            "passes": False, "n_seeds": len(runs), "bo_hv_mean": 0.0,
+            "bo_hv_std": 0.0, "rs_hv_mean": 0.0, "rs_hv_std": 0.0,
+            "t_max_ms": 16.7, "res": 224, "budget": 8, "structural": False,
+            "runs": runs}))
+
+    p0, p1 = tmp_path / "part0.json", tmp_path / "part1.json"
+    part(p0, [{"seed": 0, "bo_hv": 1.0, "rs_hv": 0.7, "bo_frontier": []},
+              {"seed": 1, "bo_hv": 1.02, "rs_hv": 0.72, "bo_frontier": []}])
+    part(p1, [{"seed": 2, "bo_hv": 0.98, "rs_hv": 0.68, "bo_frontier": []}])
+    out = tmp_path / "merged.json"
+
+    rc = main(["--merge", str(p0), str(p1), "--out", str(out)])
+    assert rc == 0
+    merged = json.loads(out.read_text())
+    assert [r["seed"] for r in merged["runs"]] == [0, 1, 2]
+    assert merged["n_seeds"] == 3
