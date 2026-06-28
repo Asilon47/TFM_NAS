@@ -17,7 +17,7 @@ KAGGLE_DIR="$ROOT/kaggle"
 SECRETS_DIR="$ROOT/secrets"
 BUILD="$KAGGLE_DIR/_build"
 DATASET_SLUG="tfm-nas-gate-pose"
-KERNEL_SLUG="tfm-nas-cp33-search"
+KERNEL_SLUG="tfm-nas-cp3-3-search"   # Kaggle derives the slug from the title ("CP3.3" -> "cp3-3")
 DONOR="$ROOT/runs/pose/experiments/gate_baseline/weights/best.pt"
 
 # --- credentials (local, gitignored) -----------------------------------------
