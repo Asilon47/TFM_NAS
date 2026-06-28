@@ -6,8 +6,9 @@ installs the NAS + BO stack *without* disturbing Kaggle's torch, wires the attac
 data Dataset (gate dataset + LUT + NSGA-II seeds + the frozen gate head donor), fetches
 the SHA-pinned OFA checkpoint, then runs the search (``search.bo``).
 
-Edit the CONFIG block for the full 5-seed DoD run; the defaults are a cheap *proving*
-run (calibrate + 1 seed) that verifies the whole pipeline within a single GPU session.
+Edit the CONFIG block for the full 5-seed DoD run; the defaults are a cheap *dual-GPU
+validation* (calibrate + a 2-seed split across both T4s) that exercises the parallel
+seed fan-out + merge on real hardware before the expensive full DoD.
 Outputs land in ``/kaggle/working`` and are downloadable as the kernel output / pulled
 by ``push.sh --pull``.
 """
@@ -22,10 +23,10 @@ REPO_URL  = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET   = "tfm-nas-gate-pose"   # attached Kaggle Dataset slug (no <user>/ prefix)
 RES       = 224                   # LUT key resolution: 224 until the @640 sweep lands, then 640
 T_MAX_MS  = 16.7                  # hard latency ceiling = min(baseline, 60 FPS)
-CALIBRATE = 2                     # time N real warm-head evals (0 to skip)
-SEEDS     = 1                     # -> 5 for the DoD
-BUDGET    = 8                     # -> 50 for the DoD
-N_INIT    = 4                     # -> 20 for the DoD
+CALIBRATE = 1                     # 1 warm-head eval first — warms ultralytics before the parallel split
+SEEDS     = 2                     # 2 -> exercises the dual-GPU split (GPU0<-seed0, GPU1<-seed1); -> 5 for the DoD
+BUDGET    = 4                     # cheap validation budget; -> 50 for the DoD
+N_INIT    = 2                     # cheap validation n_init; -> 20 for the DoD
 # -----------------------------------------------------------------------------
 
 
