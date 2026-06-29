@@ -23,6 +23,8 @@ bash kaggle/push.sh --data     # (occasional) create/version the 1.6 GB data Dat
 bash kaggle/push.sh            # push + run the kernel (does the search)
 bash kaggle/push.sh --status   # kernel run status
 bash kaggle/push.sh --pull     # download /kaggle/working/* into data/cp33_kaggle_out/
+bash kaggle/push.sh --resume   # between sessions: --pull + --cache (version the resume store)
+bash kaggle/push.sh --cache    # (called by --resume) version the cp33-bo-cache Dataset
 ```
 
 `--data` stages `dataset/`, `data/lut.jsonl`, `data/phase3_nsga2_frontier.json`, and the
@@ -44,13 +46,26 @@ session** (~59 h wall-clock even on dual-T4), so it is **resumable across sessio
 
 ### Resuming — the ~5-session protocol
 
-1. **Session 1** — set Accelerator to **GPU T4 x2**, Save & Run All. It runs ~10.5 h then
-   finishes `PARTIAL`, saving its caches as the kernel output.
-2. **Session 2+** — **+ Add Input → Notebook → this notebook** (its own latest output),
-   then Save & Run All again. `run.py` restores the cache shards from that input and the
+Kaggle **cannot attach a notebook's own output as its own input** (a dependency cycle), so
+the caches round-trip through a tiny dedicated `tfm-nas-cp33-bo-cache` **Dataset** instead.
+`push.sh` seeds it automatically on the first kernel push; the kernel attaches it via
+`kernel-metadata.json` and `run.py` restores the shards from it (no notebook self-reference).
+
+1. **Session 1** — `bash kaggle/push.sh` (seeds the empty cache Dataset, pushes the kernel),
+   then in the UI set Accelerator to **GPU T4 x2** and Save & Run All. It runs ~10.5 h, then
+   finishes `PARTIAL`, leaving its caches in the kernel output.
+2. **Between sessions (laptop)** — `bash kaggle/push.sh --resume`. This pulls the finished
+   session's output and versions its cache shards into the `tfm-nas-cp33-bo-cache` Dataset.
+3. **Session 2+** — in the Kaggle editor, refresh the **`tfm-nas-cp33-bo-cache`** input to its
+   newest version (the input panel shows an update), keep **GPU T4 x2**, and Save & Run All.
+   `run.py` prints `[resume] restored N shard(s)` (**N > 0** confirms the round-trip) and the
    workers continue from where they stopped.
-3. Repeat until the log prints `complete=True` (JSON `"complete": true`). Pull it with
-   `bash kaggle/push.sh --pull`.
+4. Repeat 2–3 until the log prints `complete=True` (JSON `"complete": true`). Pull the final
+   verdict with `bash kaggle/push.sh --pull`.
+
+> Refreshing the dataset version in the editor preserves your GPU T4 x2 setting; an API
+> re-push (`bash kaggle/push.sh`) always attaches the latest cache version but **resets the
+> accelerator**, so you'd have to re-select GPU T4 x2 in the UI before running.
 
 > The cache is namespaced by resolution (`cp33_bo_cache_r<RES>`), so switching to `RES=640`
 > after the sweep starts a **fresh** cache rather than reusing @224 latencies. For a

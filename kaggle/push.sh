@@ -6,6 +6,8 @@
 #   bash kaggle/push.sh            # (default) push/run the kernel
 #   bash kaggle/push.sh --status   # kernel run status
 #   bash kaggle/push.sh --pull     # download the kernel output into data/
+#   bash kaggle/push.sh --cache    # version the resume cache Dataset from the pulled output
+#   bash kaggle/push.sh --resume   # between sessions: --pull then --cache (then re-run in the UI)
 #
 # One-time: save your KGAT_ token at secrets/access_token + your Kaggle username
 # at secrets/kaggle_username (or a legacy secrets/kaggle.json), then
@@ -17,6 +19,7 @@ KAGGLE_DIR="$ROOT/kaggle"
 SECRETS_DIR="$ROOT/secrets"
 BUILD="$KAGGLE_DIR/_build"
 DATASET_SLUG="tfm-nas-gate-pose"
+CACHE_SLUG="tfm-nas-cp33-bo-cache"   # small Dataset the eval caches round-trip through (resume store)
 KERNEL_SLUG="tfm-nas-cp3-3-search"   # Kaggle derives the slug from the title ("CP3.3" -> "cp3-3")
 DONOR="$ROOT/runs/pose/experiments/gate_baseline/weights/best.pt"
 
@@ -79,8 +82,48 @@ case "${1:-kernel}" in
     kaggle kernels output "$KUSER/$KERNEL_SLUG" -p "$OUT"
     echo "kernel output -> $OUT"
     ;;
+  --cache|cache)
+    # Persist the BO eval caches as a small Dataset so they survive across Kaggle
+    # sessions — a notebook CANNOT attach its own output as its own input, so the
+    # caches round-trip through this dataset instead. Seeds an empty dataset on the
+    # first call; afterwards versions it from whatever `--pull` last fetched.
+    # run.py rglobs cp33_bo_cache*.jsonl out of /kaggle/input to restore them.
+    C="$BUILD/cache"; rm -rf "$C"; mkdir -p "$C"
+    OUT="$ROOT/data/cp33_kaggle_out"
+    n=0
+    if [ -d "$OUT" ]; then
+      for f in "$OUT"/cp33_bo_cache*.jsonl; do
+        [ -e "$f" ] || continue
+        cp "$f" "$C/"; n=$((n + 1))
+      done
+    fi
+    printf 'CP 3.3 BO eval caches (cp33_bo_cache_r<RES>.seed<N>.{bo,rs}.jsonl).\nResume store for the cross-session search; versioned by kaggle/push.sh --cache.\n' > "$C/cache_readme.txt"
+    echo "staging $n cache shard(s) -> $KUSER/$CACHE_SLUG"
+    sub "$KAGGLE_DIR/cache-metadata.json" > "$C/dataset-metadata.json"
+    if kaggle datasets files "$KUSER/$CACHE_SLUG" >/dev/null 2>&1; then
+      kaggle datasets version -p "$C" -m "cache $(date -u +%FT%TZ)"
+    else
+      kaggle datasets create -p "$C"
+    fi
+    ;;
+  --resume|resume)
+    # One laptop command between sessions: pull the finished session's output, then
+    # push its caches into the resume Dataset. Then in the Kaggle UI bump that dataset
+    # to its newest version and Save & Run All (keeps your GPU T4 x2 setting; an API
+    # re-push would reset the accelerator).
+    bash "$KAGGLE_DIR/push.sh" --pull
+    bash "$KAGGLE_DIR/push.sh" --cache
+    echo "resume staged. In the Kaggle editor: refresh the '$CACHE_SLUG' input to its"
+    echo "latest version, ensure GPU T4 x2, then Save & Run All."
+    ;;
   *)
     # Push (and run) the kernel. Build dir carries run.py + the substituted metadata.
+    # The cache Dataset is listed in kernel-metadata, so a push fails if it is missing
+    # — seed it empty on the very first run so session 1 is friction-free.
+    if ! kaggle datasets files "$KUSER/$CACHE_SLUG" >/dev/null 2>&1; then
+      echo "Seeding empty resume cache dataset $KUSER/$CACHE_SLUG ..."
+      bash "$KAGGLE_DIR/push.sh" --cache
+    fi
     K="$BUILD/kernel"; rm -rf "$K"; mkdir -p "$K"
     cp "$KAGGLE_DIR/run.py" "$K/run.py"
     sub "$KAGGLE_DIR/kernel-metadata.json" > "$K/kernel-metadata.json"

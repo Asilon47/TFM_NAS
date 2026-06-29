@@ -8,10 +8,11 @@ the SHA-pinned OFA checkpoint, then runs the search (``search.bo``).
 
 The CONFIG block is the full 5-seed DoD, *resumable across Kaggle sessions*: each commit
 stops starting new evals after ``DEADLINE_H`` hours — a clean boundary under Kaggle's 12 h
-kill — having appended per-seed caches to ``/kaggle/working``. Re-run the kernel with its
-own previous output attached as an input to restore those caches and continue, until the
-merged JSON reports ``complete: true``. Outputs land in ``/kaggle/working`` and are pulled
-by ``push.sh --pull``.
+kill — having appended per-seed caches to ``/kaggle/working``. Between sessions
+``kaggle/push.sh --resume`` versions those caches into the ``tfm-nas-cp33-bo-cache`` Dataset
+(a notebook can't read its OWN output as input); re-running restores them and continues,
+until the merged JSON reports ``complete: true``. Outputs land in ``/kaggle/working`` and
+are pulled by ``push.sh --pull``.
 """
 import json
 import os
@@ -99,9 +100,10 @@ def main() -> None:
     sh(f"{sys.executable} -m supernet.download_ofa")
 
     # 4.5 resume: Kaggle wipes /kaggle/working between commits, so the eval caches must
-    #     round-trip through the persistent /kaggle/input plane. If a prior run's output
-    #     is attached as an input (Add Input -> Notebook -> this notebook), restore its
-    #     cache shards so the workers continue instead of restarting. First session: none.
+    #     round-trip through the persistent /kaggle/input plane. A notebook can't attach
+    #     its OWN output as input, so the caches live in the tfm-nas-cp33-bo-cache Dataset
+    #     (versioned between sessions by `kaggle/push.sh --resume`, attached via
+    #     kernel-metadata). Restore its shards so the workers continue. First session: none.
     restored = 0
     for src in (sorted(input_root.rglob("cp33_bo_cache*.jsonl"))
                 if input_root.exists() else []):
