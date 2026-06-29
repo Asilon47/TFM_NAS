@@ -121,31 +121,35 @@ def main() -> None:
     deadline_s = max(600, int(DEADLINE_H * 3600 - (time.time() - START)))
     budget = f"--budget {BUDGET} --n-init {N_INIT} --deadline-s {deadline_s}"
     print(f"[deadline] workers stop new evals after ~{deadline_s / 3600:.1f} h", flush=True)
+
+    # how much work each seed still owes (from the restored caches) -> rebalance per session
+    from search.bo import assign_seeds_to_gpus, seed_remaining_evals
+    remaining = {s: seed_remaining_evals(cache, s, BUDGET) for s in range(SEEDS)}
+    ndone = sum(1 for s in remaining if remaining[s] == 0)
+    print(f"[resume] {ndone}/{SEEDS} seeds complete; remaining evals/seed: {remaining}", flush=True)
+
     ngpu = int(subprocess.check_output(
         [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
     ).decode().strip() or "0")
     print(f"[gpu] {ngpu} CUDA device(s) visible", flush=True)
 
     if ngpu >= 2 and SEEDS > 1:
-        # Fan the seeds across GPUs (one worker per device) and run them in PARALLEL,
-        # then merge -> ~halves wall-clock AND Kaggle GPU quota. Seed indices stay
-        # disjoint, so the per-seed caches never collide and the run is reproducible.
-        # The calibrate step above already warmed ultralytics (settings.json + Arial.ttf);
-        # a short stagger makes any first-touch race a non-issue if calibrate was skipped.
-        per = -(-SEEDS // ngpu)  # ceil -> balance seeds across the GPUs
-        procs, parts, start = [], [], 0
-        for g in range(ngpu):
-            count = min(per, SEEDS - start)
-            if count <= 0:
-                break
+        # Each session, LPT-balance the UNFINISHED work across the GPUs (one worker per
+        # device, in PARALLEL) and merge. Done seeds are still assigned (they reload from
+        # cache instantly), so every seed lands in a part and the merge covers the whole DoD.
+        # calibrate above warmed ultralytics; a short stagger guards the first-touch race.
+        assignments = assign_seeds_to_gpus(remaining, ngpu)
+        procs, parts = [], []
+        for g, seeds_g in enumerate(assignments):
+            if not seeds_g:
+                continue
             part = work / f"cp33_bo.part{g}.json"
             parts.append(part)
-            wcmd = (f"{sys.executable} -m search.bo --seed-start {start} --seeds {count} "
+            wcmd = (f"{sys.executable} -m search.bo --seed-list {','.join(map(str, seeds_g))} "
                     f"{budget} {common} --out {part} --cache {cache}")
             env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(g))
-            print(f"+ [gpu{g}] seeds {start}..{start + count - 1}", flush=True)
+            print(f"+ [gpu{g}] seeds {seeds_g}", flush=True)
             procs.append(subprocess.Popen(wcmd, shell=True, env=env))
-            start += count
             time.sleep(10)  # let the first worker win any ultralytics first-touch race
         for pr in procs:
             pr.wait()  # ignore rc: a worker exits 1 on a partial DoD-FAIL; check outputs
@@ -154,9 +158,11 @@ def main() -> None:
             raise SystemExit(f"GPU worker(s) produced no output: {missing}")
         sh(f"{sys.executable} -m search.bo --merge {' '.join(map(str, parts))} --out {out}")
     else:
-        # 1 GPU (or 1 seed): run sequentially. search.bo exits 1 on a DoD-FAIL *verdict*
-        # (a valid result), so only fail if it wrote no output — the verdict is in the JSON.
-        cmd = (f"{sys.executable} -m search.bo --seeds {SEEDS} {budget} "
+        # 1 GPU (or 1 seed): run every seed; the cache resumes the unfinished ones and reloads
+        # the finished ones instantly. exit 1 = a valid DoD-FAIL verdict, so only a missing
+        # output file is fatal — the verdict itself is data in the JSON.
+        allseeds = ",".join(str(s) for s in range(SEEDS))
+        cmd = (f"{sys.executable} -m search.bo --seed-list {allseeds} {budget} "
                f"{common} --out {out} --cache {cache}")
         print("+", cmd, flush=True)
         rc = subprocess.run(cmd, shell=True).returncode

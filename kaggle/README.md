@@ -58,10 +58,12 @@ session** (~59 h wall-clock even on dual-T4), so it is **resumable across sessio
 > `CALIBRATE` still reports per-eval wall-clock at the top of each run.
 
 **Dual-GPU:** on a **GPU T4 x2** session, `run.py` automatically fans the seeds across
-both GPUs (one `search.bo --seed-start … --seeds …` worker per device, `CUDA_VISIBLE_DEVICES`-pinned),
+both GPUs (one `search.bo --seed-list …` worker per device, `CUDA_VISIBLE_DEVICES`-pinned),
 runs them in parallel, then `--merge`s the per-worker outputs into one verdict over all
-seeds — ~halving wall-clock **and** quota (Kaggle bills GPU *session* time). 1-GPU or
-1-seed sessions run sequentially. So for the DoD, pick **GPU T4 x2** in the UI.
+seeds — ~halving wall-clock **and** quota (Kaggle bills GPU *session* time). Each session it
+**re-balances**: it reads how many evals each seed still owes from the restored caches and
+LPT-distributes the *unfinished* work, so no GPU sits idle on already-done seeds late in the
+campaign. 1-GPU or 1-seed sessions run sequentially. So for the DoD, pick **GPU T4 x2**.
 
 ## Outputs
 

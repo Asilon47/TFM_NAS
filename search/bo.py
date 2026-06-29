@@ -261,6 +261,37 @@ def merge_bo_outputs(payloads: Sequence[dict]) -> dict:
     }
 
 
+def seed_remaining_evals(cache_base: Path, seed: int, budget: int) -> int:
+    """How many evals a seed still owes = (budget - bo cached) + (budget - rs cached),
+    clamped at 0. Zero means the seed is finished. Reads the resumable cache shards
+    directly, so a resumed Kaggle session can see each seed's remaining work."""
+    def n(suffix: str) -> int:
+        p = cache_base.with_suffix(f".seed{seed}.{suffix}.jsonl")
+        return sum(1 for ln in p.read_text().splitlines() if ln.strip()) if p.exists() else 0
+    return max(0, budget - n("bo")) + max(0, budget - n("rs"))
+
+
+def assign_seeds_to_gpus(remaining: dict[int, int], ngpu: int) -> list[list[int]]:
+    """Balance the *remaining* fine-tune work across GPUs (LPT: heaviest seed first onto the
+    least-loaded GPU). Every seed is placed — including done ones (0 remaining), which reload
+    from cache instantly — so each GPU's part still covers its seeds and the merge sees all of
+    them. Run each session, this rebalances rather than re-running a fixed seed->GPU split."""
+    loads = [0] * ngpu
+    buckets: list[list[int]] = [[] for _ in range(ngpu)]
+    for s in sorted(remaining, key=lambda x: remaining[x], reverse=True):
+        g = min(range(ngpu), key=lambda i: loads[i])
+        buckets[g].append(s)
+        loads[g] += remaining[s]
+    return buckets
+
+
+def _seeds_to_run(seed_list: str | None, seed_start: int, seeds: int) -> list[int]:
+    """Explicit --seed-list (comma-separated) wins; else the contiguous range."""
+    if seed_list:
+        return [int(x) for x in seed_list.split(",") if x.strip()]
+    return list(range(seed_start, seed_start + seeds))
+
+
 # Structural accuracy stub (CPU smoke / random-search control init): depth_sum is
 # the zero-cost capacity prior (ρ≈0.84 vs real pose mAP, CP 2.4) — lets the whole
 # BO+hypervolume machinery run end-to-end with no GPU, exactly as CP 3.2 does.
@@ -567,6 +598,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed-start", type=int, default=0,
                    help="first seed index; a worker runs [seed_start, seed_start+seeds) "
                         "so seeds can be fanned across GPUs and merged")
+    p.add_argument("--seed-list", default=None, metavar="S,S,...",
+                   help="explicit comma-separated seed indices (overrides --seed-start/--seeds); "
+                        "the Kaggle runner uses this to fan unfinished seeds across GPUs")
     p.add_argument("--budget", type=int, default=50)
     p.add_argument("--n-init", type=int, default=20)
     p.add_argument("--t-max-ms", type=float, default=fps_to_ms(60),
@@ -619,7 +653,7 @@ def main(argv: list[str] | None = None) -> int:
 
     deadline = time.monotonic() + a.deadline_s if a.deadline_s else None
     bo_hvs, rs_hvs, runs = [], [], []
-    for s in range(a.seed_start, a.seed_start + a.seeds):
+    for s in _seeds_to_run(a.seed_list, a.seed_start, a.seeds):
         # separate bo/rs caches keep the two halves independent AND both resumable
         bo_cache = a.cache.with_suffix(f".seed{s}.bo.jsonl") if a.cache else None
         rs_cache = a.cache.with_suffix(f".seed{s}.rs.jsonl") if a.cache else None

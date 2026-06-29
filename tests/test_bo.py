@@ -20,6 +20,7 @@ from catalog.sweep import iter_sweep
 from search.arch_to_blocks import _random_arch_dict, validate_arch_dict
 from search.bo import (
     BoVerdict,
+    assign_seeds_to_gpus,
     bo_verdict,
     candidate_pool,
     depth_sum_accuracy,
@@ -33,6 +34,7 @@ from search.bo import (
     pareto_hypervolume,
     random_search_control,
     run_bo,
+    seed_remaining_evals,
     tchebycheff_scalarize,
 )
 from search.space import canonical, encode
@@ -336,3 +338,46 @@ def test_merge_reports_incomplete_when_any_seed_is_unfinished():
     assert done["complete"] is True
     partial = merge_bo_outputs([payload([run(0, True), run(1, False)])])
     assert partial["complete"] is False
+
+
+# ---- dynamic seed -> GPU rebalancing across resumed sessions -----------------
+
+def test_seeds_to_run_prefers_explicit_list_else_contiguous_range():
+    from search.bo import _seeds_to_run
+    assert _seeds_to_run("2,4", 0, 5) == [2, 4]          # explicit list wins
+    assert _seeds_to_run(None, 3, 2) == [3, 4]           # else the contiguous range
+    assert _seeds_to_run("", 0, 3) == [0, 1, 2]          # empty string -> range fallback
+    assert _seeds_to_run(" 1 , 0 ", 0, 9) == [1, 0]      # space-tolerant, order preserved
+
+
+def test_seed_remaining_evals_counts_both_shards(tmp_path):
+    base = tmp_path / "cp33_bo_cache_r224"
+
+    def shard(s, suffix, n):
+        (tmp_path / f"cp33_bo_cache_r224.seed{s}.{suffix}.jsonl").write_text(
+            "".join(f'{{"i":{i}}}\n' for i in range(n)))
+
+    shard(0, "bo", 50)
+    shard(0, "rs", 6)
+    assert seed_remaining_evals(base, 0, budget=50) == 44   # (50-50) + (50-6)
+    assert seed_remaining_evals(base, 9, budget=50) == 100  # no shards -> owes full budget
+    shard(1, "bo", 50)
+    shard(1, "rs", 50)
+    assert seed_remaining_evals(base, 1, budget=50) == 0    # both full -> done
+    shard(2, "bo", 60)
+    shard(2, "rs", 60)                                      # over-budget clamps at 0
+    assert seed_remaining_evals(base, 2, budget=50) == 0
+
+
+def test_assign_seeds_lpt_balances_remaining_work_and_covers_every_seed():
+    # remaining evals per seed (seeds 0,3 partially done); LPT balances LOAD, not count
+    rem = {0: 44, 1: 100, 2: 100, 3: 44, 4: 100}
+    a = assign_seeds_to_gpus(rem, ngpu=2)
+    assert sorted(s for g in a for s in g) == [0, 1, 2, 3, 4]      # every seed exactly once
+    loads = [sum(rem[s] for s in g) for g in a]
+    assert max(loads) - min(loads) <= max(rem.values())           # balanced within one job
+    # a naive 3/2 round-robin by count would give 244 vs 144; LPT must do better
+    assert max(loads) - min(loads) < 244 - 144
+    # all-done seeds are still placed so the merge sees every seed
+    a2 = assign_seeds_to_gpus({0: 0, 1: 0, 2: 0}, ngpu=2)
+    assert sorted(s for g in a2 for s in g) == [0, 1, 2]
