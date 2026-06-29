@@ -51,6 +51,9 @@ def main() -> None:
     if not repo.exists():
         sh(f"git clone --depth 1 {url} {repo}")
     os.chdir(repo)
+    sys.path.insert(0, str(repo))  # run.py executes as /kaggle/src/script.py, so the cloned
+    #   repo is the cwd but NOT on sys.path; in-process imports (search.bo) need it explicitly.
+    #   (subprocess `python -m search.bo` works without this because -m adds cwd to sys.path.)
 
     # 2. deps: pin Kaggle's torch so botorch/ultralytics never upgrade it (the same
     #    discipline the .venv uses for the 2.3.1 pin) — then add the NAS + BO stack.
