@@ -105,7 +105,7 @@ def main() -> None:
     #     (versioned between sessions by `kaggle/push.sh --resume`, attached via
     #     kernel-metadata). Restore its shards so the workers continue. First session: none.
     restored = 0
-    for src in (sorted(input_root.rglob("cp33_bo_cache*.jsonl"))
+    for src in (sorted(input_root.rglob("cp33_bo_cache_r*.jsonl"))
                 if input_root.exists() else []):
         dst = work / src.name
         if not dst.exists():            # never clobber a shard this session already wrote

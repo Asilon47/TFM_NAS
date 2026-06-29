@@ -87,12 +87,14 @@ case "${1:-kernel}" in
     # sessions — a notebook CANNOT attach its own output as its own input, so the
     # caches round-trip through this dataset instead. Seeds an empty dataset on the
     # first call; afterwards versions it from whatever `--pull` last fetched.
-    # run.py rglobs cp33_bo_cache*.jsonl out of /kaggle/input to restore them.
+    # run.py rglobs cp33_bo_cache_r*.jsonl out of /kaggle/input to restore them.
+    # The _r<RES> glob excludes pre-DoD validation shards (cp33_bo_cache.seedN.jsonl,
+    # a different 2-seed format) that may linger in the pulled output.
     C="$BUILD/cache"; rm -rf "$C"; mkdir -p "$C"
     OUT="$ROOT/data/cp33_kaggle_out"
     n=0
     if [ -d "$OUT" ]; then
-      for f in "$OUT"/cp33_bo_cache*.jsonl; do
+      for f in "$OUT"/cp33_bo_cache_r*.jsonl; do
         [ -e "$f" ] || continue
         cp "$f" "$C/"; n=$((n + 1))
       done
