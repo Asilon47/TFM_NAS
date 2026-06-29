@@ -26,7 +26,12 @@ from pathlib import Path
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
 RES        = 224                  # LUT key resolution: 224 until the @640 sweep lands
-T_MAX_MS   = 16.7                 # hard latency ceiling = min(baseline, 60 FPS)
+# Hard latency ceiling, matched to RES (T_max and the LUT regime must agree). The @640
+# baseline anchor (data/baseline_anchor.json) measured yolo11n-pose at 12.75 ms — tighter
+# than the 60-FPS 16.7 ms target, so T_max=min(.)=12.75 at the deploy resolution. @224 is
+# the provisional proving regime (a different, much smaller latency scale); it keeps its
+# original 16.7 so its already-run RES-namespaced caches stay valid.
+T_MAX_MS   = 12.75 if RES == 640 else 16.7
 CALIBRATE  = 1                    # time N real evals first (also warms ultralytics)
 SEEDS      = 5                    # the 5-seed DoD
 BUDGET     = 50                   # BO budget per seed (decision D2)

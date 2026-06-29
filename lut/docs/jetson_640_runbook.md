@@ -63,6 +63,7 @@ bash scripts/teardown_jetson.sh     # restore idle power mode / unlock clocks
 ```
 Feed the result into the search:
 ```bash
+# measured 2026-06-29: yolo11n-pose @640 fp32 = 12.75 ms (< 16.7) -> T_max = 12.75
 T_max = min(<data/baseline_anchor.json latency_ms.mean>, 16.7)     # ms
 python -m search.bo --res 640 --t-max-ms <T_max> --device cuda \
     --head-weights runs/pose/experiments/gate_baseline/weights/best.pt --freeze-head \
