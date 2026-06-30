@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Push + build + run the CP 3.3 search on an AGX Jetson over SSH — a Kaggle-quota-free
+# continuation of the @640 BO campaign. Runs on the LAPTOP.
+#
+#   export XAVIER_HOST=user@jetson           # required (the Jetson SSH target)
+#   bash jetson/deploy.sh --sync             # rsync code (build context) + data (mount)
+#   bash jetson/deploy.sh --build            # SSH: auto-detect L4T, docker build natively
+#   bash jetson/deploy.sh --run              # SSH: max clocks, run the container detached
+#   bash jetson/deploy.sh --logs             # SSH: docker logs -f
+#   bash jetson/deploy.sh --status           # SSH: container state + current verdict
+#   bash jetson/deploy.sh --pull             # rsync results back into data/cp33_kaggle_out/
+#   bash jetson/deploy.sh                     # (default) --sync then --build then --run
+#
+# Override the auto-detected base image with L4T_BASE=dustynv/ultralytics:<tag>.
+# Tune the run with BUDGET=50 CALIBRATE=1 (env, passed into the container).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HOST="${XAVIER_HOST:?set XAVIER_HOST=user@host (the Jetson SSH target)}"
+IMG="${IMAGE:-tfm-nas-cp33:latest}"
+NAME="cp33"
+DONOR="$ROOT/runs/pose/experiments/gate_baseline/weights/best.pt"
+LOCAL_OUT="$ROOT/data/cp33_kaggle_out"
+
+# Resolve the remote $HOME once so every path (incl. docker -v, which needs an absolute
+# path) is unambiguous — no fragile tilde / nested-variable expansion across ssh + rsync.
+RHOME="$(ssh "$HOST" 'echo "$HOME"')"
+CODE="${XAVIER_CODE:-$RHOME/TFM_NAS_code}"   # remote build context (code only)
+DATA="${XAVIER_DATA:-$RHOME/tfm_nas_data}"   # remote data plane (bind-mounted at /data)
+
+do_sync() {
+  [ -f "$DONOR" ] || { echo "Missing donor $DONOR (train the gate baseline first)"; exit 1; }
+  echo "rsync code -> $HOST:$CODE"
+  ssh "$HOST" "mkdir -p '$CODE' '$DATA/out'"
+  # The build context is code only — these excludes keep data/dataset/venvs/.git out of it,
+  # so COPY . in the Dockerfile stays clean without a repo-root .dockerignore.
+  rsync -a --delete \
+    --exclude '.git' --exclude '.venv' --exclude '.venv-nas' --exclude 'data' \
+    --exclude 'dataset' --exclude 'runs' --exclude '__pycache__' --exclude '*.pyc' \
+    --exclude '.cache' --exclude '.pytest_cache' --exclude 'secrets' --exclude '*.pdf' \
+    "$ROOT/" "$HOST:$CODE/"
+  echo "rsync data -> $HOST:$DATA"
+  rsync -a "$ROOT/dataset/" "$HOST:$DATA/dataset/"
+  rsync -a "$DONOR" "$HOST:$DATA/gate_best.pt"      # run_search.py find()s 'gate_best.pt'
+  for f in lut.jsonl cp33_acc_memo.json phase3_nsga2_frontier.json; do
+    if [ -f "$ROOT/data/$f" ]; then rsync -a "$ROOT/data/$f" "$HOST:$DATA/"; else echo "  (skip data/$f)"; fi
+  done
+  # The resume shards — what makes this a continuation, not a restart.
+  if compgen -G "$LOCAL_OUT/cp33_bo_cache_r640.*.jsonl" >/dev/null; then
+    rsync -a "$LOCAL_OUT"/cp33_bo_cache_r640.*.jsonl "$HOST:$DATA/out/"
+    echo "  resume shards shipped: $(ls "$LOCAL_OUT"/cp33_bo_cache_r640.*.jsonl | wc -l)"
+  else
+    echo "  (no @640 resume shards found — first session will start fresh)"
+  fi
+}
+
+do_build() {
+  local L4T REL BASE
+  L4T="$(ssh "$HOST" 'head -1 /etc/nv_tegra_release 2>/dev/null || true')"
+  REL="$(grep -oE 'R[0-9]+' <<<"$L4T" | head -1 || true)"
+  case "$REL" in
+    R36) BASE="dustynv/ultralytics:r36.2.0" ;;   # JetPack 6,   torch 2.3+
+    R35) BASE="dustynv/ultralytics:r35.4.1" ;;   # JetPack 5.1, torch 2.1
+    *)   echo "Detected L4T='$L4T' ($REL). Need JetPack 5.1+/6 (torch>=2 for botorch)."
+         echo "If this is wrong, set L4T_BASE=dustynv/ultralytics:<tag> and re-run."; exit 1 ;;
+  esac
+  BASE="${L4T_BASE:-$BASE}"
+  echo "L4T=$REL -> base image $BASE"
+  ssh "$HOST" "cd '$CODE' && docker build --build-arg L4T_BASE='$BASE' -f jetson/Dockerfile -t '$IMG' ."
+}
+
+do_run() {
+  ssh "$HOST" "sudo nvpmodel -m 0 && sudo jetson_clocks" 2>/dev/null \
+    || echo "(could not set MAXN clocks via sudo — set them manually for full throughput)"
+  ssh "$HOST" "docker rm -f '$NAME' 2>/dev/null || true; \
+    docker run -d --name '$NAME' --runtime nvidia -v '$DATA':/data \
+      -e BUDGET='${BUDGET:-50}' -e CALIBRATE='${CALIBRATE:-1}' '$IMG'"
+  echo "started '$NAME' detached. Follow: bash jetson/deploy.sh --logs"
+}
+
+case "${1:-all}" in
+  --sync|sync)     do_sync ;;
+  --build|build)   do_build ;;
+  --run|run)       do_run ;;
+  --logs|logs)     ssh -t "$HOST" "docker logs -f '$NAME'" ;;
+  --status|status) ssh "$HOST" "docker ps -a --filter name='$NAME'; echo '--- verdict ---'; \
+                     cat '$DATA/out/cp33_bo.json' 2>/dev/null || echo '(no cp33_bo.json yet)'" ;;
+  --pull|pull)     mkdir -p "$LOCAL_OUT"; rsync -a "$HOST:$DATA/out/" "$LOCAL_OUT/"; \
+                   echo "results -> $LOCAL_OUT" ;;
+  all)             do_sync; do_build; do_run ;;
+  *) echo "usage: XAVIER_HOST=user@host bash jetson/deploy.sh [--sync|--build|--run|--logs|--status|--pull]"; exit 1 ;;
+esac

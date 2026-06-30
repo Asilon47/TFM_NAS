@@ -1,0 +1,99 @@
+# `jetson/` — finish the CP 3.3 BO search on an AGX Jetson (Kaggle-quota fallback)
+
+Run the warm-head Bayesian-Optimization search (`search.bo`, the accuracy half of CP 3.3)
+on your AGX Jetson instead of Kaggle, packaged as a Docker image built **on the board**
+over SSH. This is a **direct continuation** of the @640 Kaggle run — the resume cache and
+the accuracy memo carry over, so it picks up at seed 2 (seeds 0–1 already done) rather than
+restarting.
+
+## Why this is correct (and not a CLAUDE.md violation)
+
+The Jetson here is a **compute node, not a measurement node**. `search.bo` reads
+`data/lut.jsonl` (the *Orin-Nano*-measured latencies) as a **static file** — it never
+benchmarks anything. So the search still optimizes for Orin Nano latency; the AGX is just
+the cheapest available GPU for the 5-epoch accuracy proxy. Running PyTorch on *this* board
+does not violate the "no PyTorch on the Jetson" rule, which protects the 8 GB Orin Nano's
+*memory*-measurement fidelity — a different board with a different job.
+
+On one GPU, `kaggle/run.py`'s dual-T4 fan-out collapses to a single
+`search.bo --seed-list 0,1,2,3,4` call; the per-seed cache resumes unfinished seeds and
+reloads finished ones. No 12 h kill → it runs to completion in one detached process, and
+the cache makes it crash / reboot-resumable.
+
+## Prerequisites (on the Jetson)
+
+- **JetPack 5.1.x or 6.x** (L4T r35 / r36) → torch ≥ 2.0. The build aborts otherwise:
+  botorch's `MixedSingleTaskGP` / `qLogExpectedImprovement` require torch ≥ 2.
+- Docker with the **nvidia runtime** (`docker info | grep -i runtime` shows `nvidia`; set
+  `"default-runtime": "nvidia"` in `/etc/docker/daemon.json` if not).
+- **Internet during the build** (pulls the base image + pip + the SHA-pinned OFA ckpt).
+- SSH key access from the laptop; `rsync` on both ends.
+
+## Usage (from the laptop, in the repo root)
+
+```bash
+export XAVIER_HOST=user@jetson         # the SSH target
+
+bash jetson/deploy.sh --sync           # rsync code (build context) + data (mount) + resume shards
+bash jetson/deploy.sh --build          # SSH in, auto-detect L4T, docker build natively
+bash jetson/deploy.sh --run            # max clocks, then run the container detached
+bash jetson/deploy.sh --logs           # follow the run (docker logs -f)
+bash jetson/deploy.sh --status         # container state + the current cp33_bo.json verdict
+bash jetson/deploy.sh --pull           # rsync results back into data/cp33_kaggle_out/
+# (no arg) = --sync then --build then --run
+```
+
+The base image is auto-selected from the detected L4T (`R36 → dustynv/ultralytics:r36.2.0`,
+`R35 → :r35.4.1`); override with `L4T_BASE=dustynv/ultralytics:<tag>` if the exact tag isn't
+on the registry. Tune the run with `BUDGET=50 CALIBRATE=1` (env, passed into the container).
+
+## How the continuation works
+
+`deploy.sh --sync` ships the data plane to `$HOME/tfm_nas_data` on the Jetson (bind-mounted
+at `/data`), including the pulled `cp33_bo_cache_r640.seed{0,1}.{bo,rs}.jsonl` resume shards
+into `/data/out/`. `run_search.py` points `--cache /data/out/cp33_bo_cache_r640`, whose
+shard names **match** those files, so on first run it prints:
+
+```
+[acc-memo] N prior measurement(s) loaded ...
+[resume] 2/5 seeds complete; remaining evals/seed: {0: 0, 1: 0, 2: 100, 3: 100, 4: 100}
+```
+
+That line is the proof the Kaggle state carried over. New seed 2–4 shards are appended in
+`/data/out/`; `--pull` brings the whole set (incl. the updated `cp33_bo.json` DoD verdict)
+back to `data/cp33_kaggle_out/` on the laptop. Re-run `--run` any time to resume.
+
+> A `--calibrate 1` pass runs first and prints `… s/eval -> 5-seed budget … GPU-h` — the
+> real time budget on *this* board (AGX Orin ≈ T4-class but single-GPU and 24/7; a Volta
+> AGX Xavier is ~3–5× slower). With ~31 % free memo hits, only seeds 2–4 actually fine-tune.
+
+## Invariants — do NOT change (or the campaign breaks)
+
+- **`RES=640`, `T_MAX_MS=12.75`** (set in `run_search.py`) — the @640 regime matched to the
+  measured `data/baseline_anchor.json` ceiling and the cache namespace. Changing either
+  invalidates the seed 0–1 cache.
+- **Proxy hyperparams** `epochs=5, imgsz=640, batch=16, --freeze-head` — identical to
+  Kaggle. The warm-head proxy mAP is a *ranking* signal; changing these shifts its
+  distribution and makes the Jetson seeds incomparable to the cached T4 seeds. (The AGX's
+  large RAM could fit a bigger batch — keep 16 for comparability.)
+- **`data/lut.jsonl`** must carry the @640 rows (resolution-aware catalog, 2710→2801). It
+  does today — ship it as-is; never hand-edit it.
+
+Unlike Kaggle (which git-clones `origin/main`), the Jetson builds from the **rsync'd working
+tree**, so no GitHub push is needed for code to take effect — just re-run `--sync --build`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Build aborts `torch <2.0` | Board is JetPack < 5.1; flash 5.1.x/6, or set a torch≥2 `L4T_BASE`. |
+| `manifest unknown` on the base | That patch tag isn't published; pick an available `dustynv/ultralytics:<tag>` and pass `L4T_BASE=…`. |
+| pip can't resolve botorch | Pin it to the torch: torch 2.1 → `botorch==0.10.0`, torch 2.3+ → `botorch>=0.11` (edit the Dockerfile pip line). |
+| `could not set MAXN clocks` | Run `sudo nvpmodel -m 0 && sudo jetson_clocks` on the board manually. |
+| `[resume] 0/5 seeds complete` unexpectedly | The shards didn't ship — check `data/cp33_kaggle_out/cp33_bo_cache_r640.*.jsonl` exists before `--sync`. |
+
+## On close
+
+When `--status` shows `"complete": true`, that run's `"passes"` is the CP 3.3 DoD verdict.
+Then set the λ/μ iso-J numbers from the @640 baseline `(0.877 mAP, 12.75 ms)`, advance
+`state/plan_state.yaml`, and write the `procedure.md` "CP 3.3 CLOSED" entry.
