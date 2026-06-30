@@ -25,7 +25,7 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
-RES        = 224                  # LUT key resolution: 224 until the @640 sweep lands
+RES        = 640                  # @640 LUT + 12.75ms baseline landed -> the real DoD regime
 # Hard latency ceiling, matched to RES (T_max and the LUT regime must agree). The @640
 # baseline anchor (data/baseline_anchor.json) measured yolo11n-pose at 12.75 ms — tighter
 # than the 60-FPS 16.7 ms target, so T_max=min(.)=12.75 at the deploy resolution. @224 is
