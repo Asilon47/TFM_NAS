@@ -72,6 +72,26 @@ the caches round-trip through a tiny dedicated `tfm-nas-cp33-bo-cache` **Dataset
 > shorter calendar, lower `BUDGET` so a single dual-T4 session self-completes (re-opens D2).
 > `CALIBRATE` still reports per-eval wall-clock at the top of each run.
 
+### Reusing prior fine-tunes across resolutions (accuracy memo)
+
+Accuracy is measured at a fixed `imgsz=640`, so it is **independent of the LUT latency
+resolution** — the fine-tunes from a previous (`RES=224`) run are valid at `RES=640`.
+Distil them into a shared memo so the @640 search doesn't re-pay for archs it already
+measured:
+
+```bash
+bash kaggle/push.sh --resume                       # pull the prior run's cache shards
+python -m search.build_acc_memo \
+    --cache "data/cp33_kaggle_out/cp33_bo_cache_r*.jsonl" \
+    --out data/cp33_acc_memo.json                  # {arch, acc} memo
+bash kaggle/push.sh --data                          # ships the memo (+ the @640 LUT) to Kaggle
+```
+
+`run.py` finds `cp33_acc_memo.json` and passes `--acc-memo`; the memo is consulted
+*before* the GPU oracle by **both** BO and random search, so a hit only saves compute and
+**does not** bias the BO-vs-random DoD (each method still earns hypervolume only for the
+archs it independently proposes). On a hit the log shows `[acc-memo] N prior measurement(s)`.
+
 **Dual-GPU:** on a **GPU T4 x2** session, `run.py` automatically fans the seeds across
 both GPUs (one `search.bo --seed-list …` worker per device, `CUDA_VISIBLE_DEVICES`-pinned),
 runs them in parallel, then `--merge`s the per-worker outputs into one verdict over all
