@@ -62,7 +62,7 @@ case "${1:-kernel}" in
     D="$BUILD/data"; rm -rf "$D"; mkdir -p "$D"
     cp -al "$ROOT/dataset" "$D/dataset"
     cp "$DONOR" "$D/gate_best.pt"
-    for f in lut.jsonl phase3_nsga2_frontier.json; do
+    for f in lut.jsonl phase3_nsga2_frontier.json cp33_acc_memo.json; do
       [ -f "$ROOT/data/$f" ] && cp "$ROOT/data/$f" "$D/$f" || echo "  (skip absent data/$f)"
     done
     sub "$KAGGLE_DIR/dataset-metadata.json" > "$D/dataset-metadata.json"

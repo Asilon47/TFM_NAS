@@ -304,6 +304,45 @@ def test_load_eval_cache_tolerates_a_truncated_final_line(tmp_path):
     assert len(evals) == 1 and len(done) == 1
 
 
+def test_load_acc_memo_averages_duplicate_archs(tmp_path):
+    """The same canonical backbone seen under several seeds collapses to one mean acc."""
+    from search.bo import load_acc_memo
+    arch = _random_arch_dict(random.Random(1))
+    memo_file = tmp_path / "memo.json"
+    memo_file.write_text(json.dumps([
+        {"arch": arch, "acc": 0.40}, {"arch": arch, "acc": 0.60},  # same arch, two seeds
+        {"arch": _random_arch_dict(random.Random(2)), "acc": 0.30},
+    ]))
+    memo = load_acc_memo(memo_file)
+    assert len(memo) == 2
+    assert memo[tuple(canonical(encode(arch)))] == pytest.approx(0.50)  # (0.40 + 0.60) / 2
+
+
+def test_load_acc_memo_missing_file_is_empty(tmp_path):
+    from search.bo import load_acc_memo
+    assert load_acc_memo(None) == {}
+    assert load_acc_memo(tmp_path / "absent.json") == {}
+
+
+def test_memoized_evaluator_hits_memo_and_falls_through_on_miss():
+    """A hit returns the memo value without calling the oracle; a miss delegates."""
+    from search.bo import memoized_evaluator
+    known = _random_arch_dict(random.Random(3))
+    unknown = _random_arch_dict(random.Random(4))
+    memo = {tuple(canonical(encode(known))): 0.77}
+    calls = []
+    def oracle(arch):
+        calls.append(arch)
+        return 0.11
+    hits: list[int] = []
+    ev = memoized_evaluator(oracle, memo, hits=hits)
+    assert ev(known) == 0.77        # served from memo
+    assert calls == []              # oracle untouched
+    assert ev(unknown) == 0.11      # fell through to the oracle
+    assert calls == [unknown]
+    assert sum(hits) == 1
+
+
 def test_run_bo_stops_at_the_deadline_and_reports_incomplete(synth_lut):
     """A past deadline makes run_bo return at once with complete=False, so the caller
     knows the seed must be resumed next session."""

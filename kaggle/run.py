@@ -90,6 +90,7 @@ def main() -> None:
 
     lut_src = find("lut.jsonl")
     frontier_src = find("phase3_nsga2_frontier.json")
+    memo_src = find("cp33_acc_memo.json")                    # prior accs (cross-res compute reuse)
     head = find("gate_best.pt")                              # warm-head donor (frozen)
     yaml_src = find("dataset.yaml")                          # the gate-pose data root
     missing = [n for n, v in (("lut.jsonl", lut_src), ("gate_best.pt", head),
@@ -124,6 +125,9 @@ def main() -> None:
     # 5. search: timed calibration first (de-risks the budget), then the BO run.
     common = (f"--device cuda --imgsz 640 --res {RES} --lut data/lut.jsonl "
               f"--head-weights {head} --freeze-head --t-max-ms {T_MAX_MS}")
+    if memo_src:  # reuse prior fine-tunes (acc is imgsz-fixed, so resolution-independent)
+        common += f" --acc-memo {memo_src}"
+        print(f"[acc-memo] attached {memo_src}", flush=True)
     if CALIBRATE:
         sh(f"{sys.executable} -m search.bo --calibrate {CALIBRATE} {common}")
     out = work / "cp33_bo.json"

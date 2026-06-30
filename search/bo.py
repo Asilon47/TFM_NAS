@@ -383,6 +383,49 @@ def _load_eval_cache(path: Path | None) -> tuple[list[dict], set[tuple[int, ...]
     return evals, done
 
 
+def load_acc_memo(path: Path | None) -> dict[tuple[int, ...], float]:
+    """Read prior accuracy measurements into a ``canonical-arch-key -> acc`` lookup.
+
+    The memo file is a JSON list of ``{"arch": <arch_dict>, "acc": <float>}`` records
+    (e.g. distilled from a previous resolution's eval caches — accuracy is measured at
+    a fixed ``imgsz`` and so is resolution-independent). Several records may map to the
+    same canonical arch (the same backbone fine-tuned under different seeds); they are
+    **averaged** into one lower-variance point estimate. Keyed by ``canonical(encode())``
+    so it is robust to depth-inactive don't-care bits — the same key the resume cache and
+    the GP use.
+    """
+    if path is None or not path.exists():
+        return {}
+    records = json.loads(path.read_text())
+    sums: dict[tuple[int, ...], list[float]] = {}
+    for rec in records:
+        key = tuple(canonical(encode(rec["arch"])))
+        sums.setdefault(key, []).append(float(rec["acc"]))
+    return {k: sum(v) / len(v) for k, v in sums.items()}
+
+
+def memoized_evaluator(evaluate: _Evaluator, memo: dict[tuple[int, ...], float],
+                       *, hits: list[int] | None = None) -> _Evaluator:
+    """Wrap an accuracy oracle so a memo hit returns instantly instead of fine-tuning.
+
+    The memo is consulted by canonical arch key *after* the search has already proposed
+    (and feasibility-filtered) the arch, so it only saves compute — it never injects
+    archs into a method's history. BOTH the BO and the random-search evaluators share one
+    wrapped ``evaluate``, so the two halves stay a fair, like-for-like comparison: each
+    still earns hypervolume only for the archs *it* proposes; the memo just spares the GPU
+    when that arch was measured before. ``hits`` (if given) counts cache hits for logging.
+    """
+    def evaluate_memoized(arch: ArchDict) -> float:
+        cached = memo.get(tuple(canonical(encode(arch))))
+        if cached is not None:
+            if hits is not None:
+                hits.append(1)
+            return cached
+        return evaluate(arch)
+
+    return evaluate_memoized
+
+
 def run_bo(
     evaluate_fn: _Evaluator,
     lut: dict[str, LutRow],
@@ -617,6 +660,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--freeze-head", action="store_true")
     p.add_argument("--out", type=Path, default=ROOT / "data" / "cp33_bo.json")
     p.add_argument("--cache", type=Path, default=None)
+    p.add_argument("--acc-memo", type=Path, default=None, metavar="JSON",
+                   help="prior {arch, acc} measurements consulted before the GPU oracle "
+                        "(compute reuse across resolutions; does NOT bias BO-vs-random)")
     p.add_argument("--deadline-s", type=int, default=None, metavar="SEC",
                    help="stop starting new evals after SEC seconds and write partial "
                         "state — a clean session boundary for resumable multi-session runs")
@@ -635,6 +681,11 @@ def main(argv: list[str] | None = None) -> int:
     lut = load_lut(a.lut, precision=a.precision)
     seed_archs = _load_nsga_frontier()
     evaluate = depth_sum_accuracy if a.structural else _build_real_evaluator(a)
+    if a.acc_memo:
+        memo = load_acc_memo(a.acc_memo)
+        evaluate = memoized_evaluator(evaluate, memo)
+        print(f"[acc-memo] {len(memo)} prior measurement(s) loaded from {a.acc_memo} "
+              "(free on a hit; shared by BO and random search)")
 
     if a.calibrate:
         rng = random.Random(0)
