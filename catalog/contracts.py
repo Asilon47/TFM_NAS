@@ -7,10 +7,18 @@ the runtime representation — or value *types* (bool ``se=True`` vs int
 ``1``) — silently re-keys the append-only LUT. Type-checkers see the
 contract; the wire format never changes.
 
-This module must stay free of third-party imports (no torch/numpy): it is
-shared by both venvs and imported from leaf modules — keep it cycle-proof.
+This module must stay free of heavy/venv-divergent imports (no torch/numpy): it
+is shared by both venvs and imported from leaf modules — keep it cycle-proof.
+The one stdlib-adjacent fallback below (``typing_extensions`` for ``NotRequired``
+on Python 3.10, e.g. the JetPack-6 Jetson image) is always available as a torch dep.
 """
-from typing import NotRequired, TypedDict
+import sys
+from typing import TypedDict
+
+if sys.version_info >= (3, 11):
+    from typing import NotRequired
+else:  # Python 3.10 (JetPack-6 base image) — NotRequired landed in 3.11
+    from typing_extensions import NotRequired
 
 
 class MBConvCfg(TypedDict):
