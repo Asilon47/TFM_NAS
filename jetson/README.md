@@ -109,9 +109,15 @@ re-applies MAXN clocks (which reset on reboot) and skips the one-off `--calibrat
 on disk; nothing is lost beyond the single eval that was mid-flight.
 
 **Resume somewhere else** (another Jetson, or back on Kaggle): `--pull` the shards, then
-either `--sync` to a different `XAVIER_HOST` or `bash kaggle/push.sh --resume`. The cache is
-machine-agnostic, so the campaign is portable across Kaggle ↔ Jetson ↔ Jetson. Run `--pull`
-any time (even while it's running) to back up progress to the laptop.
+`--sync` to a different `XAVIER_HOST`. The cache is machine-agnostic, so the campaign is
+portable across backends. Run `--pull` any time (even while it's running) to back up
+progress to the laptop.
+
+**Switching to Kaggle specifically is NOT just `kaggle/push.sh --resume`** — that command's
+first step re-pulls Kaggle's own (now stale) last output and would overwrite the Jetson's
+more-advanced shards. See **`CP33_BACKENDS.md`** at the repo root for the safe order
+(`deploy.sh --pull` → `kaggle/push.sh --cache`, skipping `--resume`'s pull step) and the
+full continue/switch reference for both backends.
 
 ## Invariants — do NOT change (or the campaign breaks)
 

@@ -5,6 +5,10 @@ CP 3.3) on Kaggle GPU without uploading anything by hand. A **script kernel**
 (`run.py`) clones the public repo, installs the stack, attaches a **data Dataset**
 (gate dataset + LUT + NSGA-II seeds + the frozen gate-head donor), and runs the search.
 
+> When Kaggle quota runs out mid-campaign, the same search also runs on an AGX Jetson
+> (`jetson/`). See **`CP33_BACKENDS.md`** at the repo root for switching between the two
+> backends — the direction *into* Kaggle needs a specific safe order, not just `--resume`.
+
 ## One-time setup
 
 1. **Token + username** — Kaggle → *Settings* → *API* → *Create New Token* yields a
