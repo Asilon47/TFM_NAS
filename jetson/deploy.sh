@@ -27,22 +27,31 @@ LOCAL_OUT="$ROOT/data/cp33_kaggle_out"
 # Resolve the remote $HOME once so every path (incl. docker -v, which needs an absolute
 # path) is unambiguous — no fragile tilde / nested-variable expansion across ssh + rsync.
 RHOME="$(ssh "$HOST" 'echo "$HOME"')"
+[ -n "$RHOME" ] || { echo "could not resolve remote HOME via 'ssh $HOST' — check SSH access"; exit 1; }
 CODE="${XAVIER_CODE:-$RHOME/TFM_NAS_code}"   # remote build context (code only)
 DATA="${XAVIER_DATA:-$RHOME/tfm_nas_data}"   # remote data plane (bind-mounted at /data)
 
 do_sync() {
   [ -f "$DONOR" ] || { echo "Missing donor $DONOR (train the gate baseline first)"; exit 1; }
-  echo "rsync code -> $HOST:$CODE"
-  ssh "$HOST" "mkdir -p '$CODE' '$DATA/out'"
-  # The build context is code only — these excludes keep data/dataset/venvs/.git out of it,
-  # so COPY . in the Dockerfile stays clean without a repo-root .dockerignore.
-  rsync -a --delete \
-    --exclude '.git' --exclude '.venv' --exclude '.venv-nas' --exclude 'data' \
-    --exclude 'dataset' --exclude 'runs' --exclude '__pycache__' --exclude '*.pyc' \
-    --exclude '.cache' --exclude '.pytest_cache' --exclude 'secrets' --exclude '*.pdf' \
-    "$ROOT/" "$HOST:$CODE/"
-  echo "rsync data -> $HOST:$DATA"
-  rsync -a "$ROOT/dataset/" "$HOST:$DATA/dataset/"
+  # Build context = SOURCE PACKAGES ONLY. The repo root also holds multi-GB data/model
+  # artifacts (dataset/, dataset.zip, runs/, 20_jan_a2rl_WITH_SYNTH/, *.onnx, .vscode, ...)
+  # that must NEVER enter it — so ship an explicit allowlist of code dirs, not the whole tree
+  # with excludes (too easy to miss a new big folder — that was the 4.7 GB stall). CODE is
+  # wiped first so no stale junk lingers for the Dockerfile's COPY .
+  echo "rsync code -> $HOST:$CODE (source dirs only)"
+  ssh "$HOST" "rm -rf '$CODE'; mkdir -p '$CODE' '$DATA/out'"
+  local srcs=() d f
+  for d in catalog detect distill eval expand lut net2net search state supernet jetson scripts; do
+    [ -d "$ROOT/$d" ] && srcs+=("$ROOT/./$d")
+  done
+  for f in "$ROOT"/*.py "$ROOT"/*.toml; do
+    [ -e "$f" ] && srcs+=("$ROOT/./$(basename "$f")")
+  done
+  rsync -a --info=progress2 -R "${srcs[@]}" "$HOST:$CODE/"
+
+  # Data plane (bind-mounted at /data). The dataset is ~1.6 GB — progress2 shows it moving.
+  echo "rsync data -> $HOST:$DATA (dataset ~1.6 GB — this one is legitimately large)"
+  rsync -a --info=progress2 "$ROOT/dataset/" "$HOST:$DATA/dataset/"
   rsync -a "$DONOR" "$HOST:$DATA/gate_best.pt"      # run_search.py find()s 'gate_best.pt'
   for f in lut.jsonl cp33_acc_memo.json phase3_nsga2_frontier.json; do
     if [ -f "$ROOT/data/$f" ]; then rsync -a "$ROOT/data/$f" "$HOST:$DATA/"; else echo "  (skip data/$f)"; fi
