@@ -134,7 +134,8 @@ tree**, so no GitHub push is needed for code to take effect — just re-run `--s
 |---|---|
 | Build aborts `torch <2.0` | Board is JetPack < 5.1; flash 5.1.x+/6/7, or set a torch≥2 `L4T_BASE`. |
 | `manifest unknown` on the base | That tag isn't published; pass an available one via `L4T_BASE=<image>`. |
-| `no kernel image is available for execution on the device` (JP7) | The arm64 torch wheel lacks Orin's sm_87. Rebuild on the NVIDIA JP7 base (`L4T_BASE=nvcr.io/nvidia/l4t-jetpack:r39.2.0`) + jetson-ai-lab JP7 torch wheels — tell me and I'll wire that Dockerfile variant. |
+| `permission denied ... /var/run/docker.sock` | SSH user isn't in the `docker` group: `ssh -t $XAVIER_HOST 'sudo usermod -aG docker $USER'`, then reconnect (or reboot) so it applies. |
+| `no kernel image ... on the device` (JP7 Orin) | JP7 arm64 torch lacks Orin's sm_87, and jetson-ai-lab has no JP7 channel yet (jp6 + sbsa only). Cheapest fix: run the **JP6 container on the JP7 host** — `L4T_BASE=dustynv/ultralytics:r36.2.0 bash jetson/deploy.sh --build` (its torch carries sm_87; the CUDA-13 driver is forward-compatible with the container's CUDA-12.6 runtime). If the CUDA op still fails, downflash the Orin to JetPack 6.2. |
 | pip can't resolve botorch | Pin it to the torch: torch 2.1 → `botorch==0.10.0`, torch 2.3+ → `botorch>=0.11` (edit the Dockerfile pip line). |
 | `could not set MAXN clocks` | Run `sudo nvpmodel -m 0 && sudo jetson_clocks` on the board manually. |
 | `[resume] 0/5 seeds complete` unexpectedly | The shards didn't ship — check `data/cp33_kaggle_out/cp33_bo_cache_r640.*.jsonl` exists before `--sync`. |
