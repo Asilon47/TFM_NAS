@@ -66,18 +66,25 @@ do_sync() {
 }
 
 do_build() {
-  local L4T REL BASE
+  local L4T REL MODEL BASE
   L4T="$(ssh "$HOST" 'head -1 /etc/nv_tegra_release 2>/dev/null || true')"
   REL="$(grep -oE 'R[0-9]+' <<<"$L4T" | head -1 || true)"
+  MODEL="$(ssh "$HOST" 'cat /proc/device-tree/model 2>/dev/null | tr -d "\000" || true')"
   case "$REL" in
-    R38|R39) BASE="ultralytics/ultralytics:latest-nvidia-arm64" ;;  # JetPack 7 (CUDA 13), torch 2.x
-    R36)     BASE="dustynv/ultralytics:r36.2.0" ;;   # JetPack 6,   torch 2.3+
-    R35)     BASE="dustynv/ultralytics:r35.4.1" ;;   # JetPack 5.1, torch 2.1
+    R38|R39)  # JetPack 7 (CUDA 13). Stock arm64 torch wheels target Thor (sm_110) and OMIT Orin's
+              # Ampere sm_87, so on an Orin use the JetPack-6 image via CUDA forward-compat: its torch
+              # carries sm_87, and the CUDA-13 driver runs the container's CUDA-12.6 runtime.
+              case "$MODEL" in
+                *Orin*) BASE="ultralytics/ultralytics:latest-jetson-jetpack6" ;;
+                *)      BASE="ultralytics/ultralytics:latest-nvidia-arm64" ;;   # Thor / SBSA (sm_110)
+              esac ;;
+    R36)      BASE="ultralytics/ultralytics:latest-jetson-jetpack6" ;;   # JetPack 6,   CUDA 12.6
+    R35)      BASE="ultralytics/ultralytics:latest-jetson-jetpack5" ;;   # JetPack 5.1, CUDA 11.4
     *)   echo "Detected L4T='$L4T' ($REL) — no base-image mapping. Need torch>=2 for botorch."
-         echo "Set L4T_BASE=<image> and re-run (JetPack 7 -> ultralytics/ultralytics:latest-nvidia-arm64)."; exit 1 ;;
+         echo "Set L4T_BASE=<image> and re-run."; exit 1 ;;
   esac
   BASE="${L4T_BASE:-$BASE}"
-  echo "L4T=$REL -> base image $BASE"
+  echo "L4T=$REL model='$MODEL' -> base image $BASE"
   ssh "$HOST" "cd '$CODE' && docker build --build-arg L4T_BASE='$BASE' -f jetson/Dockerfile -t '$IMG' ."
 }
 

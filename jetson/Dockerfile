@@ -7,11 +7,12 @@
 #
 # The base must carry torch>=2.0 with CUDA (botorch's MixedSingleTaskGP / qLogExpectedImprovement
 # need it) plus the ultralytics + opencv vision stack for aarch64, so only the BO stack is pip-added.
-# jetson/deploy.sh auto-selects it from the detected L4T and passes it via --build-arg:
-#   JetPack 7 (r38/r39, CUDA 13)  -> ultralytics/ultralytics:latest-nvidia-arm64  (default below)
-#   JetPack 6   (r36, CUDA 12.6)  -> dustynv/ultralytics:r36.2.0
-#   JetPack 5.1 (r35, CUDA 11.4)  -> dustynv/ultralytics:r35.4.1
-ARG L4T_BASE=ultralytics/ultralytics:latest-nvidia-arm64
+# jetson/deploy.sh auto-selects it from the detected L4T + board model and passes it via --build-arg:
+#   JetPack 7 (r38/r39) on Orin  -> ultralytics/ultralytics:latest-jetson-jetpack6 (sm_87 via fwd-compat)
+#   JetPack 7 (r38/r39) on Thor  -> ultralytics/ultralytics:latest-nvidia-arm64     (sm_110)
+#   JetPack 6   (r36)            -> ultralytics/ultralytics:latest-jetson-jetpack6
+#   JetPack 5.1 (r35)            -> ultralytics/ultralytics:latest-jetson-jetpack5
+ARG L4T_BASE=ultralytics/ultralytics:latest-jetson-jetpack6
 FROM ${L4T_BASE}
 
 # Fail the build early (not 5 days into a run) if the base torch is too old for botorch.
