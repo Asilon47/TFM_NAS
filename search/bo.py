@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -317,6 +318,21 @@ class BoRun:
     complete: bool = True   # False when a wall-clock deadline cut the budget short
 
 
+def _seed_label(seed: int, cache_path: Path | None) -> str:
+    """The campaign's seed number for a progress print.
+
+    ``run_bo``'s ``seed`` param already is that number, but ``random_search_control``
+    is called with ``seed=1000+s`` (a distinct RNG stream) — its cache filename
+    (``...seed{s}.rs.jsonl``) carries the real number, so prefer parsing it from there
+    to avoid printing a confusing 1000+s in a live progress log.
+    """
+    if cache_path is not None:
+        m = re.search(r"\.seed(\d+)\.", cache_path.name)
+        if m:
+            return m.group(1)
+    return str(seed)
+
+
 def _acc_eff_of(arch: ArchDict, acc: float, lut: dict[str, LutRow], *, res: int,
                 mu: float, budget_mib: float, bytes_per_param: int) -> tuple[float, float]:
     """(acc_eff, latency_ms) for one arch — folds the soft μ² memory term into accuracy."""
@@ -480,7 +496,9 @@ def run_bo(
         key = tuple(canonical(encode(arch)))
         if key in done:
             return
+        t0 = time.monotonic()
         acc = evaluate_fn(arch)
+        dt = time.monotonic() - t0
         acc_eff, latency = _acc_eff_of(
             arch, acc, lut, res=res, mu=mu, budget_mib=budget_mib,
             bytes_per_param=bytes_per_param)
@@ -490,6 +508,8 @@ def run_bo(
         if cache_path is not None:
             with open(cache_path, "a") as f:
                 f.write(json.dumps(rec) + "\n")
+        print(f"[eval] seed={_seed_label(seed, cache_path)} bo {len(evals)}/{budget} "
+              f"acc={acc:.4f} lat={latency:.2f}ms ({dt:.1f}s)", flush=True)
 
     # --- initial design: NSGA-II seeds first, then random feasible archs ---------
     for arch in candidate_pool(lut, t_max=t_max, rng=rng, res=res,
@@ -586,7 +606,9 @@ def random_search_control(
         key = tuple(canonical(encode(arch)))
         if key in done:
             continue  # already scored in a prior session — resume past it
+        t0 = time.monotonic()
         acc = evaluate_fn(arch)
+        dt = time.monotonic() - t0
         acc_eff, latency = _acc_eff_of(
             arch, acc, lut, res=res, mu=mu, budget_mib=budget_mib,
             bytes_per_param=bytes_per_param)
@@ -596,6 +618,8 @@ def random_search_control(
         if cache_path is not None:
             with open(cache_path, "a") as f:
                 f.write(json.dumps(rec) + "\n")
+        print(f"[eval] seed={_seed_label(seed, cache_path)} rs {len(evals)}/{budget} "
+              f"acc={acc:.4f} lat={latency:.2f}ms ({dt:.1f}s)", flush=True)
     hv = pareto_hypervolume([(e["acc_eff"], e["latency_ms"]) for e in evals],
                             ref_acc=ref_acc, ref_lat=ref_lat)
     return BoRun(evals=evals, frontier=_frontier(evals), hypervolume=hv,
