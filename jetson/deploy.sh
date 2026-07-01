@@ -70,10 +70,11 @@ do_build() {
   L4T="$(ssh "$HOST" 'head -1 /etc/nv_tegra_release 2>/dev/null || true')"
   REL="$(grep -oE 'R[0-9]+' <<<"$L4T" | head -1 || true)"
   case "$REL" in
-    R36) BASE="dustynv/ultralytics:r36.2.0" ;;   # JetPack 6,   torch 2.3+
-    R35) BASE="dustynv/ultralytics:r35.4.1" ;;   # JetPack 5.1, torch 2.1
-    *)   echo "Detected L4T='$L4T' ($REL). Need JetPack 5.1+/6 (torch>=2 for botorch)."
-         echo "If this is wrong, set L4T_BASE=dustynv/ultralytics:<tag> and re-run."; exit 1 ;;
+    R38|R39) BASE="ultralytics/ultralytics:latest-nvidia-arm64" ;;  # JetPack 7 (CUDA 13), torch 2.x
+    R36)     BASE="dustynv/ultralytics:r36.2.0" ;;   # JetPack 6,   torch 2.3+
+    R35)     BASE="dustynv/ultralytics:r35.4.1" ;;   # JetPack 5.1, torch 2.1
+    *)   echo "Detected L4T='$L4T' ($REL) — no base-image mapping. Need torch>=2 for botorch."
+         echo "Set L4T_BASE=<image> and re-run (JetPack 7 -> ultralytics/ultralytics:latest-nvidia-arm64)."; exit 1 ;;
   esac
   BASE="${L4T_BASE:-$BASE}"
   echo "L4T=$REL -> base image $BASE"
@@ -84,7 +85,7 @@ do_run() {
   ssh "$HOST" "sudo nvpmodel -m 0 && sudo jetson_clocks" 2>/dev/null \
     || echo "(could not set MAXN clocks via sudo — set them manually for full throughput)"
   ssh "$HOST" "docker rm -f '$NAME' 2>/dev/null || true; \
-    docker run -d --name '$NAME' --runtime nvidia -v '$DATA':/data \
+    docker run -d --name '$NAME' --runtime nvidia --ipc=host -v '$DATA':/data \
       -e BUDGET='${BUDGET:-50}' -e CALIBRATE='${CALIBRATE:-1}' '$IMG'"
   echo "started '$NAME' detached. Follow: bash jetson/deploy.sh --logs"
 }

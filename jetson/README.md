@@ -22,8 +22,9 @@ the cache makes it crash / reboot-resumable.
 
 ## Prerequisites (on the Jetson)
 
-- **JetPack 5.1.x or 6.x** (L4T r35 / r36) → torch ≥ 2.0. The build aborts otherwise:
-  botorch's `MixedSingleTaskGP` / `qLogExpectedImprovement` require torch ≥ 2.
+- **JetPack 5.1.x, 6.x, or 7.x** (L4T r35 / r36 / r38-r39) → torch ≥ 2.0. `deploy.sh`
+  auto-detects the release and picks the base image; the build aborts if torch < 2
+  (botorch's `MixedSingleTaskGP` / `qLogExpectedImprovement` require it).
 - Docker with the **nvidia runtime** (`docker info | grep -i runtime` shows `nvidia`; set
   `"default-runtime": "nvidia"` in `/etc/docker/daemon.json` if not).
 - **Internet during the build** (pulls the base image + pip + the SHA-pinned OFA ckpt).
@@ -45,9 +46,10 @@ bash jetson/deploy.sh --pull           # rsync results back into data/cp33_kaggl
 # (no arg) = --sync then --build then --run
 ```
 
-The base image is auto-selected from the detected L4T (`R36 → dustynv/ultralytics:r36.2.0`,
-`R35 → :r35.4.1`); override with `L4T_BASE=dustynv/ultralytics:<tag>` if the exact tag isn't
-on the registry. Tune the run with `BUDGET=50 CALIBRATE=1` (env, passed into the container).
+The base image is auto-selected from the detected L4T: `R38/R39 (JetPack 7) →
+ultralytics/ultralytics:latest-nvidia-arm64`, `R36 → dustynv/ultralytics:r36.2.0`,
+`R35 → :r35.4.1`. Override with `L4T_BASE=<image>` if a tag isn't on the registry. Tune the
+run with `BUDGET=50 CALIBRATE=1` (env, passed into the container).
 
 ## How the continuation works
 
@@ -66,8 +68,22 @@ That line is the proof the Kaggle state carried over. New seed 2–4 shards are 
 back to `data/cp33_kaggle_out/` on the laptop. Re-run `--run` any time to resume.
 
 > A `--calibrate 1` pass runs first and prints `… s/eval -> 5-seed budget … GPU-h` — the
-> real time budget on *this* board (AGX Orin ≈ T4-class but single-GPU and 24/7; a Volta
-> AGX Xavier is ~3–5× slower). With ~31 % free memo hits, only seeds 2–4 actually fine-tune.
+> real time budget on *this* board (your AGX Orin 64 GB is ≈ T4-class or better, single-GPU
+> and 24/7). With ~31 % free memo hits, only seeds 2–4 actually fine-tune.
+
+### First-build GPU check (JetPack 7)
+
+The JP7 arm64 torch wheel targets Thor (sm_110); run one real CUDA op to confirm it also
+carries Orin's sm_87 kernels *before* committing to the long run:
+
+```bash
+ssh $XAVIER_HOST 'docker run --rm --runtime nvidia --ipc=host tfm-nas-cp33:latest \
+  python3 -c "import torch,botorch,gpytorch,ofa,ultralytics; \
+  x=torch.randn(64,64,device=\"cuda\"); print(torch.__version__, (x@x).sum().item())"'
+```
+
+A number (not `no kernel image is available for execution on the device`) means Orin is
+supported. If it errors, see the sm_87 row under Troubleshooting.
 
 ## Stop and resume
 
@@ -116,8 +132,9 @@ tree**, so no GitHub push is needed for code to take effect — just re-run `--s
 
 | Symptom | Fix |
 |---|---|
-| Build aborts `torch <2.0` | Board is JetPack < 5.1; flash 5.1.x/6, or set a torch≥2 `L4T_BASE`. |
-| `manifest unknown` on the base | That patch tag isn't published; pick an available `dustynv/ultralytics:<tag>` and pass `L4T_BASE=…`. |
+| Build aborts `torch <2.0` | Board is JetPack < 5.1; flash 5.1.x+/6/7, or set a torch≥2 `L4T_BASE`. |
+| `manifest unknown` on the base | That tag isn't published; pass an available one via `L4T_BASE=<image>`. |
+| `no kernel image is available for execution on the device` (JP7) | The arm64 torch wheel lacks Orin's sm_87. Rebuild on the NVIDIA JP7 base (`L4T_BASE=nvcr.io/nvidia/l4t-jetpack:r39.2.0`) + jetson-ai-lab JP7 torch wheels — tell me and I'll wire that Dockerfile variant. |
 | pip can't resolve botorch | Pin it to the torch: torch 2.1 → `botorch==0.10.0`, torch 2.3+ → `botorch>=0.11` (edit the Dockerfile pip line). |
 | `could not set MAXN clocks` | Run `sudo nvpmodel -m 0 && sudo jetson_clocks` on the board manually. |
 | `[resume] 0/5 seeds complete` unexpectedly | The shards didn't ship — check `data/cp33_kaggle_out/cp33_bo_cache_r640.*.jsonl` exists before `--sync`. |
