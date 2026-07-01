@@ -11,3 +11,4 @@ pymoo>=0.6.1  # CP 3.2 NSGA-II search (search/evolution.py); CPU-only; pulls num
 botorch>=0.11  # CP 3.3 BO surrogate (search/bo.py); MUST resolve under the torch==2.3.1+cpu pin above — that exact pin is the constraint, so botorch never upgrades torch (tested: botorch 0.17.2 / gpytorch 1.15.2). Pulls gpytorch/linear_operator/pyro-ppl/scikit-learn (CPU).
 gpytorch>=1.12  # CP 3.3 GP kernels: CategoricalKernel(ks/e) + Matérn(depth) via MixedSingleTaskGP (transitive through botorch; pinned for clarity)
 kaggle>=2,<3  # CP 3.3 Kaggle push automation (kaggle/push.sh); CLI only — no torch interaction. Pinned to 2.x: new-style KGAT_ tokens (KAGGLE_API_TOKEN / secrets/access_token) need the 2.x CLI (verified on 2.2.2).
+kagglesdk>=0.1.30,<0.1.32  # kagglesdk 0.1.32 has a broken wheel (competitions/legacy/ subpackage missing); 0.1.31 is the last working release
