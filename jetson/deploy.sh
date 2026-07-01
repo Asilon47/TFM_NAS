@@ -6,6 +6,8 @@
 #   bash jetson/deploy.sh --sync             # rsync code (build context) + data (mount)
 #   bash jetson/deploy.sh --build            # SSH: auto-detect L4T, docker build natively
 #   bash jetson/deploy.sh --run              # SSH: max clocks, run the container detached
+#   bash jetson/deploy.sh --stop             # SSH: docker stop (progress is saved in the cache)
+#   bash jetson/deploy.sh --resume           # SSH: re-run, continuing from the cache (skips calibrate)
 #   bash jetson/deploy.sh --logs             # SSH: docker logs -f
 #   bash jetson/deploy.sh --status           # SSH: container state + current verdict
 #   bash jetson/deploy.sh --pull             # rsync results back into data/cp33_kaggle_out/
@@ -82,11 +84,15 @@ case "${1:-all}" in
   --sync|sync)     do_sync ;;
   --build|build)   do_build ;;
   --run|run)       do_run ;;
+  --stop|stop)     ssh "$HOST" "docker stop '$NAME'"
+                   echo "stopped '$NAME'. Progress is safe in $DATA/out (>=1 in-flight eval is just"
+                   echo "recomputed on resume). Resume: bash jetson/deploy.sh --resume" ;;
+  --resume|resume) : "${CALIBRATE:=0}"; do_run ;;   # same as --run, but skip the redundant calibrate
   --logs|logs)     ssh -t "$HOST" "docker logs -f '$NAME'" ;;
   --status|status) ssh "$HOST" "docker ps -a --filter name='$NAME'; echo '--- verdict ---'; \
                      cat '$DATA/out/cp33_bo.json' 2>/dev/null || echo '(no cp33_bo.json yet)'" ;;
   --pull|pull)     mkdir -p "$LOCAL_OUT"; rsync -a "$HOST:$DATA/out/" "$LOCAL_OUT/"; \
                    echo "results -> $LOCAL_OUT" ;;
   all)             do_sync; do_build; do_run ;;
-  *) echo "usage: XAVIER_HOST=user@host bash jetson/deploy.sh [--sync|--build|--run|--logs|--status|--pull]"; exit 1 ;;
+  *) echo "usage: XAVIER_HOST=user@host bash jetson/deploy.sh [--sync|--build|--run|--stop|--resume|--logs|--status|--pull]"; exit 1 ;;
 esac

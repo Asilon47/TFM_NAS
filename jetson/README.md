@@ -37,6 +37,8 @@ export XAVIER_HOST=user@jetson         # the SSH target
 bash jetson/deploy.sh --sync           # rsync code (build context) + data (mount) + resume shards
 bash jetson/deploy.sh --build          # SSH in, auto-detect L4T, docker build natively
 bash jetson/deploy.sh --run            # max clocks, then run the container detached
+bash jetson/deploy.sh --stop           # stop the run (progress is saved in the cache)
+bash jetson/deploy.sh --resume         # continue from the cache (skips the calibrate pass)
 bash jetson/deploy.sh --logs           # follow the run (docker logs -f)
 bash jetson/deploy.sh --status         # container state + the current cp33_bo.json verdict
 bash jetson/deploy.sh --pull           # rsync results back into data/cp33_kaggle_out/
@@ -66,6 +68,34 @@ back to `data/cp33_kaggle_out/` on the laptop. Re-run `--run` any time to resume
 > A `--calibrate 1` pass runs first and prints `… s/eval -> 5-seed budget … GPU-h` — the
 > real time budget on *this* board (AGX Orin ≈ T4-class but single-GPU and 24/7; a Volta
 > AGX Xavier is ~3–5× slower). With ~31 % free memo hits, only seeds 2–4 actually fine-tune.
+
+## Stop and resume
+
+The run is **detached** on the Jetson (`docker run -d`), so closing your laptop or dropping
+the SSH connection does **not** stop it — only `--stop`, a reboot, or a power-off does.
+
+`search.bo` appends each finished eval to the per-seed cache shards in `/data/out/` (a
+host-filesystem bind mount) *as it goes*, so stopping is safe at any moment — no "safe
+point" needed:
+
+```bash
+bash jetson/deploy.sh --stop      # docker stop; at most the one in-flight eval is recomputed later
+# ... hours or days later ...
+bash jetson/deploy.sh --resume    # re-runs, reloads the cache, continues where it left off
+```
+
+`--resume` reloads the shards, skips every arch already scored, and prints
+`[resume] K/5 seeds complete; remaining …` so you can see the progress it picked up. A
+partial last line from a hard kill is tolerated (`_load_eval_cache` skips it). It also
+re-applies MAXN clocks (which reset on reboot) and skips the one-off `--calibrate` pass.
+
+**After a reboot / power-cut:** identical — `bash jetson/deploy.sh --resume`. The cache is
+on disk; nothing is lost beyond the single eval that was mid-flight.
+
+**Resume somewhere else** (another Jetson, or back on Kaggle): `--pull` the shards, then
+either `--sync` to a different `XAVIER_HOST` or `bash kaggle/push.sh --resume`. The cache is
+machine-agnostic, so the campaign is portable across Kaggle ↔ Jetson ↔ Jetson. Run `--pull`
+any time (even while it's running) to back up progress to the laptop.
 
 ## Invariants — do NOT change (or the campaign breaks)
 
