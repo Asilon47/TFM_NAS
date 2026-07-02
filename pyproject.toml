@@ -27,6 +27,10 @@ select = ["E", "F", "W", "I", "B", "UP"]
 [tool.ruff.lint.per-file-ignores]
 # __init__.py files re-export names for the package's public API.
 "**/__init__.py" = ["F401"]
+# The repo targets py312, but this module must also import on the Jetson JetPack-6
+# base image (Python 3.10), where NotRequired needs the typing_extensions fallback.
+# The version guard is deliberate — exempt it from ruff's "you're on 3.11+" rules.
+"catalog/contracts.py" = ["UP035", "UP036"]
 
 [tool.mypy]
 python_version = "3.12"

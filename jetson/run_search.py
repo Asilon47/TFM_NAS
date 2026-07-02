@@ -37,7 +37,7 @@ T_MAX_MS = 12.75          # hard latency ceiling = measured yolo11n-pose @640 (b
 SEEDS = 5
 N_INIT = 20
 BUDGET = int(os.environ.get("BUDGET", "50"))       # BO budget per seed (decision D2)
-CALIBRATE = int(os.environ.get("CALIBRATE", "1"))  # time N real evals first (also warms ultralytics)
+CALIBRATE = int(os.environ.get("CALIBRATE", "1"))  # time N real evals first (warms ultralytics)
 # ------------------------------------------------------------------------------------
 
 
