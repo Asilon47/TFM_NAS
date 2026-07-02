@@ -188,6 +188,27 @@ def run_tpe(
                  n_evals=len(evals), complete=not stopped_for_time)
 
 
+def merge_tpe_outputs(payloads: Sequence[dict]) -> dict:
+    """Combine per-worker CP 3.4 outputs (disjoint seeds) into one, recomputing the
+    across-seed verdict over EVERY seed — the dual-GPU rejoin. Mirror of
+    :func:`search.bo.merge_bo_outputs` on ``tpe_hv`` keys; run metadata carried from the
+    first payload."""
+    if not payloads:
+        raise ValueError("need at least one payload to merge")
+    runs = sorted((r for p in payloads for r in p["runs"]), key=lambda r: r["seed"])
+    v = bo_verdict([r["tpe_hv"] for r in runs], [r["rs_hv"] for r in runs])
+    base = payloads[0]
+    return {
+        "method": "tpe", "passes": v.passes, "n_seeds": v.n_seeds,
+        "tpe_hv_mean": v.bo_hv_mean, "tpe_hv_std": v.bo_hv_std,
+        "rs_hv_mean": v.rs_hv_mean, "rs_hv_std": v.rs_hv_std,
+        "t_max_ms": base["t_max_ms"], "res": base["res"], "budget": base["budget"],
+        "structural": base["structural"],
+        "complete": all(r.get("complete", True) for r in runs),
+        "runs": runs,
+    }
+
+
 # ---- CLI: structural CPU smoke / timed calibration / real warm-head search ----------
 
 def main(argv: list[str] | None = None) -> int:
@@ -235,7 +256,17 @@ def main(argv: list[str] | None = None) -> int:
                         "(shared by TPE and random; does NOT bias the dominance test)")
     p.add_argument("--deadline-s", type=int, default=None, metavar="SEC",
                    help="stop starting new evals after SEC seconds and write partial state")
+    p.add_argument("--merge", nargs="+", type=Path, default=None, metavar="PART",
+                   help="merge per-worker output JSONs into --out and exit (no LUT/GPU)")
     a = p.parse_args(argv)
+
+    if a.merge:
+        merged = merge_tpe_outputs([json.loads(f.read_text()) for f in a.merge])
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps(merged, indent=2))
+        print(f"merged {len(a.merge)} part(s) -> {a.out} ({merged['n_seeds']} seeds, "
+              f"{'DoD PASS' if merged['passes'] else 'DoD FAIL'})")
+        return 0
 
     lut = load_lut(a.lut, precision=a.precision)
     seed_archs = _load_nsga_frontier()

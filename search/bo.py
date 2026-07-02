@@ -262,14 +262,16 @@ def merge_bo_outputs(payloads: Sequence[dict]) -> dict:
     }
 
 
-def seed_remaining_evals(cache_base: Path, seed: int, budget: int) -> int:
-    """How many evals a seed still owes = (budget - bo cached) + (budget - rs cached),
+def seed_remaining_evals(cache_base: Path, seed: int, budget: int, method: str = "bo") -> int:
+    """How many evals a seed still owes = (budget - search cached) + (budget - rs cached),
     clamped at 0. Zero means the seed is finished. Reads the resumable cache shards
-    directly, so a resumed Kaggle session can see each seed's remaining work."""
+    directly, so a resumed Kaggle session can see each seed's remaining work. ``method``
+    selects the search half's shard suffix (``bo`` for CP 3.3, ``tpe`` for CP 3.4) — the
+    two share the ``rs`` control shard, so a TPE session counts its own progress."""
     def n(suffix: str) -> int:
         p = cache_base.with_suffix(f".seed{seed}.{suffix}.jsonl")
         return sum(1 for ln in p.read_text().splitlines() if ln.strip()) if p.exists() else 0
-    return max(0, budget - n("bo")) + max(0, budget - n("rs"))
+    return max(0, budget - n(method)) + max(0, budget - n("rs"))
 
 
 def assign_seeds_to_gpus(remaining: dict[int, int], ngpu: int) -> list[list[int]]:

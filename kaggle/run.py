@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Kaggle kernel entry — CP 3.3 warm-head Bayesian-Optimization search.
+"""Kaggle kernel entry — CP 3.3/3.4 warm-head architecture search.
 
 Pushed by ``kaggle/push.sh`` and run on Kaggle GPU. It clones the (public) repo,
-installs the NAS + BO stack *without* disturbing Kaggle's torch, wires the attached
+installs the NAS stack *without* disturbing Kaggle's torch, wires the attached
 data Dataset (gate dataset + LUT + NSGA-II seeds + the frozen gate head donor), fetches
-the SHA-pinned OFA checkpoint, then runs the search (``search.bo``).
+the SHA-pinned OFA checkpoint, then runs the search — ``search.<METHOD>``, where
+``METHOD`` selects the proposer: ``bo`` (CP 3.3 Bayesian optimization, closed) or
+``tpe`` (CP 3.4 Optuna MOTPE fallback). Both share the DoD, oracle, ceiling, and cache.
 
 The CONFIG block is the full 5-seed DoD, *resumable across Kaggle sessions*: each commit
 stops starting new evals after ``DEADLINE_H`` hours — a clean boundary under Kaggle's 12 h
@@ -25,6 +27,11 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
+METHOD     = "tpe"                 # search proposer: "bo" (CP 3.3, closed) or "tpe" (CP 3.4).
+#   Same DoD/oracle/ceiling; only the sampler differs. TPE writes '.seed{s}.tpe.jsonl' shards
+#   and REUSES CP 3.3's cached '.seed{s}.rs.jsonl' random control (free), so a TPE session
+#   only fine-tunes TPE's own novel proposals (memo-assisted -> much cheaper than CP 3.3).
+OUT_NAME   = {"bo": "cp33_bo.json", "tpe": "cp34_tpe.json"}[METHOD]
 RES        = 640                  # @640 LUT + 12.75ms baseline landed -> the real DoD regime
 # Hard latency ceiling, matched to RES (T_max and the LUT regime must agree). The @640
 # baseline anchor (data/baseline_anchor.json) measured yolo11n-pose at 12.75 ms — tighter
@@ -122,15 +129,15 @@ def main() -> None:
             restored += 1
     print(f"[resume] restored {restored} eval-cache shard(s) from prior output", flush=True)
 
-    # 5. search: timed calibration first (de-risks the budget), then the BO run.
+    # 5. search: timed calibration first (de-risks the budget), then the search run.
     common = (f"--device cuda --imgsz 640 --res {RES} --lut data/lut.jsonl "
               f"--head-weights {head} --freeze-head --t-max-ms {T_MAX_MS}")
     if memo_src:  # reuse prior fine-tunes (acc is imgsz-fixed, so resolution-independent)
         common += f" --acc-memo {memo_src}"
         print(f"[acc-memo] attached {memo_src}", flush=True)
     if CALIBRATE:
-        sh(f"{sys.executable} -m search.bo --calibrate {CALIBRATE} {common}")
-    out = work / "cp33_bo.json"
+        sh(f"{sys.executable} -m search.{METHOD} --calibrate {CALIBRATE} {common}")
+    out = work / OUT_NAME
     cache = work / f"cp33_bo_cache_r{RES}"   # RES-namespaced so @224 and @640 caches stay distinct
     deadline_s = max(600, int(DEADLINE_H * 3600 - (time.time() - START)))
     budget = f"--budget {BUDGET} --n-init {N_INIT} --deadline-s {deadline_s}"
@@ -138,7 +145,7 @@ def main() -> None:
 
     # how much work each seed still owes (from the restored caches) -> rebalance per session
     from search.bo import assign_seeds_to_gpus, seed_remaining_evals
-    remaining = {s: seed_remaining_evals(cache, s, BUDGET) for s in range(SEEDS)}
+    remaining = {s: seed_remaining_evals(cache, s, BUDGET, method=METHOD) for s in range(SEEDS)}
     ndone = sum(1 for s in remaining if remaining[s] == 0)
     print(f"[resume] {ndone}/{SEEDS} seeds complete; remaining evals/seed: {remaining}", flush=True)
 
@@ -157,9 +164,10 @@ def main() -> None:
         for g, seeds_g in enumerate(assignments):
             if not seeds_g:
                 continue
-            part = work / f"cp33_bo.part{g}.json"
+            part = work / f"{out.stem}.part{g}.json"
             parts.append(part)
-            wcmd = (f"{sys.executable} -m search.bo --seed-list {','.join(map(str, seeds_g))} "
+            sl = ",".join(map(str, seeds_g))
+            wcmd = (f"{sys.executable} -m search.{METHOD} --seed-list {sl} "
                     f"{budget} {common} --out {part} --cache {cache}")
             env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(g))
             print(f"+ [gpu{g}] seeds {seeds_g}", flush=True)
@@ -170,18 +178,18 @@ def main() -> None:
         missing = [str(p) for p in parts if not p.exists()]
         if missing:
             raise SystemExit(f"GPU worker(s) produced no output: {missing}")
-        sh(f"{sys.executable} -m search.bo --merge {' '.join(map(str, parts))} --out {out}")
+        sh(f"{sys.executable} -m search.{METHOD} --merge {' '.join(map(str, parts))} --out {out}")
     else:
         # 1 GPU (or 1 seed): run every seed; the cache resumes the unfinished ones and reloads
         # the finished ones instantly. exit 1 = a valid DoD-FAIL verdict, so only a missing
         # output file is fatal — the verdict itself is data in the JSON.
         allseeds = ",".join(str(s) for s in range(SEEDS))
-        cmd = (f"{sys.executable} -m search.bo --seed-list {allseeds} {budget} "
+        cmd = (f"{sys.executable} -m search.{METHOD} --seed-list {allseeds} {budget} "
                f"{common} --out {out} --cache {cache}")
         print("+", cmd, flush=True)
         rc = subprocess.run(cmd, shell=True).returncode
         if not out.exists():
-            raise SystemExit(f"search.bo produced no results (rc={rc})")
+            raise SystemExit(f"search.{METHOD} produced no results (rc={rc})")
     # report completion so you know whether to re-run (resume) or stop
     try:
         payload = json.loads(out.read_text())
