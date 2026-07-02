@@ -2235,3 +2235,52 @@ still works). OFA ckpt is never uploaded (re-fetched in-kernel).
 2. Kaggle **5-seed warm-head BO + random control** → `cp33_bo.json` verdict (the real DoD).
 3. The λ/μ **numbers** (need the @640 baseline scale; calibrated at selection via the iso-J anchors).
 `check.sh` green throughout (324 passed, 3 skipped). See CLAUDE.md "Current state".
+
+## CP 3.3 CLOSED — warm-head BO-vs-random DoD PASS (2026-07-02)
+
+The DoD landed: the 5-seed warm-head Bayesian-Optimization Pareto **hypervolume beats the
+same-budget random-search control**, decisively and on every seed. `current_checkpoint`
+3.3→3.4, `last_completed` 3.2→3.3, `completed += "3.3"`. Verdict in
+`data/cp33_kaggle_out/cp33_bo.json` (`passes=true`, `complete=true`, `res=640`,
+`t_max_ms=12.75`, `budget=50`, `n_seeds=5`):
+
+| seed | BO HV | random HV | BO/RS |
+|---|---|---|---|
+| 0 | 3.482 | 2.392 | 1.46× |
+| 1 | 3.430 | 1.956 | 1.75× |
+| 2 | 3.435 | 1.867 | 1.84× |
+| 3 | 3.438 | 1.935 | 1.78× |
+| 4 | 3.418 | 2.287 | 1.49× |
+| **mean** | **3.441 ± 0.022** | **2.088 ± 0.211** | **1.65×** |
+
+BO wins on every seed (never a tie/loss) and is ~10× more consistent (std 0.022 vs 0.211) — the
+surrogate reliably steers to the good region while random swings on luck; the BO mean sits
+~6.4 random-σ above random's, far outside the noise. The campaign ran **across both backends**
+(Kaggle @640 seeds 0–1, then the AGX Jetson Orin for seeds 2–4 when the weekly Kaggle quota ran
+out mid-run — identical cache format, machine-agnostic verdict; see `CP33_BACKENDS.md`). The
+union BO frontier = 12 non-dominated points/seed, **all feasible** (6.85–11.74 ms under the
+12.75 ms ceiling), proxy-acc 0.475→0.650; the top point is depth-15, *not* the deepest — the
+search exploits `ks`/`e`, not just depth.
+
+**What the DoD certifies — scope.** This is a *search-method* gate (BO ≫ random at navigating
+the space), **not** the thesis headline. The frontier `acc` values are 5-epoch **warm-head
+proxy** mAPs (a ranking signal; the CP 2.4 reframe), while the deployed-yolo11n-pose baseline's
+**0.877** (`data/baseline_anchor_map.json`, full-train) is *not* comparable to them. Whether a
+found arch Pareto-dominates yolo11n-pose in *deployable* accuracy is a CP 3.5 (winner export) +
+Phase-8 (distill) question — answered by full-training the selected α* and measuring its real
+mAP at its measured Orin-Nano latency, not by this checkpoint.
+
+**λ/μ status (the owed "numbers").** `acc_eff == acc` at every frontier point → the μ² memory
+penalty never binds (every subnet fits the 512 MiB fp16 budget) → **μ is moot for v1**. **λ is
+deferred to CP 3.5**: it does not enter the hypervolume DoD (ParEGO samples λ internally; the
+verdict is λ-free), only the single-winner *selection*. User chose the **two-anchor iso-J**
+method (`search/objective.py:lambda_from_anchors`): the second reference (a bigger yolo11-pose
+@640) is measured at CP 3.5 to set the accuracy/ms exchange rate, then α* = argmax
+`scalarize(...)` over the union frontier. Recording the *method* — not a fabricated number — is
+the honest close.
+
+**Both baseline anchor coordinates are on disk:** `data/baseline_anchor.json` (latency 12.755 ±
+0.012 ms, n=200, fp32/TRT-10.3, MAXN, clocks locked, JP7 R39.2) + `data/baseline_anchor_map.json`
+(mAP 0.8774). **Next = CP 3.4 (TPE fallback, Optuna)** — same dominance test, reusing the
+method-agnostic `search/bo.py` machinery + the 302-arch acc-memo + the cached CP 3.3 random
+control (a much lighter GPU pass).
