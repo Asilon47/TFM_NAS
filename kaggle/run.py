@@ -67,7 +67,7 @@ def main() -> None:
     constraint = work / "constraints.txt"
     constraint.write_text(f"torch=={torch_ver}\n")
     sh(f"{sys.executable} -m pip install -q --constraint {constraint} "
-       "'ofa==0.1.0.post202307202001' 'ultralytics>=8.3' gdown botorch gpytorch")
+       "'ofa==0.1.0.post202307202001' 'ultralytics>=8.3' gdown botorch gpytorch optuna")
 
     # 3. data: locate the attached Dataset ROBUSTLY. Kaggle's mount path is not
     #    guaranteed to be /kaggle/input/<slug>, so search /kaggle/input and fail

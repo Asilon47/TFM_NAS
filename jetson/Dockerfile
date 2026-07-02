@@ -23,7 +23,7 @@ RUN python3 -c "import sys,torch; v=tuple(int(x) for x in torch.__version__.spli
 # Pillow / cv2 already come from the ultralytics base.
 RUN python3 -c "import torch,pathlib; pathlib.Path('/tmp/constraints.txt').write_text('torch=='+torch.__version__+'\n')" \
  && pip install --no-cache-dir --break-system-packages -c /tmp/constraints.txt \
-      ofa==0.1.0.post202307202001 botorch gpytorch gdown
+      ofa==0.1.0.post202307202001 botorch gpytorch gdown optuna
 
 WORKDIR /workspace/TFM_NAS
 COPY . /workspace/TFM_NAS
