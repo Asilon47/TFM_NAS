@@ -20,6 +20,7 @@ import pytest
 from search.arch_to_blocks import random_arch_dict
 from search.objective import Anchor
 from search.select_winner import (
+    ceiling_first_winner,
     lambda_grid,
     lambda_sensitivity,
     load_frontier,
@@ -27,6 +28,7 @@ from search.select_winner import (
     read_anchor,
     select_winner,
     serialize_winner,
+    winner_is_lambda_stable,
     winner_record,
 )
 from search.space import decode, encode
@@ -131,6 +133,53 @@ def test_higher_lambda_never_selects_a_slower_arch():
     assert all(b <= a + 1e-12 for a, b in zip(lats, lats[1:], strict=False))
 
 
+# ---- ceiling-first selection (the λ-free headline rule) ----------------------
+
+def test_ceiling_first_winner_picks_max_acc_under_ceiling():
+    """The committed CP 3.5 rule (D4, ceiling-first): winner = the most accurate feasible
+    arch under T_max, chosen with NO λ. The over-ceiling point loses despite acc=0.99."""
+    fast, mid, slow = _pt(0.50, 7.0), _pt(0.60, 10.0), _pt(0.65, 12.0)
+    over = _pt(0.99, 20.0)
+    assert ceiling_first_winner([fast, mid, slow, over], t_max=12.75)["arch"] == slow["arch"]
+
+
+def test_ceiling_first_winner_tiebreaks_toward_lower_latency():
+    """Equal accuracy -> prefer the faster arch (the sensible deploy tie-break)."""
+    slow_dup, fast_dup = _pt(0.65, 12.0), _pt(0.65, 9.0)
+    assert ceiling_first_winner([slow_dup, fast_dup], t_max=12.75)["latency_ms"] == \
+        pytest.approx(9.0)
+
+
+def test_ceiling_first_winner_raises_when_all_infeasible():
+    """No feasible point -> raise, never return an over-ceiling arch."""
+    with pytest.raises(ValueError, match="ceiling"):
+        ceiling_first_winner([_pt(0.5, 20.0), _pt(0.6, 30.0)], t_max=12.75)
+
+
+# ---- λ as a robustness check on the ceiling-first winner (not the decision) ---
+
+def test_winner_is_lambda_stable_true_when_ceiling_winner_wins_across_grid():
+    """If argmax-J agrees with the ceiling-first winner across the whole λ grid, the pick
+    is certified λ-stable — the latency term never flips it, so the (linearising) two-anchor
+    λ is provably non-decisive here."""
+    fast, slow = _pt(0.50, 7.0), _pt(0.65, 12.0)          # ceiling-first winner = slow
+    r = winner_is_lambda_stable([fast, slow], t_max=12.75, lambdas=[0.001, 0.005, 0.01])
+    assert r["stable"] is True
+    assert r["agree_fraction"] == pytest.approx(1.0)
+    assert r["flips_at_lambda"] == []
+
+
+def test_winner_is_lambda_stable_reports_flip_at_large_lambda():
+    """A λ big enough to prefer the fast arch is reported as a flip, so the write-up can
+    state exactly where the ceiling-first pick stops being J-optimal."""
+    fast, slow = _pt(0.50, 7.0), _pt(0.65, 12.0)          # ceiling-first winner = slow
+    # λ=0.05: J_fast = 0.50-0.35 = 0.15  >  J_slow = 0.65-0.60 = 0.05  -> fast wins -> flip
+    r = winner_is_lambda_stable([fast, slow], t_max=12.75, lambdas=[0.001, 0.05])
+    assert r["stable"] is False
+    assert r["flips_at_lambda"] == [0.05]
+    assert r["agree_fraction"] == pytest.approx(0.5)
+
+
 # ---- λ sensitivity sweep -----------------------------------------------------
 
 def test_lambda_grid_is_log_centred_on_lambda():
@@ -168,7 +217,23 @@ def test_winner_record_carries_arch_vector_lambda_anchors_and_proxy_caveat():
     assert rec["anchors"]["a"]["acc"] == pytest.approx(0.877)
     assert rec["anchors"]["b"]["latency_ms"] == pytest.approx(30.0)
     assert rec["J"] == pytest.approx(0.65 - 0.0025 * 12.0)
+    assert "ceiling" in rec["selection_rule"].lower()      # ceiling-first framing recorded
     assert "proxy" in rec["note"].lower()                  # honest scale caveat present
+
+
+def test_winner_record_is_ceiling_first_and_lambda_optional():
+    """Before anchor B lands the winner is still fully determined (λ-free); the record says
+    so: selection_rule present, λ null, anchors.b null, robustness deferred (None)."""
+    winner = _pt(0.65, 12.0)
+    rec = winner_record(winner, anchor_a=Anchor(0.877, 12.755), t_max=12.75,
+                        sources=["cp33_bo.json"])
+    assert "ceiling" in rec["selection_rule"].lower()
+    assert rec["lambda"] is None
+    assert rec["J"] is None                                # J undefined without λ
+    assert rec["anchors"]["b"] is None
+    assert rec["robustness_check"] is None
+    assert rec["arch"] == winner["arch"]
+    assert rec["vector"] == encode(winner["arch"])
 
 
 def test_serialize_winner_writes_a_reloadable_arch(tmp_path):
@@ -218,15 +283,30 @@ def test_main_calibrates_lambda_from_anchor_files_and_writes_winner(tmp_path):
                "--anchor-map", str(b_map), "--out-dir", str(out_dir)])
     assert rc == 0
     rec = json.loads((out_dir / "winner.json").read_text())
-    # λ = (0.877-0.92)/(12.755-30) ≈ 0.0025 (tiny) -> accuracy dominates -> the 0.65 pt
+    # ceiling-first winner = max acc under 12.75 = the 0.65 pt; λ = (0.877-0.92)/(12.755-30)
+    # ≈ 0.0025 (tiny), so the robustness check certifies the pick is λ-stable.
     assert rec["acc"] == pytest.approx(0.65)
     assert rec["lambda"] == pytest.approx((0.877 - 0.92) / (12.755 - 30.0))
     assert rec["anchors"]["b"]["acc"] == pytest.approx(0.92)
+    assert rec["robustness_check"]["stable"] is True
 
 
-def test_main_requires_lambda_or_both_anchor_files(tmp_path):
-    """Without --lambda and without a full anchor B, λ is undefined — fail loudly."""
+def test_main_selects_ceiling_first_without_lambda(tmp_path):
+    """Ceiling-first: with no --lambda and no anchor B the winner is STILL selected (most
+    accurate feasible arch) and written — the pick does not depend on λ; the robustness
+    check is simply deferred until anchor B lands."""
     bo = tmp_path / "cp33_bo.json"
-    bo.write_text(json.dumps(_bo_payload([[_pt(0.5, 7.0)]])))
-    with pytest.raises(SystemExit):
-        main(["--frontier", str(bo), "--out-dir", str(tmp_path / "w")])
+    bo.write_text(json.dumps(_bo_payload([[_pt(0.50, 7.0), _pt(0.65, 12.0), _pt(0.99, 20.0)]])))
+    base_lat = tmp_path / "baseline_anchor.json"
+    base_map = tmp_path / "baseline_anchor_map.json"
+    base_lat.write_text(json.dumps({"latency_ms": {"mean": 12.755}}))
+    base_map.write_text(json.dumps({"map": 0.877}))
+    out_dir = tmp_path / "winner_v1"
+
+    rc = main(["--frontier", str(bo), "--baseline-latency", str(base_lat),
+               "--baseline-map", str(base_map), "--out-dir", str(out_dir)])
+    assert rc == 0
+    rec = json.loads((out_dir / "winner.json").read_text())
+    assert rec["acc"] == pytest.approx(0.65)               # 0.99 is over the 12.75 ceiling
+    assert rec["lambda"] is None                           # winner needs no λ
+    assert rec["robustness_check"] is None                 # deferred until anchor B

@@ -1,12 +1,21 @@
-"""CP 3.5 — winner-v1 selection: two-anchor iso-J λ over the BO∪TPE frontier.
+"""CP 3.5 — winner-v1 selection: ceiling-first over the BO∪TPE frontier.
 
 The final step of Phase 3: from the search frontiers (``cp33_bo.json`` +
-``cp34_tpe.json``) pick the single architecture α* to deploy, by the D4 scalar
-``J(α) = acc_eff − λ·latency`` argmaxed under the hard latency ceiling. λ is *not* a
-magic constant — it is calibrated from **two reference models on one iso-J contour**
-(:func:`search.objective.lambda_from_anchors`): anchor A = the deployed yolo11n-pose
-``(0.877 mAP, 12.755 ms)`` and anchor B = a bigger yolo11-pose measured @640 on the
-same Orin Nano. A **λ sensitivity sweep** (never one value) accompanies the pick.
+``cp34_tpe.json``) pick the single architecture α* to deploy. The **headline rule is
+ceiling-first and λ-free** (:func:`ceiling_first_winner`): α* = the *most accurate*
+frontier point under the hard latency ceiling ``T_max``. The hard ceiling (D4) is the
+real constraint; among feasible archs more accuracy is strictly better.
+
+The D4 two-anchor λ — calibrated from anchor A (deployed yolo11n-pose ``(0.877 mAP,
+12.755 ms)``) and anchor B (a bigger yolo11-pose measured @640) via
+:func:`search.objective.lambda_from_anchors` — is deliberately **demoted to a robustness
+check** (:func:`winner_is_lambda_stable`), not the decision. That secant is a *linearising*
+estimate of an exchange rate (it assumes the accuracy/latency trade is a straight line
+between two off-the-shelf models); on this saturated gate task λ comes out ~0.001–0.002
+acc/ms, an order of magnitude under the frontier's own slope, so it never flips the pick.
+Rather than trust that number, we *report* that the ceiling-first winner is J-optimal
+across a whole λ sweep — the quantitative, assumption-free substitute. α* itself needs
+neither anchor, so it is fully determined before anchor B lands.
 
 This module is deliberately pure: every point in a frontier JSON already carries its
 ``latency_ms`` and ``acc_eff`` (``search.bo``/``search.tpe`` wrote them), so selection
@@ -98,11 +107,29 @@ def feasible_frontier(frontier: Sequence[dict], t_max: float) -> list[dict]:
     return [pt for pt in frontier if within_ceiling(pt["latency_ms"], t_max)]
 
 
-def select_winner(frontier: Sequence[dict], *, lam: float, t_max: float) -> dict:
-    """α* = the feasible frontier point maximising ``J = acc_eff − λ·latency``.
+def ceiling_first_winner(frontier: Sequence[dict], *, t_max: float) -> dict:
+    """The committed CP 3.5 headline rule (D4, ceiling-first): α* = the most accurate
+    frontier point under the hard latency ceiling — selected **without λ**. Ties break
+    toward *lower* latency (prefer the faster arch at equal accuracy).
 
-    Ties break toward higher accuracy (a deterministic, sensible preference when two
-    archs sit on the same iso-J line). Raises if nothing clears the ceiling.
+    This is λ-free by design: the two-anchor λ is a secant (linearising) estimate of an
+    exchange rate, so it is demoted to a downstream *robustness check*
+    (:func:`winner_is_lambda_stable`), never the decision. The hard ceiling is the real
+    constraint; among feasible archs, more accuracy is strictly better. Raises if nothing
+    clears the ceiling.
+    """
+    feasible = feasible_frontier(frontier, t_max)
+    if not feasible:
+        raise ValueError(f"no frontier point within the {t_max} ms latency ceiling")
+    return max(feasible, key=lambda pt: (pt["acc_eff"], -pt["latency_ms"]))
+
+
+def select_winner(frontier: Sequence[dict], *, lam: float, t_max: float) -> dict:
+    """The λ-scalar argmax ``J = acc_eff − λ·latency`` over the feasible frontier.
+
+    No longer the headline selector (that is :func:`ceiling_first_winner`) — this drives
+    the λ *sensitivity sweep* / robustness check, i.e. "which arch would a given exchange
+    rate prefer?". Ties break toward higher accuracy. Raises if nothing clears the ceiling.
     """
     feasible = feasible_frontier(frontier, t_max)
     if not feasible:
@@ -139,38 +166,67 @@ def lambda_sensitivity(
     return sweep
 
 
+def winner_is_lambda_stable(
+    frontier: Sequence[dict], *, t_max: float, lambdas: Sequence[float]
+) -> dict:
+    """Robustness check for the ceiling-first winner: does the λ-scalar argmax
+    (:func:`select_winner`) agree with :func:`ceiling_first_winner` across the whole λ
+    grid? A fully-agreeing grid certifies the latency term never flips the pick — the
+    honest, quantitative substitute for trusting the (linearising) two-anchor λ as a
+    single number. Any disagreement is reported as the λ at which the ceiling-first pick
+    stops being J-optimal, so the write-up can state exactly where λ would matter.
+    """
+    ref = ceiling_first_winner(frontier, t_max=t_max)["arch"]
+    sweep = lambda_sensitivity(frontier, t_max=t_max, lambdas=lambdas)
+    flips = [row["lambda"] for row in sweep if row["arch"] != ref]
+    agree = len(sweep) - len(flips)
+    return {
+        "reference": "ceiling_first",
+        "stable": not flips,
+        "agree_fraction": (agree / len(sweep)) if sweep else 1.0,
+        "flips_at_lambda": flips,
+    }
+
+
 # ---- serialisation: the winner-v1 export -------------------------------------
 
 def winner_record(
     winner: dict,
     *,
-    lam: float,
-    anchor_a: Anchor,
-    anchor_b: Anchor | None,
+    anchor_a: Anchor | None,
     t_max: float,
     sources: Sequence[str],
-    sensitivity: Sequence[dict],
+    lam: float | None = None,
+    anchor_b: Anchor | None = None,
+    sensitivity: Sequence[dict] | None = None,
+    robustness: dict | None = None,
 ) -> dict:
-    """The self-describing winner-v1 record: α* + its ``encode`` vector, the λ and both
-    anchors it was picked under, J, the frontier provenance, the sweep, and the caveat."""
+    """The self-describing winner-v1 record. Selection is **ceiling-first** (most accurate
+    arch under T_max, λ-free), so α* + its ``encode`` vector stand on their own; λ, both
+    anchors, the sweep and the stability verdict are recorded as a *robustness check* and
+    may be null before anchor B lands."""
     return {
         "arch": winner["arch"],
         "vector": encode(winner["arch"]),
+        "selection_rule": ("max acc_eff under the hard latency ceiling (lambda-free); "
+                           "two-anchor lambda + sensitivity sweep = robustness check only"),
         "latency_ms": winner["latency_ms"],
         "acc": winner["acc"],
         "acc_eff": winner["acc_eff"],
-        "J": _J(winner, lam),
-        "lambda": lam,
+        "t_max_ms": t_max,
         "method": winner.get("method"),
         "seed": winner.get("seed"),
-        "t_max_ms": t_max,
+        "lambda": lam,
+        "J": (None if lam is None else _J(winner, lam)),
         "anchors": {
-            "a": {"acc": anchor_a.acc, "latency_ms": anchor_a.latency_ms},
+            "a": (None if anchor_a is None
+                  else {"acc": anchor_a.acc, "latency_ms": anchor_a.latency_ms}),
             "b": (None if anchor_b is None
                   else {"acc": anchor_b.acc, "latency_ms": anchor_b.latency_ms}),
         },
+        "robustness_check": robustness,
         "frontier_sources": [str(s) for s in sources],
-        "lambda_sensitivity": list(sensitivity),
+        "lambda_sensitivity": list(sensitivity or []),
         "note": ("acc is the 5-epoch warm-head PROXY mAP (CP 2.4 ranking signal), NOT a "
                  "full-train deployable number; the CP 3.5 DoD reproduces it in a clean "
                  "session and Phase 8 distills the deployable weights."),
@@ -202,7 +258,8 @@ def _t_max_from_frontier(paths: Sequence[Path], baseline: Anchor | None) -> floa
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    p = argparse.ArgumentParser(description="CP 3.5 — winner-v1 selection (two-anchor iso-J λ)")
+    p = argparse.ArgumentParser(
+        description="CP 3.5 — winner-v1 selection (ceiling-first; λ = robustness check only)")
     p.add_argument("--frontier", nargs="+", type=Path,
                    default=[ROOT / "data" / "cp33_kaggle_out" / "cp33_bo.json"],
                    help="CP 3.3/3.4 output JSON(s); their frontiers are unioned")
@@ -228,38 +285,55 @@ def main(argv: list[str] | None = None) -> int:
     if not frontier:
         raise SystemExit(f"no frontier points found in {[str(f) for f in a.frontier]}")
 
-    anchor_a = read_anchor(a.baseline_latency, a.baseline_map)
+    # Anchors are OPTIONAL under ceiling-first: the winner needs neither. They (and λ) are
+    # read only for the robustness check, so a missing baseline / anchor-B file is not fatal.
+    anchor_a = (read_anchor(a.baseline_latency, a.baseline_map)
+                if a.baseline_latency.exists() and a.baseline_map.exists() else None)
     anchor_b: Anchor | None = None
-    if a.lam is not None:
-        lam = a.lam
-    else:
-        if not (a.anchor_latency and a.anchor_map):
-            raise SystemExit(
-                "λ is undefined: pass --lambda, OR both --anchor-latency and --anchor-map "
-                "(anchor B's @640 latency + gate mAP) to calibrate it from the two anchors.")
+    if a.anchor_latency and a.anchor_map and a.anchor_latency.exists() and a.anchor_map.exists():
         anchor_b = read_anchor(a.anchor_latency, a.anchor_map)
+
+    if a.lam is not None:
+        lam: float | None = a.lam
+    elif anchor_a is not None and anchor_b is not None:
         lam = lambda_from_anchors(anchor_a, anchor_b)
         if lam <= 0.0:
             raise SystemExit(
                 f"λ={lam:.4g} ≤ 0: anchor B does not Pareto-trade against A (one dominates "
                 "the other) — pick a bigger/more-accurate anchor B.")
+    else:
+        lam = None  # ceiling-first winner is λ-free; the robustness sweep is deferred
 
     t_max = a.t_max_ms if a.t_max_ms is not None else _t_max_from_frontier(a.frontier, anchor_a)
-    winner = select_winner(frontier, lam=lam, t_max=t_max)
-    sweep = lambda_sensitivity(frontier, t_max=t_max,
-                               lambdas=lambda_grid(lam, n=a.sweep_n, span=a.sweep_span))
-    record = winner_record(winner, lam=lam, anchor_a=anchor_a, anchor_b=anchor_b, t_max=t_max,
-                           sources=[str(f) for f in a.frontier], sensitivity=sweep)
+    winner = ceiling_first_winner(frontier, t_max=t_max)
+
+    sweep: list[dict] = []
+    robustness: dict | None = None
+    if lam is not None:
+        grid = lambda_grid(lam, n=a.sweep_n, span=a.sweep_span)
+        sweep = lambda_sensitivity(frontier, t_max=t_max, lambdas=grid)
+        robustness = winner_is_lambda_stable(frontier, t_max=t_max, lambdas=grid)
+
+    record = winner_record(winner, anchor_a=anchor_a, t_max=t_max,
+                           sources=[str(f) for f in a.frontier], lam=lam, anchor_b=anchor_b,
+                           sensitivity=sweep, robustness=robustness)
 
     n_feasible = len(feasible_frontier(frontier, t_max))
-    print(f"lambda = {lam:.6g} acc/ms  (T_max = {t_max:.4g} ms; "
-          f"{n_feasible}/{len(frontier)} frontier points feasible)")
+    print(f"selection = ceiling-first (max acc under T_max={t_max:.4g} ms); "
+          f"{n_feasible}/{len(frontier)} frontier points feasible")
     print(f"winner alpha* [{winner.get('method')}, seed {winner.get('seed')}]: "
           f"acc={winner['acc']:.4f}  latency={winner['latency_ms']:.3f} ms  "
-          f"J={record['J']:.4f}  d={winner['arch']['d']}")
-    print("lambda sensitivity (lambda -> winner latency):")
-    for row in sweep:
-        print(f"  {row['lambda']:.5g}\t-> {row['latency_ms']:.3f} ms (acc {row['acc']:.4f})")
+          f"d={winner['arch']['d']}")
+    if lam is None:
+        print("lambda: none (anchor B pending) — robustness sweep deferred")
+    else:
+        assert robustness is not None  # set together with lam above
+        flip = "" if robustness["stable"] else f"  flips_at={robustness['flips_at_lambda']}"
+        print(f"lambda = {lam:.6g} acc/ms (robustness check): stable={robustness['stable']} "
+              f"agree={robustness['agree_fraction']:.2f}{flip}")
+        for row in sweep:
+            print(f"  lambda {row['lambda']:.5g}\t-> {row['latency_ms']:.3f} ms "
+                  f"(acc {row['acc']:.4f})")
 
     if a.dry_run:
         print("[dry-run] not serialized.")
