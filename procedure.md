@@ -2284,3 +2284,38 @@ the honest close.
 (mAP 0.8774). **Next = CP 3.4 (TPE fallback, Optuna)** — same dominance test, reusing the
 method-agnostic `search/bo.py` machinery + the 302-arch acc-memo + the cached CP 3.3 random
 control (a much lighter GPU pass).
+
+## CP 3.5 refinement — ceiling-first winner; two-anchor λ demoted to a robustness check (2026-07-02)
+
+**Not a checkpoint close; a D4 method refinement (user-approved via AskUserQuestion).** While
+staging CP 3.5 in parallel with CP 3.4, the user challenged the two-anchor λ:
+`λ = (acc_A − acc_B)/(lat_A − lat_B)` **is a secant — it assumes the accuracy/latency trade is
+linear between two off-the-shelf models**. Correct, and it cuts deeper: yolo11n/yolo11s aren't even
+points *on* our search frontier (our archs may dominate both), so the chord between them is a
+questionable exchange-rate source, and a true λ is a *local derivative* (tangent of the frontier),
+not a wide secant across a 70 %-latency gap.
+
+**Resolution — "ceiling-first, λ as check" (AskUserQuestion, option A of 3; alternatives were
+local-frontier-slope λ and a λ-free knee-point).** The hard latency ceiling (`T_max = 12.75 ms`,
+D4) is the real decision rule; among feasible archs more accuracy is strictly better, so:
+
+- **Headline pick is λ-free:** α* = the most-accurate frontier point under `T_max`
+  (`search/select_winner.ceiling_first_winner`, tie-break → lower latency). No linearity
+  assumption enters the thesis.
+- **The two-anchor λ survives only as a robustness check** (`winner_is_lambda_stable`): does the
+  λ-scalar argmax-J agree with the ceiling-first winner across a whole log-λ grid? A fully-agreeing
+  grid *proves* the latency term never flips the pick — the quantitative, assumption-free substitute
+  for trusting one λ. On this saturated gate task λ ≈ 0.001–0.002 acc/ms (≪ the frontier's own
+  ~0.03 slope), so agreement is expected; any flip is reported as the exact λ where it would matter.
+
+**Consequence:** α* needs **neither anchor**, so the winner is fully determined *before* anchor B's
+gate fine-tune finishes. Anchor B (a bigger yolo11-pose) drops from selection-critical to (i) the
+robustness check and (ii) a Phase-8 distillation-teacher scout — which is why the anchor-B CPU
+fine-tune can be stopped early with no effect on α*. Code: `search/select_winner.py` +
+`tests/test_select_winner.py` (19 tests, TDD), commit `a1325e1`; `winner_record` now leads with
+`selection_rule` and treats λ / anchor B / sweep / `robustness_check` as optional (null pre-anchor-B).
+
+**Anchor-B latency curve on disk** (@640, fp32/TRT-10.3, 612 MHz mode 0, n=200; the slow/accurate
+end of the line, all ≫ anchor A's 12.755 ms): yolo11s 21.69 ms / 43.6 MiB, yolo11m 43.43 ms /
+79.2 MiB, yolo11l 55.79 ms / 81.5 MiB (`data/anchor_yolo11{s,m,l}_pose_640.json`). Anchor-B
+*accuracy* (yolo11s gate fine-tune, CPU) is the only remaining input, and only for the check.

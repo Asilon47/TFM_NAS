@@ -177,7 +177,7 @@ whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 | ~~D1~~ | **RESOLVED 2026-06-18 → gate-pose** (`dataset/`; OFA backbone + YOLO11-pose head) | — |
 | ~~D2~~ | **RESOLVED 2026-06-27 → B=50** (CP 3.3 BO per-run budget; `5·(2B−n_init)`=400 warm-head fine-tunes / 5 seeds; NSGA-II free). Phase-7 budget → CP 7.2 | — |
 | D3 | Which SOTA blocks to inject (FusedMBConv, ConvNeXt, MobileViT) | CP 5.3 |
-| ~~D4~~ | **RESOLVED 2026-06-27 → Pareto + hard latency ceiling** (multi-objective `(acc_eff, latency)`, `latency ≤ T_max=min(baseline, 60 FPS→16.7 ms)`; soft μ² folded into `acc_eff`, budget 512 MiB; λ ParEGO-sampled, calibrated at selection via two-anchor iso-J). Formula in `search/objective.py`; λ/μ *numbers* at CP 3.3 (need @640 latency) | — |
+| ~~D4~~ | **RESOLVED 2026-06-27 → Pareto + hard latency ceiling** (multi-objective `(acc_eff, latency)`, `latency ≤ T_max=min(baseline, 60 FPS→16.7 ms)`; soft μ² folded into `acc_eff`, budget 512 MiB; λ ParEGO-sampled). Formula in `search/objective.py`. **REFINED at CP 3.5 (2026-07-02) → ceiling-first**: winner selection is now λ-free (`select_winner.ceiling_first_winner` = max acc under `T_max`); the two-anchor iso-J λ is a *secant/linearising* estimate (λ≈0.001–0.002 acc/ms here), so it is demoted to a **robustness check** (`winner_is_lambda_stable`), not the decision. α* needs neither anchor. See `procedure.md` "CP 3.5 refinement". | — |
 | D5 | Multi-device extension (out of scope for v1/v2) | v3 |
 
 ---
