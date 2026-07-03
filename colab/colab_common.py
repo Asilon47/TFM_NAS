@@ -83,12 +83,25 @@ def ensure_kaggle_credentials(drive_root: Path) -> str:
             "(upload your repo secrets/ to Drive), or set KAGGLE_USERNAME/KAGGLE_KEY."
         )
 
-    cfg = Path.home() / ".kaggle"
-    cfg.mkdir(exist_ok=True)
-    (cfg / "kaggle.json").write_text(json.dumps({"username": user, "key": key}))
-    (cfg / "kaggle.json").chmod(0o600)
-    os.environ["KAGGLE_USERNAME"], os.environ["KAGGLE_KEY"] = user, key
-    print(f"[kaggle] authenticated as {user}", flush=True)
+    # New-style KGAT_ tokens authenticate via KAGGLE_API_TOKEN (as kaggle/push.sh does);
+    # the new gRPC CLI 403s if such a token is placed in kaggle.json / KAGGLE_KEY, and a
+    # stale kaggle.json would SHADOW the env token — so remove it, don't just supplement.
+    # Classic 32-char hex keys still use kaggle.json. Username only builds slugs either way.
+    os.environ["KAGGLE_USERNAME"] = user
+    kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
+    if key.startswith("KGAT"):
+        os.environ["KAGGLE_API_TOKEN"] = key
+        os.environ.pop("KAGGLE_KEY", None)
+        if kaggle_json.exists():
+            kaggle_json.unlink()
+        mode = "KAGGLE_API_TOKEN (new-style)"
+    else:
+        kaggle_json.parent.mkdir(exist_ok=True)
+        kaggle_json.write_text(json.dumps({"username": user, "key": key}))
+        kaggle_json.chmod(0o600)
+        os.environ["KAGGLE_KEY"] = key
+        mode = "kaggle.json (classic)"
+    print(f"[kaggle] authenticated as {user} via {mode}", flush=True)
     return user
 
 
