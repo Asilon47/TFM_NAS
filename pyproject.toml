@@ -19,7 +19,9 @@ target-version = "py312"
 # Docker and is deployed separately — local lint churn there buys nothing.
 # yolo-ros2-inference/ is the user's separate ROS2 deployment package (its own
 # git repo + lint conventions); it's a reference/teacher stack, not NAS source.
-extend-exclude = ["nas-course", "lut/bench", "yolo-ros2-inference"]
+# The Colab notebook is glue with cell-scoped imports + `!`-magics that can't
+# satisfy import-ordering across cells; its committed .py scripts stay linted.
+extend-exclude = ["nas-course", "lut/bench", "yolo-ros2-inference", "colab/TFM_NAS_colab.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
