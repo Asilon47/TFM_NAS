@@ -2398,3 +2398,90 @@ warm-head PROXY mAPs** (the CP 2.4 ranking signal), NOT comparable to the full-t
 baseline. α*'s *faster-than-yolo11n* is real (LUT-exact latency); the *deployable-accuracy*
 dominance claim is Phase 8. **Next = CP 3.5** (winner-v1 export; DoD = reload α* in a clean
 session and reproduce its cached proxy acc within noise → needs a Colab fine-tune).
+
+## CP 3.5 CLOSED — winner-v1 = the de-noised knee; the reproduce-DoD caught (and corrected) a single-seed winner's curse (2026-07-04)
+
+**Phase 3 closes.** `current_checkpoint` 3.5→4.1, `last_completed` 3.4→3.5, `completed += "3.5"`.
+The winner-v1 export (`state/winner_v1/winner.json`) is **`d=[2,2,4,3,3]` @ 11.208 ms**, de-noised
+warm-head proxy mAP **0.6101 ± 0.0049**, **12.1 % faster than yolo11n-pose** (12.755 ms) — *not*
+the ceiling-first α* that CP 3.3/3.4 predicted. The reproduce-within-noise DoD did its job: it
+falsified the naive winner and forced an honest re-selection.
+
+**The DoD ran and FAILED for α*** (`eval/verify_winner.py`, Kaggle T4, 3 **fresh** seeds 1/2/3,
+`data/cp33_kaggle_out/repro.json`). Reloading α* = `[bo,seed0]` `d=[2,2,4,4,3]` in a clean session
+and re-deriving its warm-head proxy mAP gave fresh seeds `[0.575, 0.634, 0.621]`, **mean 0.610 vs
+cached 0.650 → Δ = −0.040** (band 0.020) → **passes=false**. Not a pipeline bug — a **selection**
+bug.
+
+**Root cause — the single-seed winner's curse.** The search oracle scored *every* frontier arch at
+a single fine-tune seed (`seed=0`); the top of the feasible frontier is a **statistical tie** (top-12
+cached span 0.027 < a single arch's fresh-seed σ ≈ 0.031). The ceiling-first `argmax` over 130
+single-seed draws therefore selects whichever arch's seed-0 draw was *luckiest* — an upward-biased
+estimator that regresses hard on re-eval. α*'s own σ (0.025, the largest in the set) was the tell.
+
+**The fix — de-noise the contenders, then re-select** (`search/denoise.py`, Kaggle
+`kaggle/run.py MODE="denoise"`, 12 archs × 3 seeds = 36 warm-head fine-tunes, resumable per-(arch,seed);
+result `data/cp33_kaggle_out/denoise.json`). Re-scoring the top-12 feasible frontier at fresh seeds and
+averaging **scrambled the ranking completely** — every arch regressed:
+
+| arch (depth) | cached (seed-0) | de-noised mean ± σ | Δ | de-noised rank |
+|---|---|---|---|---|
+| `[2,2,4,4,2]` (tpe) | 0.638 | 0.624 ± 0.003 | −0.014 | 1st |
+| **`[2,2,4,3,3]` (bo) — winner** | 0.624 | **0.610 ± 0.005** | −0.014 | 5th |
+| `[2,2,4,4,3]` — old α* | 0.650 | 0.610 ± 0.025 | **−0.040** | 4th |
+| `[2,4,3,4,4]` — fastest-cached | 0.634 | **0.571 ± 0.002** | −0.063 | **12th (last)** |
+
+**Finding — the de-noise averted a *second* curse.** The fastest-cached arch `[2,4,3,4,4]` @ 10.15 ms
+(cached 0.634) collapsed to **dead last** (0.571) on de-noising — reliably the *worst* arch (σ=0.002),
+its 0.634 pure seed-0 luck. A naive "re-pick the fastest of the cached scores" would have walked
+straight into a second winner's curse. Averaging first is what caught it. **Lesson recorded**: low σ
+means *reliably whatever it is*, not *good*; argmax-over-noisy-estimates systematically selects for
+upward error, so the headline winner is disproportionately the one whose noise pointed up.
+
+**The honest frontier is shallow, so the pick is a real trade.** Averaged, the feasible set is *not* a
+flat plateau: near-ceiling archs (~12.6 ms) reach ~0.624, the fastest (10.7 ms) ~0.606 — **~0.018
+proxy-mAP for ~2 ms**. Which winner is "honest" then hinges on the `select_denoised` tie-band, and three
+*principled* band choices give three different winners:
+
+| tie-band basis | winner | de-noised mAP | latency | vs yolo11n |
+|---|---|---|---|---|
+| top arch's own σ (0.003, strict) | `[2,2,4,4,2]` | 0.624 ± 0.003 | 12.65 ms | 0.8 % faster |
+| **typical σ (~0.013) — chosen** | **`[2,2,4,3,3]`** | **0.610 ± 0.005** | **11.21 ms** | **12 % faster** |
+| max σ (0.025, α*'s outlier) | `[2,2,4,3,2]` | 0.606 ± 0.012 | 10.73 ms | 16 % faster |
+
+**Winner selection (user decision, AskUserQuestion).** The **knee** `[2,2,4,3,3]` was chosen over the
+accuracy-first and latency-first extremes because it is the best *all-rounder* on a proxy, saturated
+task: (1) a strong **12 %-faster-than-yolo11n** latency claim (LUT-exact, real), vs the accuracy-first
+pick's thin 0.8 %; (2) the **tightest-but-one σ (0.005)**, so it is the most *reproducible* winner — it
+clears the reproduce DoD **directly**: `|cached 0.6238 − mean 0.6101| = 0.0137 < 0.020`, where α* failed
+at −0.040; (3) only ~0.014 proxy-mAP below the saturated top, a gap that (per anchor B: +70 % latency →
++0.5 % mAP) is expected to wash out under Phase-8 distillation. The latency-first pick was rejected
+precisely because it needs α*'s *outlier* σ as its tie-band **and** has the noisiest σ of the three (the
+weakest reproduction). Not a λ decision — λ≈0.0005 acc/ms is an order of magnitude too small to move any
+of this; the choice is a documented engineering trade among de-noised means.
+
+**DoD honesty — how the reproduce clause is satisfied.** winner-v1's reference accuracy is now the
+**3-seed de-noised mean (0.610)**, not a single seed. The de-noise run *is* the "reload in a clean
+session and reproduce" evidence — three independent clean-session warm-head fine-tunes — and the
+single-seed search value lands within band of their mean. `winner.json` records the full provenance: the
+de-noised maps/σ, the rejected single-seed α*, the averted-second-curse arch, the `vs_yolo11n` speedup,
+and a `reproduction` verdict (`passes=true`).
+
+**Code (all CPU, `.venv`/CI-tested).** `search/denoise.py`: `top_candidates` (pinned top-K →
+`state/winner_v1/denoise_candidates.json`), `denoise_archs` (GPU, resumable — the only GPU step),
+`select_denoised` (fastest-within-tie), `denoised_winner_record` + `--serialize` CLI (writes
+`winner.json` from `denoise.json`, round-trip-guards the encode vector). `eval/verify_winner.py`: the
+α* verifier that caught the curse (`ReproVerdict`, mean-of-3 band rule). +19 tests
+(`tests/test_denoise.py`, `tests/test_verify_winner.py`); `check.sh` fast lane green.
+
+**Deferred (non-blocking).** The knee's concrete *proxy* `weights.pt` was not persisted (the de-noise
+fine-tunes weren't saved). It is regenerable from (arch + frozen gate head + seed) — the passing
+reproduce-DoD *is* the proof that regeneration is deterministic within noise — and it is **superseded by
+Phase 8**, which distills the *deployable* weights from the arch and discards proxy weights. A concrete
+`weights.pt` can be dropped in later via a 1-seed `eval.verify_winner --save-weights` run if a tangible
+artifact is wanted.
+
+**Method scope (unchanged, carries to Phase 8).** winner-v1's accuracy is still the **warm-head PROXY**
+(0.610), NOT comparable to yolo11n's full-train 0.877 — the *latency* dominance (12 % faster) is real
+and LUT-exact; the *accuracy* dominance is Phase 8's to earn via distillation. **Phase 3 is complete.
+Next = CP 4.1** (Net2Wider — `net2net/wider.py`, function-preserving widen, unit-test to 1e-5).
