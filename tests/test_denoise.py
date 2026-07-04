@@ -95,3 +95,43 @@ def test_denoise_archs_resumes_from_cache(tmp_path: Path, monkeypatch) -> None:
     # second run reads the cache -> zero new fine-tunes
     denoise_archs([_pt(0.65, 11.7)], head_weights="g.pt", seeds=(1, 2, 3), cache=cache)
     assert calls["n"] == 3           # unchanged: fully resumed
+
+
+# ---- winner-v1 serialization (CP 3.5 close) ----------------------------------
+
+def _enriched(acc: float, lat: float, d: list[int], *, mean: float, std: float) -> dict:
+    arch = {"ks": [3] * 20, "e": [3] * 20, "d": d}
+    return {"arch": arch, "acc": acc, "latency_ms": lat, "acc_eff": acc, "cached_acc": acc,
+            "seeds": [1, 2, 3], "denoised_maps": [mean] * 3, "denoised_mean": mean,
+            "denoised_std": std, "method": "bo", "seed": 0}
+
+
+def test_denoised_winner_record_uses_mean_and_passes_repro() -> None:
+    from search.denoise import denoised_winner_record
+    from search.space import decode
+
+    top = _enriched(0.6376, 12.65, [2, 2, 4, 4, 2], mean=0.6236, std=0.0032)
+    knee = _enriched(0.6238, 11.21, [2, 2, 4, 3, 3], mean=0.6101, std=0.0049)
+    fast = _enriched(0.6336, 10.15, [2, 4, 3, 4, 4], mean=0.5706, std=0.0019)
+    payload = {"t_max_ms": 12.75, "candidates": [top, knee, fast]}
+
+    rec = denoised_winner_record(knee, payload, baseline_latency_ms=12.75,
+                                 old_alpha_arch=top["arch"])
+    assert rec["acc"] == 0.6101                 # reference acc = the de-noised MEAN
+    assert rec["cached_acc"] == 0.6238          # the biased single-seed value it replaces
+    assert rec["reproduction"]["passes"] is True   # |0.6238-0.6101| = 0.0137 <= 0.020
+    assert rec["denoised_rank"] == 1            # knee is 2nd by mean (top 0.6236 is 1st)
+    assert decode(rec["vector"]) == rec["arch"]    # winner vector round-trips
+    # provenance of the corrected curse
+    assert rec["winners_curse"]["rejected_single_seed_alpha"]["arch_d"] == [2, 2, 4, 4, 2]
+    assert rec["winners_curse"]["averted_second_curse"]["arch_d"] == [2, 4, 3, 4, 4]
+    assert rec["vs_yolo11n"]["latency_speedup_pct"] > 10   # 11.21 vs 12.75 ~ 12%
+
+
+def test_denoised_winner_record_repro_fails_when_far() -> None:
+    from search.denoise import denoised_winner_record
+    # cached 0.65 but de-noised mean 0.61 -> |delta| 0.04 > band 0.02 -> repro fails
+    cursed = _enriched(0.65, 11.7, [2, 2, 4, 4, 3], mean=0.61, std=0.025)
+    rec = denoised_winner_record(cursed, {"t_max_ms": 12.75, "candidates": [cursed]},
+                                 repro_band=0.02)
+    assert rec["reproduction"]["passes"] is False
