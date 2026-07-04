@@ -203,6 +203,7 @@ def short_finetune(
     max_steps: int | None = None,
     head_weights: Any = None,
     freeze_head: bool = False,
+    save_to: Any = None,
 ) -> dict[str, float]:
     """Fine-tune a sampled OFA-backbone pose model ~``epochs`` epochs; return its pose mAP.
 
@@ -214,6 +215,11 @@ def short_finetune(
     locks it (CP 2.4 proxy repair): with a frozen, competent head the optimizer trains only the
     backbone+adapter, so the score reflects backbone quality not head-init luck. Both default off
     (the original fresh-random-head proxy).
+
+    ``save_to`` (CP 3.5 winner export) persists the fine-tuned model's ``state_dict`` to that path
+    after training — the "weights" half of the winner-v1 artifact. The whole grafted model is saved
+    (backbone + adapter + head) so a reload is self-contained: pair it with the arch to rebuild.
+    No-op when ``None``.
     """
     import torch
 
@@ -243,6 +249,11 @@ def short_finetune(
                 break
         if max_steps is not None and step >= max_steps:
             break
+
+    if save_to is not None:  # CP 3.5: persist the fine-tuned weights (the winner-v1 artifact)
+        from pathlib import Path
+        Path(save_to).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), str(save_to))
 
     return pose_map_model(model, data_yaml=data_yaml, imgsz=imgsz, device=device)
 

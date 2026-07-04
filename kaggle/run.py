@@ -27,6 +27,7 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
+MODE       = "verify_winner"      # "search" (CP 3.3/3.4) or "verify_winner" (CP 3.5 winner DoD)
 METHOD     = "tpe"                 # search proposer: "bo" (CP 3.3, closed) or "tpe" (CP 3.4).
 #   Same DoD/oracle/ceiling; only the sampler differs. TPE writes '.seed{s}.tpe.jsonl' shards
 #   and REUSES CP 3.3's cached '.seed{s}.rs.jsonl' random control (free), so a TPE session
@@ -44,6 +45,10 @@ SEEDS      = 5                    # the 5-seed DoD
 BUDGET     = 50                   # BO budget per seed (decision D2)
 N_INIT     = 20                   # initial-design size
 DEADLINE_H = 10.5                 # stop new evals after this many h (clean resumable boundary)
+# CP 3.5 (MODE="verify_winner"): reload state/winner_v1/winner.json + reproduce its cached proxy
+# mAP over VERIFY_SEEDS fresh warm-head fine-tunes; PASS iff the mean is within VERIFY_BAND.
+VERIFY_SEEDS = "1,2,3"            # 3-seed averaging for the winner check (PROJECT_PLAN.md:598)
+VERIFY_BAND  = 0.020             # reproducibility noise band on |mean(fresh) − cached| mAP
 # -----------------------------------------------------------------------------
 
 
@@ -114,6 +119,28 @@ def main() -> None:
 
     # 4. OFA supernet checkpoint (internet on; SHA-verified in supernet/download_ofa.py)
     sh(f"{sys.executable} -m supernet.download_ofa")
+
+    # 4.7 CP 3.5 winner verification: a single warm-head re-fine-tune of the serialized α*, not a
+    #     search. Reuses the head donor + dataset + checkpoint wired above; writes repro.json
+    #     (+ weights.pt) beside state/winner_v1/ and copies both to /kaggle/working for --pull.
+    if MODE == "verify_winner":
+        winner_dir = repo / "state" / "winner_v1"
+        cmd = (f"{sys.executable} -m eval.verify_winner --winner-dir {winner_dir} "
+               f"--head-weights {head} --freeze-head --device cuda --imgsz 640 "
+               f"--batch 16 --seeds {VERIFY_SEEDS} --band {VERIFY_BAND}")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode  # rc=1 is a valid DoD-FAIL verdict
+        for name in ("repro.json", "weights.pt"):
+            src = winner_dir / name
+            if src.exists():
+                shutil.copy(src, work / name)
+        if not (work / "repro.json").exists():
+            raise SystemExit(f"eval.verify_winner produced no repro.json (rc={rc})")
+        payload = json.loads((work / "repro.json").read_text())
+        print(f"[done] repro.json: passes={payload.get('passes')} "
+              f"cached={payload.get('cached_acc')} fresh_mean={payload.get('fresh_mean')} "
+              f"delta={payload.get('delta')}", flush=True)
+        return
 
     # 4.5 resume: Kaggle wipes /kaggle/working between commits, so the eval caches must
     #     round-trip through the persistent /kaggle/input plane. A notebook can't attach
