@@ -112,3 +112,25 @@ campaign. 1-GPU or 1-seed sessions run sequentially. So for the DoD, pick **GPU 
 > Precision/resolution note: until the Jetson @640 LUT sweep lands (see
 > `lut/docs/jetson_640_runbook.md`), keep `RES=224` — the fine-tune still trains at
 > `imgsz=640`, only the latency/feasibility lookup uses the measured @224 LUT.
+
+## Side experiment — `MODE="full_finetune"` (winner-v1's full-train mAP)
+
+Not a checkpoint, not Phase 8 (no teacher/distillation). Winner-v1's only accuracy number is
+the 5-epoch warm-head **proxy** mAP (0.610); this mode runs a **longer, un-frozen** fine-tune
+of the exact same architecture (`eval/full_finetune.py`) to see how far it gets on its own —
+warm-started from the gate head donor but left trainable, 100 epochs by default
+(`FULL_FT_EPOCHS`/`FULL_FT_SEEDS`/`FULL_FT_FREEZE_HEAD` in `run.py`'s CONFIG block).
+
+**Wall-clock:** a single arch at 100 epochs on the 2842-image gate set is a **~1–3 h, one-session
+job** (CP 2.4's own 100-epoch full-train diagnostic put 10 archs at "can exceed ~9–12 h", i.e.
+≲1.2 h/arch; anchor B's *full Ultralytics trainer* took ~2.8 h for 120 epochs at batch 16) — no
+`--resume` dance needed, unlike the CP 3.3/3.4 multi-day searches. No `--data` restage either:
+it reuses the dataset/LUT/head donor already attached, so just `bash kaggle/push.sh`.
+
+**Output:** `/kaggle/working/full_finetune.json` (+ `full_finetune_weights.pt`), pulled the same
+way. Read the result against `eval/full_finetune.py`'s own `PROTOCOL_CAVEAT`: this uses the
+repo's bare-AdamW `short_finetune` loop (the same one `eval/proxy_rank.py` already established
+as the 100-epoch "full" precedent), **not** the Ultralytics full-trainer recipe (SGD + LR decay
++ warmup + augmentation schedule) that produced the yolo11n/yolo11s anchor mAPs (0.8774/0.8819).
+So the number is directly comparable to CP 2.4's own 0.778–0.850 full-train cluster and to
+winner-v1's 0.610 proxy — not strictly apples-to-apples with the two anchors.

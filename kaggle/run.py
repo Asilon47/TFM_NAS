@@ -27,7 +27,9 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
-MODE       = "denoise"            # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5 re-score)
+MODE       = "full_finetune"      # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
+#   re-score) | full_finetune (side experiment: winner-v1's proxy-protocol full-train mAP —
+#   NOT a checkpoint, NOT Phase 8 distillation; see eval/full_finetune.py)
 METHOD     = "tpe"                 # search proposer: "bo" (CP 3.3, closed) or "tpe" (CP 3.4).
 #   Same DoD/oracle/ceiling; only the sampler differs. TPE writes '.seed{s}.tpe.jsonl' shards
 #   and REUSES CP 3.3's cached '.seed{s}.rs.jsonl' random control (free), so a TPE session
@@ -49,6 +51,11 @@ DEADLINE_H = 10.5                 # stop new evals after this many h (clean resu
 # mAP over VERIFY_SEEDS fresh warm-head fine-tunes; PASS iff the mean is within VERIFY_BAND.
 VERIFY_SEEDS = "1,2,3"            # 3-seed averaging for the winner check (PROJECT_PLAN.md:598)
 VERIFY_BAND  = 0.020             # reproducibility noise band on |mean(fresh) − cached| mAP
+# MODE="full_finetune": a longer, un-frozen fine-tune of winner-v1 to see its (proxy-protocol)
+# full-train mAP. Single-seed by default — this is the "quick" side experiment, not a DoD.
+FULL_FT_EPOCHS      = 100         # matches eval.proxy_rank's own full_epochs precedent
+FULL_FT_SEEDS       = "0"
+FULL_FT_FREEZE_HEAD = False       # warm-start but keep training the head (default in the script)
 # -----------------------------------------------------------------------------
 
 
@@ -140,6 +147,31 @@ def main() -> None:
         print(f"[done] repro.json: passes={payload.get('passes')} "
               f"cached={payload.get('cached_acc')} fresh_mean={payload.get('fresh_mean')} "
               f"delta={payload.get('delta')}", flush=True)
+        return
+
+    # 4.75 Side experiment: a longer, un-frozen fine-tune of winner-v1 (NOT a checkpoint, NOT
+    #      Phase 8 distillation — see eval/full_finetune.py's module docstring for the protocol
+    #      caveat). Reuses the head donor + dataset + checkpoint wired above; writes
+    #      full_finetune.json (+ full_finetune_weights.pt) beside state/winner_v1/ and copies
+    #      both to /kaggle/working for --pull.
+    if MODE == "full_finetune":
+        winner_dir = repo / "state" / "winner_v1"
+        freeze_flag = "--freeze-head" if FULL_FT_FREEZE_HEAD else "--no-freeze-head"
+        cmd = (f"{sys.executable} -m eval.full_finetune --winner-dir {winner_dir} "
+               f"--head-weights {head} {freeze_flag} --device cuda --imgsz 640 --batch 16 "
+               f"--epochs {FULL_FT_EPOCHS} --seeds {FULL_FT_SEEDS}")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        for name in ("full_finetune.json", "full_finetune_weights.pt"):
+            src = winner_dir / name
+            if src.exists():
+                shutil.copy(src, work / name)
+        if not (work / "full_finetune.json").exists():
+            raise SystemExit(f"eval.full_finetune produced no full_finetune.json (rc={rc})")
+        payload = json.loads((work / "full_finetune.json").read_text())
+        print(f"[done] full_finetune.json: proxy={payload.get('proxy_acc')} "
+              f"full_mean={payload.get('mean')} delta_vs_proxy={payload.get('delta_vs_proxy')}",
+              flush=True)
         return
 
     # 4.8 CP 3.5 de-noise: re-score the pinned top-K candidates at fresh seeds to remove the
