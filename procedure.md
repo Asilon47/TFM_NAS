@@ -2319,3 +2319,82 @@ fine-tune can be stopped early with no effect on α*. Code: `search/select_winne
 end of the line, all ≫ anchor A's 12.755 ms): yolo11s 21.69 ms / 43.6 MiB, yolo11m 43.43 ms /
 79.2 MiB, yolo11l 55.79 ms / 81.5 MiB (`data/anchor_yolo11{s,m,l}_pose_640.json`). Anchor-B
 *accuracy* (yolo11s gate fine-tune, CPU) is the only remaining input, and only for the check.
+
+## CP 3.4 CLOSED — TPE fallback reproduces BO; the warm-start (not the acquisition) drives it (2026-07-04)
+
+**DoD met — literal scope** (`PROJECT_PLAN.md:246`, "same dominance test as CP 3.3"; the
+*interpretation* is corrected in Finding 1 — the pass is the warm-start, not the Bayesian
+layer). `search/tpe.py`
+(Optuna MOTPE) re-ran the warm-head BO-vs-random hypervolume test @640, reusing the
+method-agnostic `search/bo.py` machinery (`pareto_hypervolume` / `feasible` /
+`random_search_control`), the 302-arch acc-memo, and the **cached CP 3.3 random control**.
+Verdict (`data/cp33_kaggle_out/cp34_tpe.json`, `passes:true`, `complete:true`, 5 seeds,
+budget 50, res 640, `T_max=12.75 ms`):
+
+| Metric | TPE (CP 3.4) | BO (CP 3.3) | Random (shared control) |
+|---|---|---|---|
+| Hypervolume | 3.414 ± 0.023 | 3.441 ± 0.022 | 2.088 ± 0.211 |
+| vs random | 1.64× | 1.65× | — |
+| Seeds won | 5/5 (1.42–1.84×) | 5/5 | — |
+
+Provenance: the 5-seed run completed (`cp34_tpe.part0.json` already carried all 5 seeds
+`complete:true`); the multi-backend Kaggle→Colab resume merged clean into the authoritative
+`cp34_tpe.json`.
+
+**Finding 1 — the win is the NSGA-II warm-start, NOT the Bayesian acquisition (corrected
+2026-07-04).** *An earlier draft of this entry claimed TPE≈BO proved "the search is guided,
+not a BoTorch quirk." That is wrong, caught by the question "couldn't TPE≈BO just be the
+shared NSGA-II pre-run?"* Both `run_bo` and `run_tpe` seed their initial design from the
+**same** CP 3.2 NSGA-II frontier (`search/tpe.py:139`: "BO uses these as seeds too";
+`search/bo.py:516`), while `random_search_control` (`search/bo.py:571`) gets **no** seeds.
+So the DoD compares warm-started search against a **cold** control, and TPE≈BO is largely
+forced by the shared seeds. A free ablation — rebuild the control **with** the warm-start
+from the cached `*.rs.jsonl` evals + `data/phase3_nsga2_frontier.json`, common ref
+(0, 12.75 ms), 5 seeds (HV method reproduces every stored per-seed HV exactly) — decomposes it:
+
+| Configuration | Hypervolume | isolates |
+|---|---|---|
+| cold random (the DoD control) | 2.088 ± 0.211 | no warm-start, no guidance |
+| NSGA-II seeds alone (11 pts) | 3.357 | the warm-start only |
+| **warm random** = 11 seeds + 39 *random* (matched 50) | **3.403 ± 0.013** | warm-start + dumb fill |
+| TPE = 11 seeds + 39 TPE-picked | 3.414 ± 0.023 | warm-start + tree-Parzen |
+| BO = ~20 init + 30 BO-picked | 3.441 ± 0.022 | warm-start + GP/qLogEI |
+
+Of the 1.353 BO−cold-random gap, the **warm-start is +1.315 (97 %)** and the **acquisition
+is BO +0.038 / TPE +0.011 (1–3 %)** over a *budget-matched warm-random* control. Under the
+DoD's own band rule (`mean−std > mean+std`), TPE (lower band 3.391) does **not** clear
+warm-random (upper band 3.416); BO clears it by 0.003 (noise). The "~10× tighter std" is
+also just the fixed seed set — warm-random's std (0.013) is *tighter* than either optimizer.
+34–38 % of each "converged" frontier is literally unchanged NSGA-II seeds (though α*,
+d=[2,2,4,4,3], is a genuine BO discovery, not a seed).
+
+**Threat to validity (recorded, not re-run — the ablation above IS the fair-control result).**
+The CP 3.3/3.4 DoD control is **cold** random, so "search ≫ random" conflates the structural
+warm-start with the Bayesian layer. The **fair** control is warm-started random, and it ≈
+BO/TPE. So CP 3.3/3.4 honestly certify only that *the warm-started pipeline (NSGA-II → BO/TPE)
+beats cold random* and that *TPE is a valid drop-in for BO* — they do **not** show the
+acquisition function is the driver; on this task it isn't. The checkpoints stay CLOSED under
+that corrected, narrower scope. *Why* the acquisition has no room is **Finding 2**: a near-flat
+frontier is already traced by a good structural depth-staircase, so BO/TPE find almost nothing
+NSGA-II's spread didn't already cover — the warm-start and saturation findings are one story.
+
+**Finding 2 — the gate task is accuracy-saturated (anchor B landed).** yolo11s-pose
+full-train mAP **0.8819** @ 21.69 ms vs yolo11n-pose 0.8774 @ 12.75 ms: **+70 % latency
+buys +0.5 % mAP** → two-anchor λ ≈ **0.0005 acc/ms**, an order of magnitude under the search
+frontier's own ~0.03 slope. This vindicates the CP 3.5 ceiling-first refinement: when
+accuracy saturates, the fastest arch on the plateau wins, and the `λ·latency` term cannot
+flip the pick. (Heads-up for Phase-8 teacher choice: a bigger teacher may offer little
+accuracy headroom on this task; yolo11m/l mAP is still unmeasured.)
+
+**Finding 3 — the λ-robustness check now runs and passes.** With anchor B's accuracy on
+disk, `search.select_winner` over the BO∪TPE union (130/130 feasible under `T_max=12.75 ms`)
+picks α* = `[bo, seed 0]`: proxy acc **0.650**, latency **11.744 ms** (< 12.75 → faster
+than yolo11n), d=[2,2,4,4,3]. `winner_is_lambda_stable`: **stable=True, agree 1.00** across
+the 7-point log-λ grid (0.00025…0.0010 acc/ms) — the ceiling-first winner is J-optimal at
+every λ, so the linearising two-anchor secant never changes the decision.
+
+**Scope caveat (carries to CP 3.5 / Phase 8).** Frontier accs (0.47–0.65) are the **5-epoch
+warm-head PROXY mAPs** (the CP 2.4 ranking signal), NOT comparable to the full-train 0.877
+baseline. α*'s *faster-than-yolo11n* is real (LUT-exact latency); the *deployable-accuracy*
+dominance claim is Phase 8. **Next = CP 3.5** (winner-v1 export; DoD = reload α* in a clean
+session and reproduce its cached proxy acc within noise → needs a Colab fine-tune).
