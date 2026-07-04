@@ -27,7 +27,7 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
-MODE       = "verify_winner"      # "search" (CP 3.3/3.4) or "verify_winner" (CP 3.5 winner DoD)
+MODE       = "denoise"            # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5 re-score)
 METHOD     = "tpe"                 # search proposer: "bo" (CP 3.3, closed) or "tpe" (CP 3.4).
 #   Same DoD/oracle/ceiling; only the sampler differs. TPE writes '.seed{s}.tpe.jsonl' shards
 #   and REUSES CP 3.3's cached '.seed{s}.rs.jsonl' random control (free), so a TPE session
@@ -140,6 +140,29 @@ def main() -> None:
         print(f"[done] repro.json: passes={payload.get('passes')} "
               f"cached={payload.get('cached_acc')} fresh_mean={payload.get('fresh_mean')} "
               f"delta={payload.get('delta')}", flush=True)
+        return
+
+    # 4.8 CP 3.5 de-noise: re-score the pinned top-K candidates at fresh seeds to remove the
+    #     single-seed winner's curse. Resumable via a per-(arch,seed) cache round-tripped through
+    #     /kaggle/working (Kaggle wipes it per commit; push.sh --resume versions it if partial).
+    if MODE == "denoise":
+        cand = repo / "state" / "winner_v1" / "denoise_candidates.json"
+        cache = work / "denoise_cache.jsonl"
+        prior = sorted(input_root.rglob("denoise_cache*.jsonl")) if input_root.exists() else []
+        for src in prior:
+            if not cache.exists():
+                shutil.copy(src, cache)
+                print(f"[resume] restored denoise cache {src.name}", flush=True)
+        out_dn = work / "denoise.json"
+        cmd = (f"{sys.executable} -m search.denoise --candidates {cand} "
+               f"--head-weights {head} --freeze-head --device cuda --imgsz 640 --batch 16 "
+               f"--seeds {VERIFY_SEEDS} --cache {cache} --out {out_dn}")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        if not out_dn.exists():
+            raise SystemExit(f"search.denoise produced no denoise.json (rc={rc})")
+        print("[done] denoise.json written — pull it, then re-select on CPU via "
+              "search.denoise.select_denoised.", flush=True)
         return
 
     # 4.5 resume: Kaggle wipes /kaggle/working between commits, so the eval caches must
