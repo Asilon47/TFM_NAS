@@ -36,7 +36,7 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["catalog", "detect", "eval", "search", "supernet", "lut", "tests"]
+files = ["catalog", "detect", "eval", "expand", "net2net", "search", "supernet", "lut", "tests"]
 exclude = "lut/bench/"
 
 [[tool.mypy.overrides]]

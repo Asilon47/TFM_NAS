@@ -14,11 +14,12 @@ accuracy/latency frontier for **drone-racing gate detection + 8-keypoint pose**
 sample subnets from a pretrained **OFA supernet** and use each as a **backbone**
 under a **YOLO11-pose head**, score them with a **Jetson-measured latency LUT**
 plus a short pose fine-tune (**pose mAP / OKS**), and let **Bayesian
-Optimization** guide the search. **Net2Net** transforms warm-start weights when
-BO proposes a nearby architecture, so each evaluation costs ~5 epochs instead of
-full training. Once the search settles, the winning architecture is
-**distilled** against a bigger **YOLO11-pose** teacher for its final deployable
-weights (Phase 8).
+Optimization** guide the search. A warm-started, **frozen gate-trained head**
+makes each evaluation a ~5-epoch fine-tune instead of full training (**Net2Net**
+transforms now serve the post-search graft refinement, Phase 5). Once the search
+settles, the winner is refined at the graft seam, pruned, and **distilled**
+against a bigger **YOLO11-pose** teacher for its final deployable weights
+(Phase 8).
 
 ---
 
@@ -32,7 +33,7 @@ weights (Phase 8).
 
 ---
 
-## Current state (as of last update: CP 3.1/3.2 CLOSED + CP 3.3 buildable slice BUILT — search runnable, awaiting Jetson/Kaggle runs, 2026-06-28)
+## Current state (as of last update: PHASE 3 COMPLETE + plan pivot — Phases 5–7 re-scoped to winner refinement, 2026-07-05)
 
 - **Phase 0 (LUT):** COMPLETE. `data/lut.jsonl` holds all 2710 *measured* rows
   (`source=jetson_trt`, fp32, TRT 10.3.0, clocks locked); the original dummy lives
@@ -121,53 +122,76 @@ weights (Phase 8).
 - **CP 3.2:** CLOSED (2026-06-27) — `search/evolution.py`: pymoo NSGA-II over `(depth_sum, latency_ms)`,
   11-point depth-staircase frontier (≥10 DoD). The reusable structural baseline + BO warm-start seeds
   (`data/phase3_nsga2_frontier.json`).
-- **CP 3.3 (BO):** buildable slice **BUILT, still OPEN** (2026-06-28). `search/bo.py` = ParEGO + BoTorch
-  `MixedSingleTaskGP` + `qLogEI` over the feasible pool (latency exact from the LUT, only accuracy
-  GP-modeled; hard ceiling pre-filters); CPU structural smoke beats random (HV 9.69 vs 3.66, DoD PASS).
-  Catalog made resolution-aware for the @640 pose grid (append-only, 2710→2801 rows). Jetson artifacts
-  (`lut/orchestrate/bench_model.py`, `detect/export_baseline_onnx.py`, `lut/docs/jetson_640_runbook.md`)
-  + Kaggle push automation (`kaggle/`) prepared. **CLOSE needs:** the Jetson @640 sweep + yolo11n-pose
-  baseline, then the Kaggle 5-seed warm-head BO-vs-random DoD. See `procedure.md` "CP 3.3 — buildable slice".
-- **Phases 4–9:** Planned (see `PROJECT_PLAN.md`).
+- **CP 3.3 (BO):** CLOSED — `search/bo.py` (ParEGO + BoTorch `MixedSingleTaskGP` + `qLogEI`; latency
+  LUT-exact, only accuracy GP-modeled; hard ceiling pre-filters). The @640 LUT (2710→2801 rows) + the
+  yolo11n-pose anchor landed (`data/baseline_anchor.json`: **12.755 ms** → `T_max=12.75`); 5-seed
+  warm-head DoD on Kaggle: **BO HV 3.441±0.022 vs cold random 2.088±0.211**, wins 5/5. Scope caveat
+  (recorded at CP 3.4): warm-random ≈ BO/TPE, so the claim is "warm-started pipeline > cold random",
+  not "the acquisition is the driver". See `procedure.md` "CP 3.3".
+- **CP 3.4 (TPE):** CLOSED (2026-07-04) — `search/tpe.py` (Optuna MOTPE) reproduces BO within 0.8 %
+  (HV 3.414±0.023); the warm-random ablation (3.403) is the recorded threat-to-validity. Anchor B:
+  yolo11s-pose **0.8819 @ 21.69 ms** ⇒ the task is accuracy-saturated (+70 % latency → +0.5 mAP).
+  See `procedure.md` "CP 3.4 CLOSED".
+- **CP 3.5 (winner-v1):** CLOSED (2026-07-04) — **PHASE 3 COMPLETE.** The reproduce-DoD caught a
+  single-seed **winner's curse** (α* cached 0.650 → fresh 3-seed 0.610, rejected); the top-12 were
+  re-scored at seeds {1,2,3} (`search/denoise.py`) and the winner re-picked on de-noised means: the
+  knee **d=[2,2,4,3,3] @ 11.208 ms** (backbone LUT sum), proxy mAP **0.6101±0.0049** — the "12 %
+  faster than yolo11n" headline carries the Stage-0 caveat below. Tie-band sensitivity is
+  reproducible via `python -m search.denoise_report`. Side experiment (`e2bfc17`): 100-epoch
+  bare-AdamW full-FT of winner-v1 → **0.841** vs baseline 0.877 (single seed, recipe-confounded).
+  See `procedure.md` "CP 3.5 CLOSED".
+- **PLAN PIVOT (2026-07-05):** Phases 5–7 **re-scoped** (user decision; **D3 RESOLVED → descoped**).
+  Out: supernet expansion + re-search (ImageNet-framed DoDs pre-dating the pose pivot; Phase-6
+  supernet fine-tune free-tier-infeasible; proxy noise σ 0.005–0.025 exceeds the frontier's
+  top-cluster gaps ~0.014 → an enriched space is unrankable by the oracle). In: **Phase 5 =
+  graft-interface ablation → winner-v1.5** (the graft is neck-less with random-init 1×1 adapters —
+  the accuracy seam; Net2Wider adapter init + zero-gated top-down "nano-neck"), **Phase 6 = DepGraph
+  structured pruning → winner-v2** (measured-only latencies), **Phase 7 = recipe-parity training**
+  (the 0.841-vs-0.877 gap is recipe-confounded; CP 7.2 is the baseline CP 8.3 must beat). Phase 4
+  kept (CP 4.4 → graft-seam adapter init). **OWED FIRST (Stage 0):** the grafted winner was never
+  benched end-to-end — 11.208 ms is backbone-blocks-only vs the baseline's full-network 12.755 ms;
+  the pose stem/adapter/head offset is unmeasured (`data/stem_head_offset.json` is the *classifier*
+  head @224). Export grafted + backbone-only ONNX → `bench_model` on the Nano (mode 0) →
+  `data/pose_stem_head_offset.json` → additively re-stamp `winner.json` with the honest e2e speedup;
+  fallbacks `[2,2,4,3,2]` / `[2,4,3,4,4]` benched in the same session. See `procedure.md` "Plan pivot".
+- **Phases 4–9:** re-scoped plan in `PROJECT_PLAN.md` (rewritten 2026-07-05; the old expansion text
+  lives in git history).
 
 ### Known blockers
 
-- **CUDA / `.venv-nas` (laptop).** `torch.cuda.is_available()` is False here, `nvidia-smi`
-  isn't on PATH, and **`.venv-nas` is not currently built** (only `.venv` exists) — so every
-  OFA/ultralytics fine-tune runs on **Colab free T4** (Kaggle GPU quota exhausted; TPU can't run this
-  stack), not locally. The CP 2.4 warm-head re-test is **done** (closed CP 2.4 — see Current state),
-  and its close re-stamp ran **CPU-only** in `.venv` (`--reverdict`). Pure logic (`rank_verdict`,
-  `full_noise_verdict`, `assemble_verdict`) is unit-tested in `.venv`/CI, and `run_protocol`'s /
-  `run_full_diagnostic`'s resume/guard/verdict paths are covered by **stubbed-fine-tune** tests, so
-  the orchestration is verified without a GPU. **Next GPU work is Phase-3-adjacent, not a CP 2.4
-  blocker:** the owed **640-res LUT re-sweep** + **baseline yolo11n-pose anchor** stay Jetson-gated
-  (anchor's *mAP half* runs on CPU via `detect.evaluate.pose_map`); Phase 3 search fine-tunes run on
-  Colab.
+- **CUDA / `.venv-nas` (laptop).** `torch.cuda.is_available()` is False and **`.venv-nas` is not
+  currently built** (only `.venv` exists) — rebuild via `bash scripts/setup_laptop_nas.sh` before
+  Stage 0's ONNX export (CPU-only torch is fine for export). GPU fine-tunes run remotely:
+  **Kaggle (quota restored 2026-07-05)** is primary, Colab free T4 the backup, and the **AGX Orin**
+  runs long trains via the `jetson/` Docker kit. The Orin Nano 8 GB stays measurement-only
+  (TensorRT in Docker; mode 0 + locked clocks via `scripts/setup_jetson.sh` — since the JetPack
+  update the board *idles* in the 25 W/918 MHz Super regime, so never bench without the setup
+  script; every repo latency is a 612 MHz mode-0 number).
+- **Stage 0 owed:** winner-v1's end-to-end latency is unmeasured (see the pivot bullet). Until it
+  lands, do not reuse the "12 % faster" figure in new claims.
 
 ### Lowest-friction next build
 
-**CP 3.3 is code-complete (`search/bo.py`) but OPEN** — closing it is now *running* the prepared remote
-artifacts, not writing code. Three steps, in order:
+**Stage H (housekeeping + plan rewrite) is done (2026-07-05); three tracks are open in parallel:**
 
-1. **Jetson (run `lut/docs/jetson_640_runbook.md`).** `bash scripts/setup_jetson.sh` →
-   `python -m lut.orchestrate.run_sweep` (idempotent — measures only the 91 new @640 rows; the 2710 @224
-   rows are skipped) → export yolo11n-pose ONNX (`python -m detect.export_baseline_onnx`, where ultralytics
-   lives) → `python -m lut.orchestrate.bench_model --onnx … --imgsz 640` → `data/baseline_anchor.json`.
-   Gives the @640 LUT + the `T_max = min(baseline, 16.7 ms)` ceiling.
-2. **Kaggle (`kaggle/README.md`).** Save your `KGAT_` token at `secrets/access_token` + username at
-   `secrets/kaggle_username` (both gitignored), `bash kaggle/push.sh --data`
-   (uploads dataset/ + the @640 LUT + seeds + gate head), then `bash kaggle/push.sh`. `run.py`'s CONFIG
-   defaults to a cheap proving run (`--calibrate` + 1 seed); bump to `SEEDS=5, BUDGET=50, RES=640` for the
-   real DoD → `cp33_bo.json` (BO-vs-random hypervolume verdict). `bash kaggle/push.sh --pull` fetches it.
-3. **Record CP 3.3 CLOSED** if the verdict passes (advance `state/plan_state.yaml`, `procedure.md`); also
-   set the λ/μ *numbers* from the @640 baseline (the iso-J anchors).
+1. **Stage 0 — Jetson truth (highest value, ~hours).** `bash scripts/setup_laptop_nas.sh` (rebuild
+   `.venv-nas`; CPU torch is fine for export) → build `detect/export_grafted_onnx.py`
+   (`head.export=True; head.format="onnx"`, opset 17, static 640, `--backbone-only` flag, meta
+   sidecar, onnxruntime smoke-load) → `bash scripts/setup_jetson.sh` → five
+   `python -m lut.orchestrate.bench_model --imgsz 640 --out data/e2e/<name>.json` runs (baseline
+   recheck, winner e2e, winner backbone-only, both fallbacks) → new `search/pose_offset.py` +
+   `search/stamp_winner_e2e.py` (additive `e2e` block only — never mutate existing `winner.json`
+   keys) → honest speedup + procedure entry. If winner e2e ≥ baseline e2e → user re-pick from the
+   already-benched fallbacks (ceiling-first rule).
+2. **Stage 1 — CP 4.1–4.4 (laptop, CPU, no blockers).** `net2net/wider.py` → `deeper.py` →
+   `bn.py` → `graft_init.py`; tests in `tests/` (not `net2net/tests/`); one CP close each.
+3. **Stage R — ars-3w literature scans** (gate only Stage-2 design detail): graft-interface/neck
+   design for transplanted backbones; pruning+KD on Jetson-class GPUs; expansion-cost evidence →
+   `docs/research/stageR_*.md` + a procedure entry naming what each scan changed.
 
-**No CPU work remains for CP 3.3.** The signals are wired: warm-head proxy = accuracy
-(`eval.shortft.short_finetune --head-weights <gate best.pt> --freeze-head`), `search.cost.cost(…, res=640)`
-= LUT latency, `search.objective` = the D4 J(α). `python -m search.bo --structural` is the no-GPU smoke.
-After CP 3.3 closes, **CP 3.4 (TPE fallback)** / **CP 3.5 (winner export)**, then **D3** (CP 5.3 SOTA-block
-injection) is the only remaining open design fork.
-Donor for the warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
+Then Stage 2 (Phase 5 ablation → winner-v1.5; needs Stages 0+1+R), Stage 3 (Phase 6 pruning),
+Stage 4 (Phases 7–8), Stage 5 (Phase 9).
+Donor for every warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
 whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 
 ### Open design decisions (do not resolve unilaterally)
@@ -176,7 +200,7 @@ whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 |---|---|---|
 | ~~D1~~ | **RESOLVED 2026-06-18 → gate-pose** (`dataset/`; OFA backbone + YOLO11-pose head) | — |
 | ~~D2~~ | **RESOLVED 2026-06-27 → B=50** (CP 3.3 BO per-run budget; `5·(2B−n_init)`=400 warm-head fine-tunes / 5 seeds; NSGA-II free). Phase-7 budget → CP 7.2 | — |
-| D3 | Which SOTA blocks to inject (FusedMBConv, ConvNeXt, MobileViT) | CP 5.3 |
+| ~~D3~~ | **RESOLVED 2026-07-05 → descoped** (supernet expansion left the plan with the winner-refinement pivot; FusedMBConv survives only as the optional, evidence-only CP 5.0 LUT screen). See `procedure.md` "Plan pivot" | — |
 | ~~D4~~ | **RESOLVED 2026-06-27 → Pareto + hard latency ceiling** (multi-objective `(acc_eff, latency)`, `latency ≤ T_max=min(baseline, 60 FPS→16.7 ms)`; soft μ² folded into `acc_eff`, budget 512 MiB; λ ParEGO-sampled). Formula in `search/objective.py`. **REFINED at CP 3.5 (2026-07-02) → ceiling-first**: winner selection is now λ-free (`select_winner.ceiling_first_winner` = max acc under `T_max`); the two-anchor iso-J λ is a *secant/linearising* estimate (λ≈0.001–0.002 acc/ms here), so it is demoted to a **robustness check** (`winner_is_lambda_stable`), not the decision. α* needs neither anchor. See `procedure.md` "CP 3.5 refinement". | — |
 | D5 | Multi-device extension (out of scope for v1/v2) | v3 |
 
@@ -200,8 +224,8 @@ detect/       D1 pose pivot: OFA-backbone → YOLO11-pose-head graft (adapter.py
               pose_model.py: graft + warm_start_head/freeze_module) + pose-mAP eval (evaluate.py)
 eval/         Eval harness: imagenet_sanity.py (CP 1.4); shortft.py + proxy_rank.py (CP 2.4 —
               fine-tune + DoD driver + --diagnose-full noise floor + --reset-proxy warm-head re-test)
-net2net/      Phase 4: Net2Net operators stub
-expand/       Phase 5–6: supernet expansion stub
+net2net/      Phase 4: Net2Net operators (wider/deeper/bn/graft_init — Stage 1)
+expand/       Descoped expansion stub (2026-07-05) — will hold only the optional CP 5.0 screen
 distill/      Phase 8: KD harness (teacher = bigger yolo11-pose) stub
 state/        Checkpoint tracking (plan_state.yaml)
 data/         lut.jsonl + device_info.json (gitignored)
@@ -277,7 +301,7 @@ CUDA variant from PyPI).
 - Update the golden hashes in `tests/test_row_key.py` without a decision
   recorded in `procedure.md` — they pin the LUT key contract.
 - Commit anything in `data/` (it's gitignored for a reason — 50+ MB).
-- Resolve open decisions D3, D5 without a user conversation (D1, D2, D4 resolved).
+- Resolve open decision D5 without a user conversation (D1–D4 resolved).
 - Name a local Python package `ofa/` — it shadows the pip-installed OFA library.
   The wrapper is in `supernet/` for this reason.
 - Add Claude as a commit co-author, or include `Co-Authored-By:` /

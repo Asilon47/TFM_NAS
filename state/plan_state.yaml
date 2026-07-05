@@ -258,3 +258,22 @@ notes: |
   --out …/cp24_warmstart.json` → τ≥0.7 & Δ≤0.005 ⇒ CP 2.4 CLOSES; miss ⇒ run --diagnose-full. Donor:
   gate yolo11n-pose freezes cleanly; COCO → drop --freeze-head. Original cp24_proxy_rank.json
   untouched. See procedure.md "CP 2.4 — repair: head warm-start".
+
+  **Plan pivot 2026-07-05 (no checkpoint advance; current stays 4.1):** Phases 5–7 RE-SCOPED
+  (user decision, AskUserQuestion): supernet expansion + re-search DESCOPED → D3 RESOLVED
+  (descoped). Why: the old Phase-5/6 DoDs were ImageNet-framed (pre-dated the D1 pose pivot);
+  the Phase-6 expanded-supernet fine-tune is infeasible on free-tier GPUs ("fine-tune budget is
+  the bottleneck" — the plan's own note; OFA ≈ 1,200 V100-h); decisive: warm-head proxy σ
+  (0.005–0.025) exceeds the de-noised frontier's top-cluster gaps (~0.014) → an enriched space
+  is UNRANKABLE by the oracle (CP 3.5's winner's curse was this saturation biting). New content
+  (PROJECT_PLAN.md rewritten, numbering kept): Phase 5 = graft-interface ablation → winner-v1.5
+  (the graft is NECK-LESS with random-init adapters — the accuracy seam; Net2Wider adapter init
+  + ZeroGatedTopDownNeck, warm-head proxy + full-FT top-2, ceiling-first pick); Phase 6 =
+  DepGraph structured pruning → winner-v2 (measured-only latencies); Phase 7 = recipe-parity
+  training (the honest baseline CP 8.3 must beat — the 0.841 vs 0.877 gap is recipe-confounded);
+  Phase 4 kept, CP 4.4 re-aimed at the graft seam. OWED FIRST (Stage 0): the grafted winner has
+  NEVER been benched end-to-end — 11.208 ms is the backbone-blocks-only LUT sum vs the baseline's
+  full-network 12.755 ms (pose stem/adapter/head offset unmeasured; the classifier offset file
+  does not apply). Export grafted + backbone-only ONNX, bench on the Nano (mode 0!), write
+  data/pose_stem_head_offset.json, additively re-stamp winner.json with the honest e2e speedup;
+  fallbacks [2,2,4,3,2]/[2,4,3,4,4] benched in the same session. See procedure.md "Plan pivot".

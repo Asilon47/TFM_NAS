@@ -2485,3 +2485,122 @@ artifact is wanted.
 (0.610), NOT comparable to yolo11n's full-train 0.877 — the *latency* dominance (12 % faster) is real
 and LUT-exact; the *accuracy* dominance is Phase 8's to earn via distillation. **Phase 3 is complete.
 Next = CP 4.1** (Net2Wider — `net2net/wider.py`, function-preserving widen, unit-test to 1e-5).
+
+## Plan pivot — Phases 5–7 re-scoped to winner refinement; D3 RESOLVED → descoped (2026-07-05)
+
+**Not a checkpoint** (`current_checkpoint` stays 4.1; `completed` unchanged). A structural plan
+decision taken with the user at the Phase-3 → Phase-4 boundary, triggered by a full audit of the
+completed work plus the question "are the expansion phases still the right next step, or should we
+pivot to Net2Net head↔backbone compatibility / skip connections / pruning?".
+
+**The audit (what prompted this).** Two exploration passes over state/procedure/artifacts/code plus
+targeted verification re-reads found Phases 0–3 methodologically sound (measured LUT + additivity
+DoD; the CP 2.4 proxy failure → root-cause → repair → re-gate; the honest CP 3.4 warm-random
+correction; the CP 3.5 winner's-curse de-noise) and **two material findings**:
+
+1. **The "12 % faster than yolo11n" headline is not yet an end-to-end claim.** Winner-v1's
+   11.208 ms is the backbone-blocks-only LUT sum — every search call site passes `cost(arch, lut,
+   res=640)` with no `stem_head` offset and no calibration — while the baseline's 12.755 ms is a
+   full-network TensorRT measurement (backbone + PAN neck + pose head). `data/stem_head_offset.json`
+   (0.388 ms) is the OFA *classifier* stem+head at res 224, not the pose stem / ChannelAdapter /
+   Pose head at 640, which have **never been measured**. Two known corrections pull in opposite
+   directions — the CP 2.2 calibration says the raw sum *over*-predicts the backbone ~7 % (TRT
+   cross-seam fusion, slope 0.934, fitted @224), while the missing adapter+head is plausibly
+   1.5–3 ms — so the true margin is UNKNOWN and could be negative. Search *ranking* is unaffected
+   (the offset is arch-invariant; `search/cost.py` documents exactly this), but the absolute claim,
+   the T_max feasibility margin, and the thesis headline all rest on one unmeasured number.
+   **Consequence → Stage 0, owed before any further headline use:** export the grafted winner +
+   a backbone-only ONNX (`detect/export_grafted_onnx.py`, to be built — `head.export=True`,
+   opset 17, static shapes), bench end-to-end on the Nano (`lut/orchestrate/bench_model.py`,
+   mode 0), derive `data/pose_stem_head_offset.json` (= e2e − backbone; the stem rides inside the
+   backbone measurement — `arch_to_blocks` excludes `first_conv`, `PoseBackbone` includes it),
+   additively re-stamp `state/winner_v1/winner.json` with an `e2e` block + the honest speedup, and
+   bench the two de-noised fallbacks (`[2,2,4,3,2]` @10.73 sum, `[2,4,3,4,4]` @10.15 sum) in the
+   same session so a documented re-pick is data-ready if the margin collapses.
+
+2. **Accuracy dominance is still unearned** — known and flagged everywhere, but it *shapes* the
+   pivot: proxy 0.610; the e2bfc17 side experiment's full fine-tune reached **0.841 vs the
+   baseline's 0.877**, single-seed AND bare-AdamW vs the anchors' full Ultralytics recipe
+   (confounded). Meanwhile the graft is **neck-less** — three independently *random-initialized*
+   1×1 convs (never warm-started) bridge (40,112,160)→(64,128,256) straight into the Pose head,
+   with no cross-scale fusion anywhere — while the baseline carries a full PAN-FPN. CP 2.4 already
+   proved the head interface dominates the proxy signal (random head τ=0.20 → warm+frozen head
+   ρ=0.77). That seam is the accuracy lever the refinement phases now attack.
+
+Minor audit items: (a) three docs call the measurement regime "MAXN" — it is **mode 0 / 15 W /
+612 MHz locked** (on the Orin Nano *Super*, real MAXN is 25 W / 918 MHz and was never measured;
+the measured 62.5 GB/s DRAM confirms the non-Super regime). All latency artifacts are consistent
+612 MHz numbers, so every *relative* claim stands; wording fix lands with Stage 0. (b) The CP 3.5
+winner depends on a hand-picked tie-band (~0.015) — documented at the close; the new
+`search/denoise_report.py` (this pass) makes the sensitivity reproducible on demand:
+argmax / strict / typical / loose bands pick four different archs on the real `denoise.json`, and
+`--tie-band 0.015` reproduces the committed knee exactly. (c) Hygiene: stray 0-byte `a.out`
+removed; root scratch `evaluate_denoised.py` homed into `search/denoise_report.py` (+4 tests);
+`tests/test_runner_consistency.py` ast-pins RES=640 / T_MAX_MS=12.75 across the three runner kits
+(the triplication is deliberate — standalone remotes + RES-namespaced caches — the gate makes it
+safe); `net2net` + `expand` added to mypy coverage.
+
+**Why expansion (old Phases 5–7) lost.** The user's initial worry — "expansion would increase
+latency" — is the one failure mode the old plan already guarded against (options-not-capacity;
+CP 5.0 LUT screen; the T_max ceiling; "Net2Net never independently grows a model's latency"). The
+real reasons are: (1) **pre-pivot DoDs** — the old Phase 5/6 gates are ImageNet-framed ("OFA's
+published w=1.4 number within 2 %", forwards at 224², "day-0 accuracy of the expanded supernet");
+honest expansion post-D1 means rewriting both phases AND re-validating CP 2.4-style proxy fidelity
+for every injected block family. (2) **Compute** — the plan's own words: "fine-tune budget
+(Phase 6) is the bottleneck, not supernet size" and "OFA's full PS is 180+ GPU-days. We don't have
+that" (original OFA supernet training ≈ 1,200 V100-hours; free-tier Kaggle/Colab + a single AGX
+cannot amortize even a "light" version, and quota exhaustion already interrupted CP 3.3 once).
+(3) **Decisive — oracle saturation:** the warm-head proxy's per-arch σ (0.005–0.025) exceeds the
+de-noised frontier's top-cluster gaps (~0.014), and anchor B says the *task* saturates (+70 %
+latency → +0.5 mAP full-train). A richer space adds hypotheses the evaluator cannot distinguish —
+CP 3.5's winner's curse was precisely this saturation biting. D3's own recorded rule of thumb
+("run Phase 3 first, look where α* lands, don't inject speculatively"), evaluated on the Phase-3
+outcome, recommends against paying Phase 6. **D3 → RESOLVED (descoped)**; FusedMBConv survives as
+the optional evidence-only CP 5.0 LUT screen (Pareto report, no training).
+
+**The decision (user, AskUserQuestion, four answers).** Direction = **pivot to winner refinement**
+(the recommended option). Research = **ars-3w quick scans** before locking Stage-2 design details
+(graft-interface/neck literature; pruning+KD on Jetson-class GPUs; expansion-cost evidence for the
+thesis's descope defense). Timeline = **no hard deadline** (scope by value). Usable compute =
+**Colab free T4 + Kaggle (quota restored) + AGX Orin** (training via the `jetson/` kit); the Orin
+Nano 8 GB stays measurement-only (mode 0, locked clocks — the board now *idles* in the 25 W Super
+regime, so `scripts/setup_jetson.sh` before every session is mandatory).
+
+**The re-scoped Phases 4–9** (PROJECT_PLAN.md rewritten in place; numbering kept, content
+redefined; the old text lives in git history): **Phase 4 kept** — CP 4.1 Net2Wider / 4.2
+Net2Deeper / 4.3 BN re-estimation as written; CP 4.4 re-aimed at the graft seam
+(`net2net/graft_init.py`: identity-embedding ChannelAdapter init) instead of the obsolete
+OFA-space graph diff (no second search exists to warm-start). **Phase 5 = Graft-Interface
+Ablation → winner-v1.5**: CP 5.0 optional FusedMBConv LUT screen (evidence only); CP 5.1
+`detect/neck.py` `ZeroGatedTopDownNeck` (zero-init gates ⇒ day-0 identity) +
+`GraftedPoseModel(neck=)` with the `model[-1]`-is-head loss contract preserved and `neck=None`
+keeping old state_dicts loadable; CP 5.2 `eval/graft_ablate.py` — V0 control / V1 net2wider
+adapter / V2 +top-down neck / V3 optional bottom-up, each at the exact CP 3.5 warm-head protocol
+(5 ep, frozen gate donor, 3 seeds {1,2,3}, 640, batch 16), resumable cache
+`graft_ablate_e5_r640`, Kaggle `MODE="graft_ablate"`; CP 5.3 Nano e2e benches + AGX 100-epoch
+bare-AdamW full-FT of the top-2 (apples-to-apples with 0.841) → ceiling-first pick under the
+*measured e2e* T_max → `state/winner_v1_5/`. **Phase 6 = Structured Pruning → winner-v2**:
+DepGraph (`torch-pruning>=1.4,<2`, requirements-nas only), ignored_layers = head cv2/cv3/cv4
+last convs + dfl, round_to=16, head UNFROZEN during recovery (pruning upstream of a frozen
+consumer corrupts its weights), 15/30/45 % ladder × BN-re-estimate + recovery FT × per-point Nano
+bench → `data/pruning_curve.json`; measured-only latency claims (off-LUT-grid); a no-win outcome
+is recorded honestly and winner-v1.5 carries forward. **Phase 7 = Recipe-Parity Training**:
+`eval/recipe_ft.py` (SGD 0.937 nesterov, no-decay BN/bias groups, 3-ep warmup, cosine, EMA,
+close_mosaic; state_dict-only checkpoints — `GraftedPoseModel` is function-local, whole-model
+pickling crashes, the Ultralytics Trainer is deliberately not wrapped); CP 7.2's parity long-train
+is the baseline CP 8.3 must beat (the old CP 7.3 ↔ 8.3 pairing preserved); CP 7.3 = the honest
+gap table (proxy → bare-AdamW → parity → KD vs 0.877). **Phases 8–9 kept**, cross-references
+updated: teacher = in-repo yolo11s-pose 0.8819 vs a to-be-measured yolo11m-pose (user decision);
+KD treatment differs from CP 7.2 only by the teacher term (same init/recipe/seed); CP 9.2
+validates predicted-vs-measured (LUT sum + measured pose offset) on the *unpruned* winner-v1.5,
+the deployed pruned/distilled engine gets a measured-only figure.
+
+**Execution stages** (mirrored in the session task list): **H** = this pass. **R** = ars-3w scans
+→ `docs/research/stageR_{graft_interface,prune_kd_edge,expansion_cost}.md` — gates only Stage-2
+design detail; if findings contradict the pivot, stop and re-brief the user. **0** = Jetson truth
+(above; prereq: rebuild `.venv-nas` via `scripts/setup_laptop_nas.sh`). **1** = CP 4.1–4.4.
+**2** = Phase 5 → winner-v1.5. **3** = Phase 6 → winner-v2. **4** = Phases 7–8. **5** = Phase 9.
+
+**Also fixed in this pass:** CLAUDE.md was stale — its "Current state" still ended at the CP 3.3
+buildable slice (2026-06-28); the CP 3.3/3.4/3.5 closes had never landed there. Refreshed to
+Phase-3-complete + this pivot.
