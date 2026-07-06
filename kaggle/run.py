@@ -27,9 +27,10 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
-MODE       = "full_finetune"      # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
-#   re-score) | full_finetune (side experiment: winner-v1's proxy-protocol full-train mAP —
-#   NOT a checkpoint, NOT Phase 8 distillation; see eval/full_finetune.py)
+MODE       = "graft_ablate"       # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
+#   re-score) | full_finetune (side experiment; see eval/full_finetune.py) | graft_ablate
+#   (CP 5.2: V0-V3 graft-interface ablation on winner-v1's backbone — adapter init + nano-neck;
+#   see eval/graft_ablate.py; ~9-12 warm-head fine-tunes, resumable)
 METHOD     = "tpe"                 # search proposer: "bo" (CP 3.3, closed) or "tpe" (CP 3.4).
 #   Same DoD/oracle/ceiling; only the sampler differs. TPE writes '.seed{s}.tpe.jsonl' shards
 #   and REUSES CP 3.3's cached '.seed{s}.rs.jsonl' random control (free), so a TPE session
@@ -195,6 +196,35 @@ def main() -> None:
             raise SystemExit(f"search.denoise produced no denoise.json (rc={rc})")
         print("[done] denoise.json written — pull it, then re-select on CPU via "
               "search.denoise.select_denoised.", flush=True)
+        return
+
+    # 4.85 CP 5.2 graft-interface ablation: V0/V1/V2 (+V3 auto-gated by the 1σ rule) × 3 fresh
+    #      seeds on winner-v1's backbone — the Phase-5 accuracy-seam experiment (procedure.md
+    #      "Plan pivot"). Same oracle as the de-noise re-score; resumable per-(variant,seed)
+    #      cache round-tripped exactly like the denoise cache.
+    if MODE == "graft_ablate":
+        cache = work / "graft_ablate_e5_r640.jsonl"
+        prior = (sorted(input_root.rglob("graft_ablate_e5_r640*.jsonl"))
+                 if input_root.exists() else [])
+        for src in prior:
+            if not cache.exists():
+                shutil.copy(src, cache)
+                print(f"[resume] restored graft-ablate cache {src.name}", flush=True)
+        out_ab = work / "graft_ablate.json"
+        cmd = (f"{sys.executable} -m eval.graft_ablate --winner-dir {repo}/state/winner_v1 "
+               f"--head-weights {head} --device cuda --imgsz 640 --batch 16 --epochs 5 "
+               f"--seeds {VERIFY_SEEDS} --cache {cache} --out {out_ab}")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        if not out_ab.exists():
+            raise SystemExit(f"eval.graft_ablate produced no graft_ablate.json (rc={rc})")
+        payload = json.loads(out_ab.read_text())
+        for vname, v in payload.get("variants", {}).items():
+            print(f"[done] {vname}: mean={v.get('mean')} std={v.get('std')} "
+                  f"gates={v.get('gates')}", flush=True)
+        print(f"[done] v1-v0={payload.get('v1_vs_v0_delta')} "
+              f"v2-v1={payload.get('v2_vs_v1_delta')} "
+              f"v3_warranted={payload.get('v3_warranted')}", flush=True)
         return
 
     # 4.5 resume: Kaggle wipes /kaggle/working between commits, so the eval caches must

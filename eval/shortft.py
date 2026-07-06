@@ -204,6 +204,7 @@ def short_finetune(
     head_weights: Any = None,
     freeze_head: bool = False,
     save_to: Any = None,
+    graft_kwargs: dict | None = None,
 ) -> dict[str, float]:
     """Fine-tune a sampled OFA-backbone pose model ~``epochs`` epochs; return its pose mAP.
 
@@ -220,6 +221,13 @@ def short_finetune(
     after training — the "weights" half of the winner-v1 artifact. The whole grafted model is saved
     (backbone + adapter + head) so a reload is self-contained: pair it with the arch to rebuild.
     No-op when ``None``.
+
+    ``graft_kwargs`` (CP 5.2) forwards extra keyword arguments to
+    :func:`detect.pose_model.build_grafted_pose_model` — e.g.
+    ``{"adapter_init": "net2wider"}`` (V1) or ``{"adapter_init": "net2wider", "neck":
+    "topdown"}`` (V2) — so the graft-interface ablation runs the exact same protocol with only
+    the interface changed. ``None`` (the default) is the historical graft, byte-compatible with
+    every prior proxy result.
     """
     import torch
 
@@ -231,6 +239,7 @@ def short_finetune(
 
     model = build_grafted_pose_model(
         arch_dict, supernet=supernet, head_weights=head_weights, freeze_head=freeze_head,
+        **(graft_kwargs or {}),
     ).to(device).train()
     loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
     # Only trainable params: a frozen head must stay out of the optimizer (a no-op otherwise).

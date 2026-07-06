@@ -2805,3 +2805,31 @@ run 19 passed.
 **Next = CP 5.2** (`eval/graft_ablate.py` — V0 control / V1 `adapter_init="net2wider"` / V2
 `neck="topdown"` / V3 `neck="pan"` (conditional), 3 seeds × 5-epoch warm-head proxy, resumable
 cache, Kaggle `MODE="graft_ablate"`).
+
+## CP 5.2 — buildable slice BUILT: eval/graft_ablate.py + Kaggle MODE="graft_ablate" (2026-07-06)
+
+**No checkpoint advance** (current stays 5.2 — the DoD needs the GPU run; the CP 3.3
+"buildable slice" precedent). Built, all `.venv`/CI-tested where pure:
+
+- `eval/shortft.short_finetune` gains **`graft_kwargs`** — forwarded verbatim to
+  `build_grafted_pose_model`, so the ablation runs the *exact* CP 3.5 oracle with only the
+  interface changed; `None` (default) is byte-compatible with every prior proxy result.
+- `eval/graft_ablate.py`: the variant table (V0 control / V1 `adapter_init="net2wider"` /
+  V2 +`neck="topdown"` / V3 +`neck="pan"`), the CP 3.5 protocol (5 epochs, frozen gate donor,
+  imgsz 640, batch 16, fresh seeds {1,2,3}), a resumable per-(variant, seed) jsonl cache
+  namespaced **`graft_ablate_e5_r640`** (the denoise cache pattern), **V3 auto-gated by the
+  >1σ rule** (`v3_warranted`, overridable `--include-v3`/`--skip-v3`), and per-seed **neck
+  gate magnitudes** recorded via a scratch state_dict save → `gates_from_state_dict` — the
+  Stage-R "did the data turn the neck on?" diagnostic. `assemble_report` emits per-variant
+  mean±σ plus the two headline deltas (V1−V0 = the init effect, V2−V1 = the fusion effect —
+  the decomposition Stage R identified as the right experiment).
+- `kaggle/run.py` **`MODE="graft_ablate"`** (a clone of the denoise block; cache round-trips
+  through the input Dataset the same way). RES/T_MAX untouched — the regime gate stays green.
+- Tests: `tests/test_graft_ablate.py` (6): variant table, summarize/v3-gate math, gate
+  extraction, stubbed-fine-tune orchestration (cache resume skips paid work; kwargs +
+  freeze_head passthrough), report deltas. `check.sh` green (435 passed).
+
+Session cost ≈ 9–12 warm-head fine-tunes ≈ ⅓ of the de-noise campaign → one Kaggle session.
+**CLOSE needs:** the Kaggle run → `data/graft_ablate.json` (mean±σ per variant + gates) →
+close entry + `plan_state` advance; then CP 5.3 (Nano e2e of V2/V3 graphs + AGX full-FT of the
+top-2 + ceiling-first selection under the honest e2e T_max).
