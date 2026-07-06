@@ -2644,3 +2644,35 @@ both the bare-identity insert and the identity+ReLU-after-ReLU block insert; eve
 rejected; the original Sequential is untouched (`inserted` returns a new one).
 
 Next = CP 4.3 (BatchNorm handling — the freeze-vs-re-estimate decision).
+
+## CP 4.3 CLOSED — BatchNorm handling: re-estimate, then invert (2026-07-05)
+
+`current_checkpoint` 4.3→4.4, `last_completed` 4.2→4.3, `completed += "4.3"`.
+
+**The decision the plan required** (freeze-BN-during-first-warm-start-epoch vs the
+"re-estimate BN" trick): **re-estimate, then invert** — `net2net/bn.py`:
+
+- `reestimate_bn(model, batches)` — resets every BN's running stats and rebuilds them by
+  cumulative averaging (`momentum=None`) over forward-only passes with **only the BNs** in
+  train mode (everything else eval, grads off); momenta and the model's train/eval mode are
+  restored afterwards; the cumulative average makes the result batch-order-independent.
+- `bn_to_identity_(bn)` — sets `(weight, bias) = (sqrt(running_var + eps), running_mean)` so an
+  eval-mode BN computes exactly the identity given its current stats.
+
+**Why over freeze-first-epoch:** (1) deterministic and optimizer-free — one forward pass, no
+coupling to any training schedule; (2) reusable verbatim where the refinement track needs it —
+Phase 6's post-prune recovery (re-estimate after channel surgery) and Phase 5's neck insertion;
+(3) the freeze variant keeps stale statistics live inside the frozen window and only reaches the
+same operating point if that first epoch is long enough — strictly more moving parts for the
+same guarantee. Nuance recorded in the docstring: eval-mode identity holds for *any* stats (the
+affine inverts whatever eval normalizes with); re-estimating first is what additionally makes
+**train-mode** behaviour near-identity (batch stats ≈ the inverted running stats), so
+post-insert training starts from a sane operating point instead of a distortion.
+
+**DoD PASSES** (`tests/test_bn.py`, 4 tests, `.venv`/CI): deepen (identity conv + fresh BN) +
+re-estimate + invert preserves the function within the 1e-3 bar — and in fact within 1e-5;
+re-estimated stats recover the data's true moments (μ=3, σ²=4 within tolerance, 20 batches);
+momentum and train/eval modes restored; empty-batch iterables and BN-less models raise instead
+of silently leaving stats reset.
+
+Next = CP 4.4 (graft-seam applicability — the re-scoped last Phase-4 checkpoint).
