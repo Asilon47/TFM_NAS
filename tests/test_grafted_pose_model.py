@@ -120,6 +120,56 @@ def test_grafted_loss_flows_grad_to_backbone():
     assert stem_grad.abs().sum() > 0  # cls-BCE flows on every anchor → non-zero
 
 
+# --- CP 5.1: the zero-gated nano-neck inside the graft -----------------------
+
+def _build_stub_grafted_with_neck(kind: str) -> GraftedPoseModel:
+    from ultralytics.nn.modules.head import Pose
+
+    from detect.neck import build_neck
+
+    depths = [2, 3, 4, 2, 3]
+    backbone = PoseBackbone(_StubBackbone(depths), depths)
+    adapter = ChannelAdapter(FEATURE_TAP_CHANNELS, YOLO11N_HEAD_CHANNELS)
+    head = Pose(nc=1, kpt_shape=(8, 3), ch=YOLO11N_HEAD_CHANNELS)
+    head.stride = torch.tensor([8.0, 16.0, 32.0])
+    return GraftedPoseModel(backbone, adapter, head,
+                            neck=build_neck(kind, YOLO11N_HEAD_CHANNELS))
+
+
+@pytest.mark.parametrize("kind", ["topdown", "pan"])
+def test_neck_graft_keeps_head_last_and_matches_no_neck_at_init(kind):
+    from ultralytics.nn.modules.head import Pose
+
+    with_neck = _build_stub_grafted_with_neck(kind)
+    assert isinstance(with_neck.model[-1], Pose)      # the loss contract, 4-module layout
+    assert len(with_neck.model) == 4
+    # Identity at init: rebuild WITHOUT the neck from the very same modules → equal outputs.
+    backbone, adapter, _neck, head = with_neck.model
+    without = GraftedPoseModel(backbone, adapter, head)
+    assert len(without.model) == 3                    # neck=None keeps the pre-CP-5.1 layout
+    x = torch.rand(1, 3, IMGSZ, IMGSZ)
+    with_neck.eval()
+    without.eval()
+    with torch.no_grad():
+        a = with_neck.predict(x)
+        b = without.predict(x)
+    ta = a[0] if isinstance(a, tuple) else a
+    tb = b[0] if isinstance(b, tuple) else b
+    assert torch.equal(ta, tb)                        # zero gates → bit-identical
+
+
+def test_neck_graft_loss_flows_and_gates_receive_grad():
+    model = _build_stub_grafted_with_neck("topdown").train()
+    loss, _ = model(_synthetic_pose_batch())
+    assert torch.isfinite(loss).all()
+    loss.sum().backward()
+    neck = model.model[2]
+    assert neck.g54.grad is not None and torch.isfinite(neck.g54.grad)
+    assert neck.g43.grad is not None and torch.isfinite(neck.g43.grad)
+    stem_grad = model.model[0].first_conv.weight.grad
+    assert stem_grad is not None and stem_grad.abs().sum() > 0
+
+
 @pytest.mark.slow
 def test_grafted_overfits_single_image():
     # A few steps on ONE batch must drive the loss down — proves the optimization path, not just

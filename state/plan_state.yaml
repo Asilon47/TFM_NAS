@@ -1,7 +1,7 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "5.1"   # CP 4.4 CLOSED 2026-07-05 — PHASE 4 COMPLETE (re-scoped; the old net2net/diff.py graph-diff CP is obsolete post-pivot). net2net/graft_init.py: identity_embed_conv1x1_ + apply_adapter_init("net2wider"), wired as build_grafted_pose_model(adapter_init="net2wider") — an initialization PRIOR (head sees real backbone features from step 0), NOT function preservation (frozen donor head cannot be consumer-adjusted); V0 control = adapter_init=None. DoD = exact first-in_c passthrough on the real (40,112,160)->(64,128,256) adapter (tests/test_graft_init.py). NEXT: Stage 0 (Jetson e2e truth — bench the graft END-TO-END before reusing the "12% faster" figure; detect/export_grafted_onnx.py to build; .venv-nas rebuild needed) and Stage R (ars-3w scans) unblock Stage 2 = CP 5.1 (detect/neck.py ZeroGatedTopDownNeck + GraftedPoseModel(neck=)). See procedure.md "Plan pivot" + "CP 4.4 CLOSED".
-last_completed: "4.4"       # CP 4.4 graft-seam adapter init (net2net/graft_init.py) — PHASE 4 COMPLETE
+current_checkpoint: "5.2"   # CP 5.1 CLOSED 2026-07-06 — detect/neck.py ZeroGatedTopDownNeck (one zero-init SCALAR gate per fusion edge — the Stage-R-resolved design; ReZero dynamics verified: gates get grad at init, gated-off projections get exactly zero) + GraftedPoseModel(neck=) with model[-1]==head preserved and neck=None keeping the pre-CP-5.1 3-module layout (old state_dicts load). build_grafted_pose_model(neck="topdown"|"pan", adapter_init=) covers all CP 5.2 variants. DoD: neck-at-init EXACTLY identity (.venv) + with-neck graft bit-identical to no-neck through the real Pose head (.venv-nas, both topologies). Stage R COMPLETE (docs/research/stageR_*.md: scalar gates resolved; CP 6.2 KD-recovery option flagged; CP 8.2 menu re-ranked LD/CWD; descope defense grounded). Stage 0 laptop half COMPLETE (4 ONNX + meta in data/e2e/, onnxruntime-verified; pose_offset + stamp tools tested) — Nano bench session still owed (board needed; do NOT reuse "12% faster" until it lands). NEXT: CP 5.2 eval/graft_ablate.py (V0-V3 × seeds {1,2,3}, warm-head proxy, kaggle MODE=graft_ablate). See procedure.md "CP 5.1 CLOSED".
+last_completed: "5.1"       # CP 5.1 variant library — zero-gated nano-neck (detect/neck.py) + GraftedPoseModel(neck=)
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
@@ -20,6 +20,7 @@ completed:
   - "4.2"    # Net2Deeper (net2net/deeper.py): identity conv/linear inserts, forward unchanged
   - "4.3"    # BN handling (net2net/bn.py): re-estimate-then-invert decision; DoD 1e-3 (met at 1e-5)
   - "4.4"    # Graft-seam adapter init (net2net/graft_init.py): identity-embedding prior, wired into build_grafted_pose_model(adapter_init=) → PHASE 4 COMPLETE
+  - "5.1"    # Variant library (detect/neck.py + GraftedPoseModel(neck=)): zero-gated nano-neck, identity at init, model[-1]==head preserved
 # NOTE: CP 1.4 (ImageNet sanity) CLOSED 2026-06-18 — backfilled out of order.
 # Re-framed from an absolute-bar DoD to a rank-fidelity gate (the OFA accuracy
 # predictor is a ranking model with a ~constant absolute offset). Spearman

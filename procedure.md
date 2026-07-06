@@ -2771,3 +2771,37 @@ contradicts the pivot** — scan (iii) strengthens it. What each scan concretely
 
 Stage-2 design detail is now unblocked: CP 5.1 proceeds with scalar per-edge gates (top-down
 V2; PAN-style 3×3/s2 bottom-up for V3).
+
+## CP 5.1 CLOSED — variant library: zero-gated nano-neck + graft wiring (2026-07-06)
+
+`current_checkpoint` 5.1→5.2, `last_completed` 4.4→5.1, `completed += "5.1"`.
+
+**Built** `detect/neck.py`: `ZeroGatedTopDownNeck` — P5→P4 and P4′→P3 fusion edges, each a 1×1
+projection + ×2 nearest upsample + **one zero-initialized scalar gate per edge** (the Stage-R
+resolved design: ReZero's mechanism, BiFPN's per-edge-scalar precedent; per-channel gates have
+no evidence and add TRT cost); `bottom_up=True` adds the PAN-style return path (3×3 stride-2 +
+gated adds over the *updated* maps) for V3. `gate_values()` reports the learned magnitudes so
+CP 5.2 can answer "did the data ever turn the neck on?" (the Stage-R risk). `build_neck(kind)`
+= the variant switch: `None` (V0/V1) | `"topdown"` (V2) | `"pan"` (V3). Torch-only.
+
+**Graft wiring** (`detect/pose_model.py`): `GraftedPoseModel(…, neck=)` — `neck=None` keeps
+the original 3-module `Sequential` (pre-CP-5.1 state_dicts, e.g. `full_finetune_weights.pt`,
+load unchanged); with a neck the layout is `(backbone, adapter, neck, head)` and
+`_predict_once` generalized to `*body, head = self.model` — **`model[-1]` stays the Pose head**
+(the `v8PoseLoss`/`init_criterion`/`_apply` contract). `build_grafted_pose_model(neck="topdown"|"pan")`
+composes it with `adapter_init=` (CP 4.4), covering all four CP 5.2 variants from one factory.
+
+**DoD PASSES.** `tests/test_neck.py` (6, `.venv`/CI): neck-at-init output is **exactly** equal
+to its input (torch.equal — the day-0 function-preservation DoD) for both topologies; open
+gates change outputs and preserve shapes; the ReZero gradient dynamic is verified (at init the
+gates receive gradient, the gated-off projections receive exactly zero; once a gate opens the
+projection trains); dispatch + shape guards. `tests/test_grafted_pose_model.py` (+3, gated,
+run in `.venv-nas`): with a neck the model is 4 modules and `model[-1]` is the real Ultralytics
+`Pose`; eval outputs of the with-neck graft are **bit-identical** to the same modules without
+the neck (both `"topdown"` and `"pan"`); pose loss is finite, gates receive finite grads, and
+the gradient still reaches the backbone stem. Full fast lane green (429 passed); `.venv-nas`
+run 19 passed.
+
+**Next = CP 5.2** (`eval/graft_ablate.py` — V0 control / V1 `adapter_init="net2wider"` / V2
+`neck="topdown"` / V3 `neck="pan"` (conditional), 3 seeds × 5-epoch warm-head proxy, resumable
+cache, Kaggle `MODE="graft_ablate"`).

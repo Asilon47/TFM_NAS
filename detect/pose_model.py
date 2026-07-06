@@ -27,6 +27,7 @@ import torch
 from torch import Tensor, nn
 
 from detect.adapter import ChannelAdapter
+from detect.neck import build_neck
 from net2net.graft_init import apply_adapter_init
 from supernet.pose_backbone import PoseBackbone
 
@@ -177,12 +178,17 @@ def _grafted_pose_model_cls() -> type:
             adapter: nn.Module,
             head: nn.Module,
             *,
+            neck: nn.Module | None = None,
             nc: int = 1,
             names: dict[int, str] | None = None,
             args: Any = None,
         ) -> None:
             nn.Module.__init__(self)  # NOT super().__init__ — skip the yaml-based build
-            self.model = nn.Sequential(backbone, adapter, head)  # model[-1] == head (the contract)
+            # model[-1] == head is THE contract (loss/criterion/_apply reach it there). With
+            # neck=None the layout stays the original 3-module Sequential, so pre-CP-5.1
+            # state_dicts (e.g. full_finetune_weights.pt) keep loading unchanged.
+            stages = (backbone, adapter, head) if neck is None else (backbone, adapter, neck, head)
+            self.model = nn.Sequential(*stages)
             self.save: list[int] = []
             self.nc = nc
             self.names = names if names is not None else {0: "gate"}
@@ -195,8 +201,11 @@ def _grafted_pose_model_cls() -> type:
 
         def _predict_once(self, x: Tensor, profile: bool = False, visualize: bool = False,
                           embed: Any = None) -> Any:
-            backbone, adapter, head = self.model
-            return head(list(adapter(backbone(x))))
+            *body, head = self.model  # 3 modules (no neck) or 4 (with neck) — head stays last
+            feats: Any = x
+            for module in body:
+                feats = module(feats)
+            return head(list(feats))
 
     _grafted_cls = GraftedPoseModel
     return _grafted_cls
@@ -218,6 +227,7 @@ def build_grafted_pose_model(
     head_weights: Any = None,
     freeze_head: bool = False,
     adapter_init: str | None = None,
+    neck: str | None = None,
 ) -> Any:
     """Sample the OFA subnet for ``arch_dict`` and graft a trainable YOLO Pose head onto it.
 
@@ -233,6 +243,11 @@ def build_grafted_pose_model(
     ``adapter_init`` (CP 4.4, e.g. ``"net2wider"``) replaces the adapter's random init with the
     identity-embedding prior (``net2net.graft_init``) so the head sees real backbone features
     from step 0; ``None`` keeps the original random 1×1s (the CP 5.2 V0 control).
+
+    ``neck`` (CP 5.1): ``None`` keeps the neck-less 3-module graft (old state_dicts load
+    unchanged); ``"topdown"`` (V2) / ``"pan"`` (V3) insert a ``detect.neck``
+    ``ZeroGatedTopDownNeck`` between adapter and head — identity at init (zero gates), so the
+    frozen donor head sees unchanged inputs on day 0.
     """
     from ultralytics.nn.modules.head import Pose
 
@@ -251,7 +266,8 @@ def build_grafted_pose_model(
               f"skipped {len(report['skipped'])} (donor: {head_weights})")
     if freeze_head:
         freeze_module(head)
-    return _grafted_pose_model_cls()(backbone, adapter, head, nc=nc)
+    neck_module = build_neck(neck, head_channels)
+    return _grafted_pose_model_cls()(backbone, adapter, head, neck=neck_module, nc=nc)
 
 
 if __name__ == "__main__":  # real OFA + YOLO-head integration smoke — run under .venv-nas
