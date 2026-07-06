@@ -21,6 +21,7 @@ completed:
   - "4.3"    # BN handling (net2net/bn.py): re-estimate-then-invert decision; DoD 1e-3 (met at 1e-5)
   - "4.4"    # Graft-seam adapter init (net2net/graft_init.py): identity-embedding prior, wired into build_grafted_pose_model(adapter_init=) → PHASE 4 COMPLETE
   - "5.1"    # Variant library (detect/neck.py + GraftedPoseModel(neck=)): zero-gated nano-neck, identity at init, model[-1]==head preserved
+  - "6.1"    # DepGraph pruning harness (prune/prune_graft.py): CPU-smoke DoD PASS — closed OUT OF ORDER 2026-07-06 while CP 5.2's GPU run is on Kaggle (current_checkpoint stays on the critical path; CP 1.4 precedent)
 # NOTE: CP 1.4 (ImageNet sanity) CLOSED 2026-06-18 — backfilled out of order.
 # Re-framed from an absolute-bar DoD to a rank-fidelity gate (the OFA accuracy
 # predictor is a ranking model with a ~constant absolute offset). Spearman

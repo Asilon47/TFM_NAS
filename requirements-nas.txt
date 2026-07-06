@@ -36,3 +36,7 @@ ultralytics>=8.3
 # torch>=2.9's legacy TorchScript exporter serializes through the `onnx` package (older torch
 # bundled its own proto writer). Pure protobuf — no torch interaction, pins undisturbed.
 onnx>=1.16
+# Phase 6 (plan pivot): prune/prune_graft.py — DepGraph structured pruning of the trained graft
+# (CVPR 2023; group-L2, round_to=16 for TRT tensor-core alignment). Works against any torch>=2
+# without touching the pins. NEVER add this to requirements.txt (the .venv CPU-torch pin).
+torch-pruning>=1.4,<2
