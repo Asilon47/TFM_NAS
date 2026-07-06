@@ -57,6 +57,8 @@ def full_finetune(
     supernet: Any = None,
     save_weights: bool = True,
     max_steps: int | None = None,
+    graft_kwargs: dict | None = None,
+    tag: str | None = None,
 ) -> dict:
     """Reload winner-v1's arch from ``winner_dir`` and run a longer fine-tune to see its
     (proxy-protocol) full-train mAP. Writes ``full_finetune.json`` beside the winner record
@@ -66,6 +68,11 @@ def full_finetune(
     exploratory side experiment, not a DoD. ``head_weights=None`` (default) trains a
     from-scratch head; pass the gate donor with ``freeze_head=False`` (default) to warm-start
     *and* keep training it — the setup most likely to show what this backbone can reach.
+
+    ``graft_kwargs`` (CP 5.3: the top-2 ablation variants at full length) forwards to
+    ``build_grafted_pose_model`` — e.g. ``{"adapter_init": "net2wider", "neck": "topdown"}``;
+    ``tag`` suffixes the output files (``full_finetune_<tag>.json`` / ``_<tag>_weights.pt``)
+    so variant runs never clobber the winner-v1 baseline artifacts.
     """
     from eval.shortft import short_finetune  # lazy: torch/ultralytics/ofa only on the GPU run
 
@@ -74,11 +81,13 @@ def full_finetune(
     arch = rec["arch"]
     proxy_acc = float(rec["acc"])
     anchors = rec.get("anchors")
+    suffix = f"_{tag}" if tag else ""
+    weights_path = wdir / f"full_finetune{suffix}_weights.pt"
 
     maps: list[float] = []
     for i, s in enumerate(seeds):
         # Persist weights once, from the first seed.
-        save_to = (wdir / "full_finetune_weights.pt") if (save_weights and i == 0) else None
+        save_to = weights_path if (save_weights and i == 0) else None
         metrics = short_finetune(
             arch,
             epochs=epochs,
@@ -92,6 +101,7 @@ def full_finetune(
             freeze_head=freeze_head,
             max_steps=max_steps,
             save_to=save_to,
+            graft_kwargs=graft_kwargs,
         )
         maps.append(float(metrics["map"]))
 
@@ -110,14 +120,16 @@ def full_finetune(
         "proxy_acc": proxy_acc,
         "delta_vs_proxy": mean - proxy_acc,
         "anchors": anchors,
-        "weights": (str(wdir / "full_finetune_weights.pt") if save_weights else None),
+        "weights": (str(weights_path) if save_weights else None),
+        "graft_kwargs": graft_kwargs or {},
+        "tag": tag,
         "imgsz": imgsz,
         "batch": batch,
         "device": device,
         "note": PROTOCOL_CAVEAT,
         "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    (wdir / "full_finetune.json").write_text(json.dumps(payload, indent=2) + "\n")
+    (wdir / f"full_finetune{suffix}.json").write_text(json.dumps(payload, indent=2) + "\n")
     return payload
 
 
@@ -142,13 +154,29 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--batch", type=int, default=16)
     p.add_argument("--max-steps", type=int, default=None, help="cap optimizer steps (CPU smoke)")
     p.add_argument("--no-save-weights", dest="save_weights", action="store_false", default=True)
+    p.add_argument("--adapter-init", choices=["net2wider"], default=None,
+                   help="CP 5.3 variant: graft adapter init (see net2net/graft_init.py)")
+    p.add_argument("--neck", choices=["topdown", "pan"], default=None,
+                   help="CP 5.3 variant: zero-gated nano-neck (see detect/neck.py)")
+    p.add_argument("--tag", default=None,
+                   help="suffix output files (full_finetune_<tag>.json) — variant runs must "
+                        "never clobber the winner-v1 baseline artifacts")
     a = p.parse_args(argv)
+
+    graft_kwargs: dict | None = None
+    if a.adapter_init or a.neck:
+        graft_kwargs = {}
+        if a.adapter_init:
+            graft_kwargs["adapter_init"] = a.adapter_init
+        if a.neck:
+            graft_kwargs["neck"] = a.neck
 
     seeds = tuple(int(x) for x in a.seeds.split(","))
     out = full_finetune(
         a.winner_dir, head_weights=a.head_weights, freeze_head=a.freeze_head, seeds=seeds,
         epochs=a.epochs, lr=a.lr, device=a.device, imgsz=a.imgsz, batch=a.batch,
-        max_steps=a.max_steps, save_weights=a.save_weights,
+        max_steps=a.max_steps, save_weights=a.save_weights, graft_kwargs=graft_kwargs,
+        tag=a.tag,
     )
     print(f"[full-finetune] winner-v1 epochs={out['epochs']} freeze_head={out['freeze_head']} "
           f"seeds={out['seeds']} -> maps={[round(x, 4) for x in out['maps']]} "

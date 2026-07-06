@@ -97,6 +97,7 @@ def export_grafted_onnx(
     out: Path,
     *,
     backbone_only: bool = False,
+    neck: str | None = None,
     imgsz: int = 640,
     opset: int = 17,
     supernet: Any = None,
@@ -107,12 +108,22 @@ def export_grafted_onnx(
     Writes a ``<out>.meta.json`` sidecar with params / FLOPs / arch / provenance so the Stage-0
     offset derivation (``search.pose_offset``) can compute the adapter+head params/flops as the
     e2e−backbone difference. Returns ``(onnx_path, meta)``.
+
+    ``neck`` (CP 5.3): export the V2 (``"topdown"``) / V3 (``"pan"``) graph. The zero-init
+    gates are **set to 1.0 before export** — a gate that is exactly 0 is an initializer
+    constant, and TRT/onnx constant folding would elide the whole fusion path
+    (``x + 0·conv(...)`` → ``x``), silently benching a neck-less graph. Gate=1 measures the
+    latency of the *live* neck, which is what a trained (gates-open) deployment pays.
     """
     import torch
 
     from catalog.flops import count_flops_forward
     from supernet.pose_backbone import PoseBackbone
     from supernet.sampler import load_supernet, sample
+
+    if backbone_only and neck is not None:
+        raise ValueError("--backbone-only and --neck are mutually exclusive (a neck sits "
+                         "between adapter and head — there is none in a backbone-only export)")
 
     sn = supernet if supernet is not None else load_supernet()
     if backbone_only:
@@ -121,7 +132,13 @@ def export_grafted_onnx(
     else:
         from detect.pose_model import build_grafted_pose_model
 
-        module = build_grafted_pose_model(arch, supernet=sn).eval()
+        module = build_grafted_pose_model(arch, supernet=sn, neck=neck).eval()
+        if neck is not None:
+            neck_module = module.model[2]  # (backbone, adapter, neck, head)
+            with torch.no_grad():
+                for pname, param in neck_module.named_parameters():
+                    if pname.startswith("g"):
+                        param.fill_(1.0)  # live fusion paths — see the docstring
         head = module.model[-1]
         head.export = True        # deploy graph: the single decoded (1, 4+nc+3*nkpt, 8400)
         head.format = "onnx"
@@ -142,6 +159,7 @@ def export_grafted_onnx(
         "arch": arch,
         "provenance": provenance or {},
         "backbone_only": backbone_only,
+        "neck": neck,
         "imgsz": imgsz,
         "opset": opset,
         "params": sum(p.numel() for p in module.parameters()),
@@ -165,6 +183,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="candidate index — d values repeat, the index is the identity")
     ap.add_argument("--backbone-only", action="store_true",
                     help="export PoseBackbone alone (P3/P4/P5 outs) for the offset derivation")
+    ap.add_argument("--neck", choices=["topdown", "pan"], default=None,
+                    help="CP 5.3: export the V2/V3 necked graph (gates forced to 1.0 so "
+                         "constant folding cannot elide the fusion paths)")
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--opset", type=int, default=17)
     ap.add_argument("--out", type=Path, required=True)
@@ -174,9 +195,10 @@ def main(argv: list[str] | None = None) -> int:
     arch, prov = load_arch(winner=winner, candidates=args.candidates, index=args.index)
     print(f"arch: d={arch['d']}  provenance={prov}")
     path, meta = export_grafted_onnx(
-        arch, args.out, backbone_only=args.backbone_only, imgsz=args.imgsz, opset=args.opset,
-        provenance=prov)
-    kind = "backbone-only (P3/P4/P5)" if args.backbone_only else "end-to-end graft"
+        arch, args.out, backbone_only=args.backbone_only, neck=args.neck, imgsz=args.imgsz,
+        opset=args.opset, provenance=prov)
+    kind = ("backbone-only (P3/P4/P5)" if args.backbone_only
+            else f"end-to-end graft (neck={args.neck})" if args.neck else "end-to-end graft")
     print(f"exported {kind} -> {path}  (params {meta['params']:,}, flops {meta['flops']}, "
           f"opset {meta['opset']}, static {args.imgsz})")
     print(f"meta sidecar -> {path.with_suffix('.meta.json')}")
