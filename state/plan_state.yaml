@@ -1,7 +1,7 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-current_checkpoint: "4.4"   # CP 4.3 CLOSED 2026-07-05 — net2net/bn.py; DECISION RECORDED: "re-estimate, then invert" over freeze-first-epoch (deterministic, optimizer-free, reusable by Phase-6 prune recovery + Phase-5 neck insertion). reestimate_bn (cumulative momentum=None, BN-only train mode, modes/momenta restored) + bn_to_identity_ (affine inverts running stats -> eval-mode identity). DoD = deepen+re-estimate+invert preserves function within 1e-3 (measured: 1e-5; tests/test_bn.py, 4 tests). REMINDER (Stage 0, owed): winner-v1's 11.208ms is the backbone-blocks-only LUT sum — bench the graft END-TO-END on the Nano before reusing the "12% faster" figure.
-last_completed: "4.3"       # CP 4.3 BN handling — decision: re-estimate then invert; DoD 1e-3 met at 1e-5 (tests/test_bn.py)
+current_checkpoint: "5.1"   # CP 4.4 CLOSED 2026-07-05 — PHASE 4 COMPLETE (re-scoped; the old net2net/diff.py graph-diff CP is obsolete post-pivot). net2net/graft_init.py: identity_embed_conv1x1_ + apply_adapter_init("net2wider"), wired as build_grafted_pose_model(adapter_init="net2wider") — an initialization PRIOR (head sees real backbone features from step 0), NOT function preservation (frozen donor head cannot be consumer-adjusted); V0 control = adapter_init=None. DoD = exact first-in_c passthrough on the real (40,112,160)->(64,128,256) adapter (tests/test_graft_init.py). NEXT: Stage 0 (Jetson e2e truth — bench the graft END-TO-END before reusing the "12% faster" figure; detect/export_grafted_onnx.py to build; .venv-nas rebuild needed) and Stage R (ars-3w scans) unblock Stage 2 = CP 5.1 (detect/neck.py ZeroGatedTopDownNeck + GraftedPoseModel(neck=)). See procedure.md "Plan pivot" + "CP 4.4 CLOSED".
+last_completed: "4.4"       # CP 4.4 graft-seam adapter init (net2net/graft_init.py) — PHASE 4 COMPLETE
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
@@ -19,6 +19,7 @@ completed:
   - "4.1"    # Net2Wider (net2net/wider.py): function-preserving widen (conv/linear/BN), DoD 1e-5
   - "4.2"    # Net2Deeper (net2net/deeper.py): identity conv/linear inserts, forward unchanged
   - "4.3"    # BN handling (net2net/bn.py): re-estimate-then-invert decision; DoD 1e-3 (met at 1e-5)
+  - "4.4"    # Graft-seam adapter init (net2net/graft_init.py): identity-embedding prior, wired into build_grafted_pose_model(adapter_init=) → PHASE 4 COMPLETE
 # NOTE: CP 1.4 (ImageNet sanity) CLOSED 2026-06-18 — backfilled out of order.
 # Re-framed from an absolute-bar DoD to a rank-fidelity gate (the OFA accuracy
 # predictor is a ranking model with a ~constant absolute offset). Spearman

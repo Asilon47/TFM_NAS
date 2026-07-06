@@ -27,6 +27,7 @@ import torch
 from torch import Tensor, nn
 
 from detect.adapter import ChannelAdapter
+from net2net.graft_init import apply_adapter_init
 from supernet.pose_backbone import PoseBackbone
 
 # YOLO11n-pose neck-output channels feeding the Pose head (nano width_multiple=0.25).
@@ -216,6 +217,7 @@ def build_grafted_pose_model(
     supernet: Any = None,
     head_weights: Any = None,
     freeze_head: bool = False,
+    adapter_init: str | None = None,
 ) -> Any:
     """Sample the OFA subnet for ``arch_dict`` and graft a trainable YOLO Pose head onto it.
 
@@ -227,6 +229,10 @@ def build_grafted_pose_model(
     :func:`warm_start_head` (CP 2.4 proxy repair); ``freeze_head`` then locks it so the short
     fine-tune adapts only the backbone+adapter to a fixed, competent head. Both default off (the
     original fresh-random behaviour).
+
+    ``adapter_init`` (CP 4.4, e.g. ``"net2wider"``) replaces the adapter's random init with the
+    identity-embedding prior (``net2net.graft_init``) so the head sees real backbone features
+    from step 0; ``None`` keeps the original random 1×1s (the CP 5.2 V0 control).
     """
     from ultralytics.nn.modules.head import Pose
 
@@ -234,6 +240,8 @@ def build_grafted_pose_model(
 
     backbone = PoseBackbone(sample(arch_dict, supernet), arch_dict["d"])
     adapter = ChannelAdapter(backbone.out_channels, head_channels)
+    if adapter_init is not None:
+        apply_adapter_init(adapter, adapter_init)
     head = Pose(nc=nc, kpt_shape=kpt_shape, ch=tuple(head_channels))
     head.stride = torch.tensor([float(s) for s in HEAD_STRIDES])
     head.bias_init()

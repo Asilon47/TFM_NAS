@@ -2676,3 +2676,38 @@ momentum and train/eval modes restored; empty-batch iterables and BN-less models
 of silently leaving stats reset.
 
 Next = CP 4.4 (graft-seam applicability — the re-scoped last Phase-4 checkpoint).
+
+## CP 4.4 CLOSED — graft-seam applicability: identity-embedding adapter init — PHASE 4 COMPLETE (2026-07-05)
+
+`current_checkpoint` 4.4→5.1, `last_completed` 4.3→4.4, `completed += "4.4"`. **Phase 4 is
+complete** under the re-scoped plan (the original `net2net/diff.py` OFA-space graph diff is
+obsolete — Phase 3 closed without Net2Net warm-starts and no second search exists; see "Plan
+pivot").
+
+**Built** `net2net/graft_init.py`: `identity_embed_conv1x1_(conv, seed=)` — re-initializes an
+expanding 1×1 conv as the identity on its first `in_channels` outputs plus Net2Wider-replicated
+copies for the extras (reuses `wider.widen_mapping` — CP 4.1 as substrate, exactly as re-scoped),
+zero bias, returns the mapping; `apply_adapter_init(adapter, "net2wider", seed=)` maps it over a
+ChannelAdapter's per-scale convs with distinct deterministic seeds (`seed+i`). Wired as
+**`build_grafted_pose_model(adapter_init="net2wider")`** (`detect/pose_model.py`); `None` keeps
+the original random 1×1s — the untouched **V0 control** for CP 5.2's ablation.
+
+**Scope honesty (the re-scoped DoD's own words):** an initialization *prior*, NOT end-to-end
+function preservation — Net2Wider's consumer-side division is impossible here because the
+consumer is the frozen, donor-trained Pose head whose weights must not be touched. What the
+prior buys: the head sees the backbone's real features (identity + exact duplicates) from step 0
+instead of random channel mixtures — the LP-FT lesson CP 2.4 established at the head, applied
+one level deeper at the adapter. Whether it helps is precisely the V0-vs-V1 question CP 5.2
+measures; nothing is claimed here beyond the passthrough property.
+
+**DoD PASSES** (`tests/test_graft_init.py`, 4 tests, `.venv`/CI — `detect.adapter` is
+torch-only, so the real `ChannelAdapter` is exercised without ultralytics): first-`in_c`
+passthrough exact on a 5→9 conv AND on the real graft shape ((40,112,160)→(64,128,256), all
+three scales); extras are exact replicas of their mapped sources (not noise); deterministic
+under seed (twin adapters get identical weights); non-1×1 / shrinking / grouped convs and
+unknown init kinds raise. `check.sh` fast lane green (411 passed).
+
+**Stage 1 complete → what unblocks.** Stage 2 (CP 5.1 `detect/neck.py` + the ablation) now has
+its Net2Net substrate; it still wants Stage 0 (the honest e2e T_max the CP 5.3 selection gates
+on) and Stage R (the ars-3w design-detail scans) first. Stage 0 remains the highest-value next
+session (~hours, Jetson required).
