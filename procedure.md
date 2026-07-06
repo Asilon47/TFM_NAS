@@ -2626,3 +2626,21 @@ pairs raise. `check.sh` fast lane green (411 passed).
 **Post-pivot role** (procedure.md "Plan pivot"): not BO warm-starts — `widen_mapping` is
 CP 4.4's substrate (adapter identity-embedding) and the module serves any later width edit
 around the winner. Next = CP 4.2 (Net2Deeper).
+
+## CP 4.2 CLOSED — Net2Deeper (2026-07-05)
+
+`current_checkpoint` 4.2→4.3, `last_completed` 4.1→4.2, `completed += "4.2"`.
+
+**Built** `net2net/deeper.py`: `identity_conv2d` (Dirac kernel, zero bias, odd-kernel guard,
+`padding=k//2`, stride 1), `identity_linear` (eye + zero bias), and `inserted(seq, index,
+*modules)` (non-mutating Sequential splice). Net2Net §3.3 semantics documented in the module:
+a bare identity insert is exact anywhere; a conv+activation *block* insert is exact when placed
+after an existing **idempotent** activation (`relu(relu(x)) == relu(x)`); a BN-carrying insert
+is NOT exact until CP 4.3's invert trick — deliberately split so each guarantee is testable.
+
+**DoD PASSES** (`tests/test_deeper.py`, 5 tests, `.venv`/CI): identity conv exact at
+k ∈ {1, 3, 5}; identity linear exact; conv-net and linear-net forwards unchanged (≤1e-6) under
+both the bare-identity insert and the identity+ReLU-after-ReLU block insert; even kernels
+rejected; the original Sequential is untouched (`inserted` returns a new one).
+
+Next = CP 4.3 (BatchNorm handling — the freeze-vs-re-estimate decision).
