@@ -159,9 +159,12 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Known blockers
 
-- **CUDA / `.venv-nas` (laptop).** `torch.cuda.is_available()` is False and **`.venv-nas` is not
-  currently built** (only `.venv` exists) — rebuild via `bash scripts/setup_laptop_nas.sh` before
-  Stage 0's ONNX export (CPU-only torch is fine for export). GPU fine-tunes run remotely:
+- **CUDA / `.venv-nas` (laptop).** `torch.cuda.is_available()` is False (long-standing).
+  **`.venv-nas` is BUILT (2026-07-05) as the CPU variant** — torch 2.11.0+cpu via
+  `TORCH_CUDA_INDEX=cpu bash scripts/setup_laptop_nas.sh`; the disk could not fit the cu128
+  stack (root fs was 100% full) and the laptop's CUDA is broken anyway, so nothing is lost:
+  Stage 0's ONNX export runs locally on CPU. To restore the GPU variant later: free ~10 GB,
+  then plain `bash scripts/setup_laptop_nas.sh`. GPU fine-tunes run remotely:
   **Kaggle (quota restored 2026-07-05)** is primary, Colab free T4 the backup, and the **AGX Orin**
   runs long trains via the `jetson/` Docker kit. The Orin Nano 8 GB stays measurement-only
   (TensorRT in Docker; mode 0 + locked clocks via `scripts/setup_jetson.sh` — since the JetPack
@@ -241,7 +244,7 @@ scripts/      Setup scripts + check.sh (ruff + mypy + pytest)
 | Venv | Activate | Use for |
 |---|---|---|
 | `.venv` | `source .venv/bin/activate` | LUT pipeline (CPU torch, fabric for SSH) |
-| `.venv-nas` | `source .venv-nas/bin/activate` | NAS pipeline (GPU torch, ofa, torchvision) |
+| `.venv-nas` | `source .venv-nas/bin/activate` | NAS pipeline (torch, ofa, torchvision, ultralytics — since 2026-07-05 the **CPU build**, see Known blockers) |
 
 **Never** mix them. The LUT pipeline uses `torch==2.3.1+cpu`; the NAS pipeline
 uses `torch>=2.3,<2.12` (GPU build). Installing one into the other's venv

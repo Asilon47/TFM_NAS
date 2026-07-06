@@ -2711,3 +2711,25 @@ unknown init kinds raise. `check.sh` fast lane green (411 passed).
 its Net2Net substrate; it still wants Stage 0 (the honest e2e T_max the CP 5.3 selection gates
 on) and Stage R (the ars-3w design-detail scans) first. Stage 0 remains the highest-value next
 session (~hours, Jetson required).
+
+### Environment note — `.venv-nas` rebuilt as the CPU variant (2026-07-05; not a checkpoint)
+
+The Stage-0 prerequisite rebuild died with "No space left on device": the root filesystem was
+**100 % full (1.7 GB free of 197 GB)** and the cu128 stack needs ~7–10 GB. Since the laptop's
+CUDA has been broken all project (`torch.cuda.is_available()` False — every fine-tune already
+runs on Kaggle/Colab/AGX) and the Stage-0 note already said CPU torch suffices for the ONNX
+export, the venv was rebuilt CPU-variant through the script's own knob: `pip cache purge`
+(freed 2.0 GB) → matched **torch 2.11.0+cpu / torchvision 0.26.0+cpu** pre-installed from
+`https://download.pytorch.org/whl/cpu` (a matched pair, so the "libcudart.so.13"
+PyPI-mismatch trap cannot occur) → `TORCH_CUDA_INDEX=cpu bash scripts/setup_laptop_nas.sh` for
+the rest. The **OFA checkpoint was also missing** from `.cache/ofa/` and was re-fetched via
+`python -m supernet.download_ofa` (sha256 matches the pin, `a7def36b…`).
+
+Verified in the new env: the script's import smoke (`nas env ok: torch 2.11.0+cpu cuda False`);
+`tests/test_grafted_pose_model.py` **6/6** (previously auto-skipped on this laptop); and a real
+`build_grafted_pose_model(random_arch, adapter_init="net2wider")` forwarding
+(1,3,640,640) → (1,29,8400) finite — the exact construction path Stage 0's exporter will use.
+
+Restore the GPU variant only if the laptop's CUDA ever gets fixed: free ~10 GB, then plain
+`bash scripts/setup_laptop_nas.sh`. **User action item (outside this project):** the disk is
+still at 99 % (≈2 GB free) — critically low for the OS itself.
