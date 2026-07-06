@@ -2733,3 +2733,41 @@ Verified in the new env: the script's import smoke (`nas env ok: torch 2.11.0+cp
 Restore the GPU variant only if the laptop's CUDA ever gets fixed: free ~10 GB, then plain
 `bash scripts/setup_laptop_nas.sh`. **User action item (outside this project):** the disk is
 still at 99 % (≈2 GB free) — critically low for the OS itself.
+
+## Stage R COMPLETE — three ars-3w literature scans → docs/research/ (2026-07-06; not a checkpoint)
+
+The pivot's research step (user picked the "3W quick scan" scope at the 2026-07-05
+AskUserQuestion): three `deep-research` three-way scans, each a WHY/HOW/WHAT comparison of the
+3 strongest papers for one open design decision, with web-verified anchor claims and explicit
+fidelity notes (escalate to `lit-review` mode when writing the thesis chapters). **No finding
+contradicts the pivot** — scan (iii) strengthens it. What each scan concretely changed:
+
+1. **`stageR_graft_interface.md`** (YOLOF / EfficientDet-BiFPN / ViTDet + ReZero, LP-FT):
+   **resolves the CP 5.1 gate-granularity question → one scalar zero-init gate per fusion
+   edge** (ReZero's exact mechanism; BiFPN's fusion weights are per-edge scalars too — no
+   evidence for per-channel gates, and they'd add TRT pointwise cost). Sets expectations:
+   top-down-only fusion is the weakest-but-cheapest topology, and fusion per se is worth
+   ≲1–2 AP-class once per-scale outputs exist (YOLOF's SiMo-within-<1-mAP; ViTDet's
+   no-fusion pyramid ≈ FPN) — so the V0→V1 (init) vs V1→V2 (fusion) decomposition of the
+   CP 5.2 ablation is the right experiment, and a V2≈V1 outcome is pre-registered as a
+   literature-consistent negative result, not a failure. The frozen-consumer-head setting has
+   NO direct literature — the ablation is novel evidence.
+2. **`stageR_prune_kd_edge.md`** (DepGraph / arXiv:2509.12918 prune+CWD-on-YOLOv8-edge / CWD):
+   confirms CP 6.1 as designed (group-level importance is DepGraph's own recommendation);
+   grounds `round_to=16` in NVIDIA's TRT channel-alignment guidance (fp16 tensor cores want
+   in-channels %8; implicit padding otherwise); adds an **optional CP 6.2 design input** —
+   recover pruned nets *with distillation* (teacher = the unpruned winner-v1.5, free) instead
+   of plain FT, decision deferred to CP 6.2 (user); and **re-ranks the CP 8.2 loss menu**:
+   box branch → Localization Distillation (YOLO11's DFL is already a distribution — LD is a
+   near-zero-friction fit), any feature term → CWD channel-normalized form at P3/P4/P5,
+   keypoints → regression mimic (no literature standard; our design, say so in the thesis).
+3. **`stageR_expansion_cost.md`** (OFA / CompOFA(+DϵpS) / Yu et al. ICLR 2020): the descope
+   defense now has two independent literature grounds — cost (OFA ≈1,200 V100-h; even the
+   efficiency line saves by *shrinking* spaces) and ranking fidelity (weight sharing degrades
+   candidate ranking toward random-search parity; rank correlation worsens as the space
+   grows — NAS-Bench-201 only ranks well when downscaled ~64×), with CP 3.5's σ-vs-top-gap
+   measurements as the in-situ replication. D3's own rule of thumb, evaluated on Phase-3's
+   outcome, already said "don't inject".
+
+Stage-2 design detail is now unblocked: CP 5.1 proceeds with scalar per-edge gates (top-down
+V2; PAN-style 3×3/s2 bottom-up for V3).
