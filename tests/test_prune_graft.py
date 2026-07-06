@@ -44,7 +44,7 @@ def _build_graft() -> GraftedPoseModel:
     return GraftedPoseModel(backbone, adapter, head)
 
 
-def _decoded(model: GraftedPoseModel, x: torch.Tensor) -> torch.Tensor:
+def _decoded(model, x):  # torch is importorskip'd — no torch types at annotation time
     model.eval()
     with torch.no_grad():
         out = model.predict(x)

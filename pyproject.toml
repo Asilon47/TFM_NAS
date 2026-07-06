@@ -44,5 +44,5 @@ exclude = "lut/bench/"
 # gpytorch ship no (complete) type stubs (numpy does; pandas-stubs is a separate opt-in package we
 # don't depend on).
 module = ["ofa.*", "torchvision.*", "ultralytics.*", "fabric.*", "tqdm.*", "yaml.*",
-          "pandas.*", "scipy.*", "pymoo.*", "botorch.*", "gpytorch.*"]
+          "pandas.*", "scipy.*", "pymoo.*", "botorch.*", "gpytorch.*", "torch_pruning.*"]
 ignore_missing_imports = true

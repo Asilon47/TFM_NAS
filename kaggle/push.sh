@@ -111,12 +111,14 @@ case "${1:-kernel}" in
   --resume|resume)
     # One laptop command between sessions: pull the finished session's output, then
     # push its caches into the resume Dataset. Then in the Kaggle UI bump that dataset
-    # to its newest version and Save & Run All (keeps your GPU T4 x2 setting; an API
-    # re-push would reset the accelerator).
+    # to its newest version and Save & Run All — or just re-run `bash kaggle/push.sh`
+    # (kernel-metadata now pins machine_shape=NvidiaTeslaT4, so an API re-push no
+    # longer resets the accelerator to the P100 default; that reset caused the
+    # 2026-07-06 'no kernel image for device' failure — torch dropped sm_60).
     bash "$KAGGLE_DIR/push.sh" --pull
     bash "$KAGGLE_DIR/push.sh" --cache
-    echo "resume staged. In the Kaggle editor: refresh the '$CACHE_SLUG' input to its"
-    echo "latest version, ensure GPU T4 x2, then Save & Run All."
+    echo "resume staged. Refresh the '$CACHE_SLUG' input to its latest version and"
+    echo "Save & Run All — or re-push via 'bash kaggle/push.sh' (T4 pinned in metadata)."
     ;;
   *)
     # Push (and run) the kernel. Build dir carries run.py + the substituted metadata.
