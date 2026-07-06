@@ -2604,3 +2604,25 @@ design detail; if findings contradict the pivot, stop and re-brief the user. **0
 **Also fixed in this pass:** CLAUDE.md was stale — its "Current state" still ended at the CP 3.3
 buildable slice (2026-06-28); the CP 3.3/3.4/3.5 closes had never landed there. Refreshed to
 Phase-3-complete + this pivot.
+
+## CP 4.1 CLOSED — Net2Wider (2026-07-05)
+
+`current_checkpoint` 4.1→4.2, `last_completed` 3.5→4.1, `completed += "4.1"`.
+
+**Built** `net2net/wider.py`: `widen_mapping` (identity prefix + seeded uniform replication),
+`widen_conv2d(conv, next_conv, new_out, bn=, seed=)` and `widen_linear(…)` — the Net2Net §3.2
+rule (producer rows copied through the mapping; consumer columns copied **divided by the
+replication count**), returning fresh modules with the originals untouched; BN affine +
+running stats duplicate through the same mapping. Scope guard: `groups=1` producers/consumers
+only — the graft seam's 1×1 adapters and OFA's pointwise convs qualify; a depthwise producer
+needs a different rule and the refinement track never widens one.
+
+**DoD PASSES** (`tests/test_wider.py`, 6 tests, `.venv`/CI): widened conv→ReLU→conv and
+linear→ReLU→linear match the original outputs within 1e-5; conv→BN→hardswish→conv preserved
+with duplicated BN stats (eval mode); equal-width widen = exact weight copy; mapping is
+deterministic under its seed with an identity prefix; grouped/mismatched/shrinking/wrong-BN
+pairs raise. `check.sh` fast lane green (411 passed).
+
+**Post-pivot role** (procedure.md "Plan pivot"): not BO warm-starts — `widen_mapping` is
+CP 4.4's substrate (adapter identity-embedding) and the module serves any later width edit
+around the winner. Next = CP 4.2 (Net2Deeper).
