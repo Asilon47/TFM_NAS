@@ -33,7 +33,7 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ---
 
-## Current state (as of last update: PHASE 3 COMPLETE + plan pivot — Phases 5–7 re-scoped to winner refinement, 2026-07-05)
+## Current state (as of last update: Phase 4 COMPLETE + CP 5.1/6.1 CLOSED; CP 5.2 running on Kaggle; Stage-0 Jetson session pending, 2026-07-06)
 
 - **Phase 0 (LUT):** COMPLETE. `data/lut.jsonl` holds all 2710 *measured* rows
   (`source=jetson_trt`, fp32, TRT 10.3.0, clocks locked); the original dummy lives
@@ -175,25 +175,23 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
-**Stage H (housekeeping + plan rewrite) is done (2026-07-05); three tracks are open in parallel:**
+**Stages H, R, 1 are DONE; CP 5.1 + 6.1 CLOSED; CP 5.2's GPU run is on Kaggle (2026-07-06).**
 
-1. **Stage 0 — Jetson truth (highest value, ~hours).** `bash scripts/setup_laptop_nas.sh` (rebuild
-   `.venv-nas`; CPU torch is fine for export) → build `detect/export_grafted_onnx.py`
-   (`head.export=True; head.format="onnx"`, opset 17, static 640, `--backbone-only` flag, meta
-   sidecar, onnxruntime smoke-load) → `bash scripts/setup_jetson.sh` → five
-   `python -m lut.orchestrate.bench_model --imgsz 640 --out data/e2e/<name>.json` runs (baseline
-   recheck, winner e2e, winner backbone-only, both fallbacks) → new `search/pose_offset.py` +
-   `search/stamp_winner_e2e.py` (additive `e2e` block only — never mutate existing `winner.json`
-   keys) → honest speedup + procedure entry. If winner e2e ≥ baseline e2e → user re-pick from the
-   already-benched fallbacks (ceiling-first rule).
-2. **Stage 1 — CP 4.1–4.4 (laptop, CPU, no blockers).** `net2net/wider.py` → `deeper.py` →
-   `bn.py` → `graft_init.py`; tests in `tests/` (not `net2net/tests/`); one CP close each.
-3. **Stage R — ars-3w literature scans** (gate only Stage-2 design detail): graft-interface/neck
-   design for transplanted backbones; pruning+KD on Jetson-class GPUs; expansion-cost evidence →
-   `docs/research/stageR_*.md` + a procedure entry naming what each scan changed.
-
-Then Stage 2 (Phase 5 ablation → winner-v1.5; needs Stages 0+1+R), Stage 3 (Phase 6 pruning),
-Stage 4 (Phases 7–8), Stage 5 (Phase 9).
+1. **Stage 0 — the Jetson session (everything is staged, board needed).** Seven ONNX + meta
+   sidecars sit in `data/e2e/` (winner e2e, winner backbone-only, two fallbacks, V2/V3 necked
+   graphs) plus the original `yolo11n_pose_640.onnx` for a byte-identical baseline re-check.
+   `bash scripts/setup_jetson.sh` → seven `python -m lut.orchestrate.bench_model --imgsz 640
+   --precision fp32 --out data/e2e/<name>.json` runs → `python -m search.pose_offset …` →
+   `python -m search.stamp_winner_e2e …` (additive `e2e` block; prints the re-pick warning if
+   the winner loses end-to-end) → "MAXN"→mode-0 doc fixes + procedure entry.
+2. **CP 5.2 results.** When the Kaggle kernel completes: `bash kaggle/push.sh --pull` →
+   `data/graft_ablate.json` (V0–V3 mean±σ + gate magnitudes) → close entry + plan_state.
+   Kernel-metadata now pins `machine_shape=NvidiaTeslaT4` (an API push used to reset the
+   accelerator to P100 → torch "no kernel image" — fixed 2026-07-06).
+3. **Then CP 5.3** (needs 1+2): AGX 100-epoch full-FT of the top-2 variants
+   (`eval.full_finetune --adapter-init/--neck --tag`), ceiling-first pick under the measured
+   e2e T_max → `state/winner_v1_5/` (user confirms). Phase 6's harness is already built and
+   smoke-tested (CP 6.1 closed out of order), so CP 6.2 follows immediately after.
 Donor for every warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
 whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 
