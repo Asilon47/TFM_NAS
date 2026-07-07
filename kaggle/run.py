@@ -70,6 +70,15 @@ FULL_FT_VARIANTS = [
     ("v3pan", "pan", ""),
     ("v2topdown", "topdown", ""),
 ]
+# Dense-family arm (plan amendment 2026-07-07, user decision A+B1+B2; three Kaggle accounts
+# run campaigns in parallel — push each with KACCT=N KMODE=<mode> bash kaggle/push.sh):
+# MODE="prune_baseline" — CP 6.2-B control arm: DepGraph ladder on the gate-trained yolo11n
+#   donor (gate_best.pt IS the 0.877 baseline), recover, export deploy ONNX per point.
+PB_RATIOS = "0.15,0.30,0.45"
+PB_EPOCHS = 50
+# MODE="dense_scaling" — Phase-3c wave 1: yolo11-pose scaling grid, stock recipe, from
+#   scratch, one candidate subset per T4; latencies measured later on the Nano.
+DS_EPOCHS = 100
 # -----------------------------------------------------------------------------
 
 
@@ -220,6 +229,60 @@ def main() -> None:
                   flush=True)
         if missing:
             raise SystemExit(f"eval.full_finetune produced no {', '.join(missing)}")
+        return
+
+    # 4.76 CP 6.2-B (dense-family arm): the pruned-BASELINE control ladder. Single process —
+    #      3 sequential prune->recover->export points (~2-3 h); gate_best.pt is the donor.
+    if MODE == "prune_baseline":
+        out_dir = work / "prune_baseline"
+        cmd = (f"{sys.executable} -m prune.prune_baseline --donor {head} "
+               f"--ratios {PB_RATIOS} --epochs {PB_EPOCHS} --device cuda "
+               f"--imgsz 640 --batch 16 --out-dir {out_dir}")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        rep = out_dir / "prune_baseline.json"
+        if not rep.exists():
+            raise SystemExit(f"prune.prune_baseline produced no report (rc={rc})")
+        payload = json.loads(rep.read_text())
+        print(f"[done] prune_baseline.json: donor_map={payload['donor'].get('map')} rows="
+              f"{[(r['ratio'], round(r['map'], 4)) for r in payload['rows']]}", flush=True)
+        return
+
+    # 4.77 Phase 3c wave 1 (dense-family arm): yolo11-pose scaling grid — stripe the wave
+    #      across the two T4s (per-tag row files make the split coordination-free), then
+    #      assemble the report in one --report-only pass.
+    if MODE == "dense_scaling":
+        from search.dense_family import wave_tags  # repo already on sys.path (step 1)
+
+        out_dir = work / "dense_scaling"
+        out_dir.mkdir(exist_ok=True)
+        base_cmd = (f"{sys.executable} -m search.dense_family --data dataset/dataset.yaml "
+                    f"--epochs {DS_EPOCHS} --imgsz 640 --batch 16 --out-dir {out_dir}")
+        tags = wave_tags()
+        ngpu = int(subprocess.check_output(
+            [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
+        ).decode().strip() or "0")
+        if ngpu >= 2:
+            procs = []
+            for g in range(2):
+                subset = ",".join(tags[g::2])
+                env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(g))
+                print(f"+ [gpu{g}] tags {subset}", flush=True)
+                procs.append(subprocess.Popen(f"{base_cmd} --only {subset} --device 0",
+                                              shell=True, env=env))
+                time.sleep(10)  # guard ultralytics first-touch race
+            for pr in procs:
+                pr.wait()
+        else:
+            sh(f"{base_cmd} --device 0")
+        sh(f"{base_cmd} --report-only")
+        rep = out_dir / "dense_scaling.json"
+        if not rep.exists():
+            raise SystemExit("search.dense_family produced no dense_scaling.json")
+        payload = json.loads(rep.read_text())
+        print(f"[done] dense_scaling.json: "
+              f"{[(r['tag'], r['params'], round(r['map'], 4)) for r in payload['rows']]}",
+              flush=True)
         return
 
     # 4.8 CP 3.5 de-noise: re-score the pinned top-K candidates at fresh seeds to remove the
