@@ -294,3 +294,13 @@ notes: |
   This retires the "what if the search had used the honest cost from day one?" objection.
   Artifacts: data/phase3b_honest_search.json + data/hs_bo_cache_r640.seed{0,1}.bo.jsonl.
   See procedure.md "Phase 3b CLOSED". NEXT unchanged: user framing decision, then CP 5.3.
+
+  **Plan amendment 2026-07-07 — dense-family arm (A+B1+B2; no checkpoint advance, current
+  stays 5.3):** user decisions after the similar-cases briefing: keep the arc (A) + add the
+  pruned-BASELINE control ladder (B1 = CP 6.2-B, prune/prune_baseline.py) + the yolo11-pose
+  scaling search (B2 = Phase 3c, search/dense_family.py; PROJECT_PLAN.md sections added).
+  THREE Kaggle accounts run in parallel (push.sh KACCT/KMODE): acct1 CP 5.3 v3pan+v2topdown
+  full-FTs; acct2 prune_baseline ladder; acct3 dense_scaling wave 1 (6 candidates incl. the
+  from-scratch ctrl_n recipe control). All latencies measured-only (next Nano session benches
+  everything); single-seed results owe CP 3.5 de-noise discipline before any pick. See
+  procedure.md "Plan amendment — the dense-family arm".

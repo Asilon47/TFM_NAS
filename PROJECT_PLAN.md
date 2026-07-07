@@ -260,6 +260,46 @@ a Pareto frontier of `(accuracy, latency_ms)` for the Jetson.
 
 ---
 
+## Phase 3c — Dense-Family Scaling Search (added 2026-07-07, "dense-family arm")
+
+**Goal:** Search the family that owns this hardware regime. Stage 0 + Phase 3b
+proved the OFA-MBv3 family device-dominated on the Nano (depthwise ≈ 0.30
+TFLOP/s effective vs dense ≈ 0.60; the honest-ceiling band tops at proxy
+0.4965); the industrial precedents (YOLO-NAS/QA-RepVGG, DAMO-YOLO/MAE-NAS)
+searched **dense** primitives under GPU latency constraints. The gate task
+(2,842 imgs → ~1–2 GPU-h per 100-epoch train) un-binds the original
+no-scratch-training constraint, so the yolo11-pose `scales:` knobs
+(depth_mult, width_mult, max_channels) are directly searchable with
+measured-only Nano latencies. Runs beside Phases 5–7 (own Kaggle account),
+converges in Phase 8/9 where the best dense point competes with winner-v2
+for the deployment slot.
+
+### Checkpoints
+
+- **CP 3c.1 — Wave 1 (grid, in flight 2026-07-07)**
+  - `search/dense_family.py`: 6 sub-n candidates incl. the from-scratch
+    `ctrl_n` recipe control (separates "smaller arch" from "no COCO
+    pretrain" vs the 0.877 anchor); stock recipe, seed 0; deploy-ONNX
+    export per candidate (baseline contract).
+  - **DoD:** `dense_scaling.json` (6 × params/mAP) + 6 ONNX benched fp16 on
+    the Nano → the wave-1 (mAP, latency) frontier.
+- **CP 3c.2 — De-noise + optional wave 2**
+  - CP 3.5 discipline: top band re-trained at fresh seeds before any pick;
+    wave 2 (BO over the knobs, warm-started from wave 1) **only if** wave 1
+    shows a live accuracy↔latency trade above the noise floor.
+  - **DoD:** de-noised pick or a recorded "wave 1 suffices / saturated".
+- **CP 3c.3 — Cross-family verdict**
+  - The thesis figure: OFA frontier + winner-v1.5 + both pruning ladders +
+    the dense wave on one measured (mAP, e2e fp16 ms) plot; the deployment
+    recommendation follows from it (user decision).
+
+### References
+- YOLO-NAS (AutoNAC, QA-RepVGG search space; ~3,800 GPU-h): Deci, 2023.
+- DAMO-YOLO (MAE-NAS under TensorRT latency): arXiv:2211.15444.
+- G-GhostNet (CPU-lightweight ≠ GPU-fast; the family-level fix): arXiv:2201.03297.
+
+---
+
 ## Phase 4 — Net2Net Operator Library
 
 **Goal:** A tested library of function-preserving transforms — the
@@ -431,6 +471,19 @@ leave the LUT grid, so their latency claims are **measured-only**
     AGX long) → e2e ONNX export → Nano bench.
   - **DoD:** `data/pruning_curve.json` — 3 points × (recovered mAP,
     measured e2e latency), plus the table in procedure.md.
+
+- **CP 6.2-B — Pruned-BASELINE control ladder (dense-family arm, added 2026-07-07)**
+  - The **identical** ladder applied to the gate-trained yolo11n-pose donor
+    (the 0.877 baseline itself): `prune/prune_baseline.py` — same DepGraph
+    settings, same bare-AdamW recovery protocol, same deploy-ONNX export →
+    same Nano bench. Turns Phase 6 into a *controlled cross-family
+    compression comparison* (which family dominates under identical
+    compression?), and is the cheapest genuinely-faster-than-baseline
+    deployable artifact (lit.: −73.5 % params at −2.7 AP50 on YOLOv8,
+    arXiv:2501.16571; prune→distill-recover→TRT pipeline, arXiv:2509.12918).
+  - **DoD:** `prune_baseline.json` (3 recovered points + donor anchor under
+    the same validator) + the 3 ONNX benched on the Nano in the same session
+    as CP 6.2's points. Either family may win — record honestly.
 
 - **CP 6.3 — Operating point → winner-v2**
   - Pick the deployment point on the measured curve (user decision,

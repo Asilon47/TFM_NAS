@@ -3095,3 +3095,57 @@ from. Artifacts: `data/phase3b_honest_search.json`, per-seed caches
 `data/hs_bo_cache_r640.seed{0,1}.bo.jsonl`; user-owned decisions (thesis framing, CP 5.3
 full-FT launch) remain open — this run removes the last "re-search might change the picture"
 contingency from both.
+
+## Plan amendment — the dense-family arm (A+B1+B2) + three-account parallel launch (2026-07-07)
+
+**Context.** After Phase 3b closed, the user asked (1) why a MobileNet loses to YOLO on the
+Nano at all, (2) what could overcome it, (3) whether a different supernet would, and finally
+for a similar-cases search + full option briefing. The mechanism answer, from our own
+artifacts: depthwise/MBConv primitives are DRAM-bound at 640 on the 62.5 GB/s Nano (backbone
+0.30 TFLOP/s effective vs the dense head's 0.58 *inside the same engine*; baseline whole-net
+0.60), SE blocks serialize, fp16 tensor-core gains skip depthwise (1.43× vs 1.68×) — and no
+public supernet fixes both the *primitive* and the *scale* (classifier supernets are 224-px,
+ImageNet-width; OFA-ResNet50's floor lands ~2× over budget @640 by roofline estimate). The
+similar-cases scan pinned every leg to literature: G-GhostNet (arXiv:2201.03297 — CPU-light ≠
+GPU-fast, family-level fix), YOLO-NAS (dense QA-RepVGG space, hardware-aware, ~3,800 GPU-h)
+and DAMO-YOLO/MAE-NAS (ResNet/CSP-like under TRT) for what industry searched, FBNetV5
+(arXiv:2111.10007) for classification→detection transfer being a named failure mode, and
+arXiv:2509.12918 + arXiv:2501.16571 for prune→recover→TRT on YOLO/Jetson (26→68 FPS, −2.7
+AP50 at −73.5 % params). Full option table (A / B1 / B2 / C screen-gated / D catalog / E
+rejected) in the session log; C/D are scale-walled by the same evidence.
+
+**User decisions (AskUserQuestion):** scope = **A + B1 + B2** — keep the current arc AND add
+the pruned-baseline control AND the dense scaling search; CP 5.3 full-FTs launch on
+**Kaggle now**; then (follow-up instruction) **use all three Kaggle accounts in parallel**
+(`secrets/` holds three KGAT token+username pairs — the accounts already carried the gate-pose
+dataset from the June quota rotation).
+
+**Built + launched (all three kernels live, one campaign per account):**
+1. **acct1 owaismalekarnous v22 — CP 5.3:** `kaggle/run.py` MODE=full_finetune now runs
+   `FULL_FT_VARIANTS` = v3pan + v2topdown (100 ep, seed 0, warm head unfrozen), one per T4.
+   The 0.841 bare-winner run is the standing control; ~2.5 h.
+2. **acct2 asilarnous v14 — CP 6.2-B (B1):** new `prune/prune_baseline.py` — the *identical*
+   Phase-6 ladder (DepGraph group-L2, round_to=16, 15/30/45 %) on the gate-trained yolo11n
+   donor: prune → `reestimate_bn` → bare-AdamW recovery (50 ep) → deploy-contract ONNX +
+   report row; donor re-anchored under the same validator. `head_ignored_layers` needed zero
+   changes (stock PoseModel satisfies the same `model.model[-1]` contract). ~2–3 h.
+3. **acct3 asilarnous47 v6 — Phase 3c wave 1 (B2):** new `search/dense_family.py` — 6
+   yolo11-pose `scales:` candidates (ctrl_n = yolo11n's own triple from scratch, the recipe
+   control; 5 sub-n points), stock Ultralytics recipe, seed 0, per-tag row files (resumable,
+   coordination-free 2-T4 striping), deploy-ONNX per candidate. ~5–7 h.
+   PROJECT_PLAN.md gains **Phase 3c** (CP 3c.1 wave → 3c.2 de-noise/wave-2-if-warranted →
+   3c.3 cross-family verdict figure) and Phase 6 gains **CP 6.2-B**.
+
+**Infra:** `kaggle/push.sh` multi-account (`KACCT=2|3` → the "(Copy)"/"(Copy 2)" credential
+pairs; per-account `--pull` dirs `data/kaggle_out_<user>/`) + `KMODE=<mode>` (rewrites the
+MODE line in the *staged* run.py only — one codebase, per-account campaigns). Kernel slug is
+per-account (`<user>/tfm-nas-cp3-3-search`), so the three runs never collide.
+
+**Standing obligations attached to this arm:** every latency is **measured-only** (next Nano
+session benches: CP 5.3's winner-v1.5 e2e, both pruning ladders' ONNX, the 6 dense-wave ONNX
+— plus the deferred riders: SE ablation, 512-res sweep, FusedMBConv + OFA-R50 LUT screens);
+wave-1/ladder picks are single-seed → CP 3.5 de-noise discipline before ANY selection; the
+cross-family comparison must plot *recipe-consistent* numbers (ctrl_n anchors the from-scratch
+axis; CP 7.2 parity anchors the winner side). Thesis framing question stays open but is now
+concretely: which measured frontier point ships, and the findings chapter explains why the
+families rank as they do.

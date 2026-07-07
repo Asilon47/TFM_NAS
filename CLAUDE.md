@@ -182,20 +182,23 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
-**Stages H, R, 0, 1 DONE; CP 5.1/5.2/6.1 CLOSED; Phase 3b (honest-ceiling re-search) CLOSED
-2026-07-07 — every measurement/search contingency is resolved. Two user-owned decisions gate
-the rest.**
+**DENSE-FAMILY ARM LANDED (2026-07-07, user decision A+B1+B2 — see procedure.md "Plan
+amendment — the dense-family arm"). Three Kaggle accounts run campaigns in parallel
+(`KACCT=N KMODE=<mode> bash kaggle/push.sh`; accounts 2/3 pull into
+`data/kaggle_out_<user>/`):**
 
-1. **Thesis framing (user decision, deferred twice — discuss, don't force).** Stage 0 retired
-   the fp32 speed claim; the honest candidate framing = "≥ baseline accuracy at
-   60-FPS-deployable latency (V3 fp16 12.75 ms = 78 FPS) + a transfer-gap findings chapter".
-   Phase 3b closed the last objection: a directed BO re-search under the honest ceiling
-   (sum ≤ 7.16 ms) tops out at proxy **0.4965** (vs V3's 0.6287) — the family cannot buy
-   accuracy inside its baseline-beating band (`data/phase3b_honest_search.json`).
-2. **CP 5.3 (needs the framing settled):** 100-epoch full-FT of V3 (+V2 control) — AGX
-   (`jetson/deploy.sh` MODE=full_finetune, FT_* selectors ready) or Kaggle; ceiling-first pick
-   under the measured e2e bar → `state/winner_v1_5/` (user confirms the pick). Phase 6's
-   pruning harness is already built + smoke-tested (CP 6.1), so CP 6.2 follows immediately.
+1. **acct1 (owaismalekarnous): CP 5.3** — v3pan + v2topdown 100-ep full-FTs
+   (`FULL_FT_VARIANTS`, one per T4). When done: `--pull` → ceiling-first winner-v1.5 pick
+   under the measured e2e bar (user confirms) → `state/winner_v1_5/`.
+2. **acct2 (asilarnous): CP 6.2-B** — `prune/prune_baseline.py` DepGraph ladder on the
+   gate-trained yolo11n donor (the control arm). Pull → 3 ONNX await Nano benches.
+3. **acct3 (asilarnous47): Phase 3c wave 1** — `search/dense_family.py`, 6 yolo11-pose
+   scaling candidates incl. the from-scratch `ctrl_n` recipe control. Pull → 6 ONNX await
+   Nano benches; **de-noise before any pick** (single-seed wave).
+4. **Next Nano session benches EVERYTHING** (winner-v1.5 e2e, both ladders, dense wave) +
+   the deferred riders: SE ablation, 512-res sweep, FusedMBConv + OFA-R50 LUT screens.
+   Phase 3b's negative result + Phase 3c's frontier together close the framing question with
+   measurements (CP 3c.3 cross-family figure).
 Donor for every warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
 whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 
@@ -225,6 +228,7 @@ lut/          Phase 0: Jetson LUT pipeline (DONE)
 supernet/     Phase 1: OFA-MBv3-w1.0 wrapper + sampler; pose_backbone.py
               (OFA subnet → P3/P4/P5 taps for the pose head)
 search/       Phase 2: arch_to_blocks + cost.py (LUT composite cost); search loop (Phase 3)
+              + dense_family.py (Phase 3c: yolo11-pose scaling wave — the dense-family arm)
 detect/       D1 pose pivot: OFA-backbone → YOLO11-pose-head graft (adapter.py,
               pose_model.py: graft + warm_start_head/freeze_module) + pose-mAP eval (evaluate.py)
 eval/         Eval harness: imagenet_sanity.py (CP 1.4); shortft.py + proxy_rank.py (CP 2.4 —
