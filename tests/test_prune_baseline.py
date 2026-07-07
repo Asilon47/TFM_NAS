@@ -31,3 +31,12 @@ def test_assemble_ladder_report_deltas_and_best() -> None:
 def test_assemble_ladder_report_needs_donor_map() -> None:
     with pytest.raises(ValueError, match="donor"):
         assemble_ladder_report({}, [])
+
+
+def test_trace_imgsz_stays_small() -> None:
+    """DepGraph tracing holds every activation via grad_fn: tracing at the 640 deploy
+    size OOM-killed Kaggle's ~13 GB host (rc=137, 2026-07-07). The groups + data-free
+    importance are resolution-independent — keep the trace at the DoD-tested scale."""
+    from prune.prune_baseline import TRACE_IMGSZ
+
+    assert 32 <= TRACE_IMGSZ <= 160

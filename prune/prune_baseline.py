@@ -30,6 +30,14 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# DepGraph tracing resolution. Dependency tracing runs a real forward and holds every
+# intermediate activation via grad_fn, so its HOST memory scales with the traced
+# resolution — tracing at the 640 deploy size OOM-killed Kaggle's ~13 GB box
+# (rc=137, 2026-07-07) while the result (channel-coupling groups + the data-free
+# group-L2 importance) is resolution-independent. 128 is the CP 6.1 DoD-tested size;
+# anything stride-32-safe and small works. Never trace at the deploy resolution.
+TRACE_IMGSZ = 128
+
 RECOVERY_CAVEAT = (
     "recovery = bare-AdamW loop (eval.shortft precedent), not the Ultralytics recipe that "
     "trained the donor; ladder-internal comparisons (and vs Phase 6's winner ladder) are "
@@ -108,7 +116,7 @@ def recovery_finetune(
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
 
     step = 0
-    for _ in range(epochs):
+    for epoch in range(epochs):
         for raw in loader:
             batch_dict = _to_device(_preprocess_batch(raw), device)
             loss, _items = model(batch_dict)
@@ -118,9 +126,14 @@ def recovery_finetune(
             step += 1
             if max_steps is not None and step >= max_steps:
                 break
+        print(f"[recover] epoch {epoch + 1}/{epochs} done ({step} steps)", flush=True)
         if max_steps is not None and step >= max_steps:
             break
-    return pose_map_model(model, data_yaml=data_yaml, imgsz=imgsz, device=device)
+    # Val a throwaway copy: the validator's AutoBackend fuses Conv+BN IN PLACE, which would
+    # leave the model we return (and prune_ladder then saves/exports) without its BNs.
+    import copy
+    return pose_map_model(copy.deepcopy(model).eval(), data_yaml=data_yaml, imgsz=imgsz,
+                          device=device)
 
 
 def _export_deploy_onnx(model: Any, out: Path, *, imgsz: int, opset: int = 17) -> None:
@@ -159,22 +172,28 @@ def prune_ladder(
     from eval.shortft import _build_pose_loader, _preprocess_batch
     from net2net.bn import reestimate_bn
     from prune.prune_graft import prune_graft
+    from prune.yolo_tp_prep import prepare_yolo_for_pruning_
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     data_yaml = DEFAULT_DATA_YAML if data_yaml is None else data_yaml
 
     donor_model = load_baseline_model(donor)
+    # Params counted pre-val: the validator fuses Conv+BN in place, dropping the BN params.
+    donor_params = sum(p.numel() for p in donor_model.parameters())
     donor_metrics = pose_map_model(donor_model.to(device), data_yaml=data_yaml,
                                    imgsz=imgsz, device=device)
-    donor_row = {"path": str(donor),
-                 "params": sum(p.numel() for p in donor_model.parameters()), **donor_metrics}
+    donor_row = {"path": str(donor), "params": donor_params, **donor_metrics}
     del donor_model
 
     rows: list[dict] = []
     for ratio in ladder_plan(ratios):
         model = load_baseline_model(donor)  # fresh weights per point — points are independent
-        report = prune_graft(model, torch.randn(1, 3, imgsz, imgsz), ratio=ratio)
+        # yolo11-specific prep: split the C2f-family chunks + keep attention dense —
+        # stock C3k2/C2PSA graphs break tp's DepGraph (see prune/yolo_tp_prep.py).
+        extra_ignored = prepare_yolo_for_pruning_(model)
+        report = prune_graft(model, torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ), ratio=ratio,
+                             extra_ignored=extra_ignored)
 
         bn_feed = []
         loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
