@@ -93,7 +93,10 @@ do_run() {
     || echo "(could not set MAXN clocks via sudo — set them manually for full throughput)"
   ssh "$HOST" "docker rm -f '$NAME' 2>/dev/null || true; \
     docker run -d --name '$NAME' --runtime nvidia --ipc=host -v '$DATA':/data \
-      -e BUDGET='${BUDGET:-50}' -e CALIBRATE='${CALIBRATE:-1}' '$IMG'"
+      -e BUDGET='${BUDGET:-50}' -e CALIBRATE='${CALIBRATE:-1}' \
+      -e MODE='${MODE:-search}' -e FT_EPOCHS='${FT_EPOCHS:-100}' -e FT_SEEDS='${FT_SEEDS:-0}' \
+      -e FT_NECK='${FT_NECK:-}' -e FT_ADAPTER_INIT='${FT_ADAPTER_INIT:-}' \
+      -e FT_TAG='${FT_TAG:-}' -e FT_FREEZE_HEAD='${FT_FREEZE_HEAD:-0}' '$IMG'"
   echo "started '$NAME' detached. Follow: bash jetson/deploy.sh --logs"
 }
 

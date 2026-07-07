@@ -38,6 +38,16 @@ SEEDS = 5
 N_INIT = 20
 BUDGET = int(os.environ.get("BUDGET", "50"))       # BO budget per seed (decision D2)
 CALIBRATE = int(os.environ.get("CALIBRATE", "1"))  # time N real evals first (warms ultralytics)
+# MODE="full_finetune" (CP 5.3): a long fine-tune of one graft-interface variant on winner-v1's
+# backbone — deploy.sh passes the FT_* selectors through docker -e (see procedure.md
+# "CP 5.2 CLOSED" for the variant table). Everything else = the CP 3.3 search (default).
+MODE = os.environ.get("MODE", "search")            # search | full_finetune
+FT_EPOCHS = int(os.environ.get("FT_EPOCHS", "100"))
+FT_SEEDS = os.environ.get("FT_SEEDS", "0")
+FT_NECK = os.environ.get("FT_NECK", "")            # "" | topdown | pan
+FT_ADAPTER_INIT = os.environ.get("FT_ADAPTER_INIT", "")  # "" | net2wider
+FT_TAG = os.environ.get("FT_TAG", "")              # output suffix, e.g. v3pan
+FT_FREEZE_HEAD = os.environ.get("FT_FREEZE_HEAD", "0") == "1"
 # ------------------------------------------------------------------------------------
 
 
@@ -81,6 +91,38 @@ def main() -> None:
     sh(f"ln -sf {lut} data/lut.jsonl")
     if frontier:  # search.bo._load_nsga_frontier reads ROOT/data/phase3_nsga2_frontier.json
         sh(f"ln -sf {frontier} data/phase3_nsga2_frontier.json")
+
+    if MODE == "full_finetune":
+        # CP 5.3: one variant's long fine-tune (the winner record is baked into the image).
+        # Outputs land beside state/winner_v1 AND are copied to /data/out for the laptop pull.
+        import shutil
+
+        winner_dir = REPO / "state" / "winner_v1"
+        freeze = "--freeze-head" if FT_FREEZE_HEAD else "--no-freeze-head"
+        cmd = (f"python3 -m eval.full_finetune --winner-dir {winner_dir} "
+               f"--head-weights {head} {freeze} --device cuda --imgsz 640 --batch 16 "
+               f"--epochs {FT_EPOCHS} --seeds {FT_SEEDS}")
+        if FT_ADAPTER_INIT:
+            cmd += f" --adapter-init {FT_ADAPTER_INIT}"
+        if FT_NECK:
+            cmd += f" --neck {FT_NECK}"
+        if FT_TAG:
+            cmd += f" --tag {FT_TAG}"
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True, cwd=REPO).returncode
+        suffix = f"_{FT_TAG}" if FT_TAG else ""
+        for name in (f"full_finetune{suffix}.json", f"full_finetune{suffix}_weights.pt"):
+            src = winner_dir / name
+            if src.exists():
+                shutil.copy(src, OUT / name)
+        out_json = OUT / f"full_finetune{suffix}.json"
+        if not out_json.exists():
+            raise SystemExit(f"eval.full_finetune produced no {out_json.name} (rc={rc})")
+        payload = json.loads(out_json.read_text())
+        print(f"[done] {out_json.name}: mean={payload.get('mean')} "
+              f"delta_vs_proxy={payload.get('delta_vs_proxy')} "
+              f"graft_kwargs={payload.get('graft_kwargs')}", flush=True)
+        return
 
     common = (f"--device cuda --imgsz 640 --res {RES} --lut {lut} "
               f"--head-weights {head} --freeze-head --t-max-ms {T_MAX_MS}")
