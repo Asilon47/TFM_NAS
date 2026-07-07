@@ -12,6 +12,13 @@
 # One-time: save your KGAT_ token at secrets/access_token + your Kaggle username
 # at secrets/kaggle_username (or a legacy secrets/kaggle.json), then
 # `pip install kaggle`. See kaggle/README.md.
+#
+# Multi-account (2026-07-07): KACCT=2|3 selects the "(Copy)"/"(Copy 2)" credential
+# pair in secrets/ (three accounts run campaigns in parallel; each account owns its
+# own copy of the gate-pose + cache Datasets — run `KACCT=N bash kaggle/push.sh --data`
+# once per new account). KMODE=<mode> pushes the kernel with run.py's MODE line
+# rewritten in the STAGED copy only (repo file untouched) so each account can run a
+# different campaign from one codebase.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,9 +33,17 @@ DONOR="$ROOT/runs/pose/experiments/gate_baseline/weights/best.pt"
 # --- credentials (local, gitignored) -----------------------------------------
 # New-style token (KGAT_...) at secrets/access_token + username at
 # secrets/kaggle_username; or a legacy secrets/kaggle.json ({username,key}).
-TOKEN_FILE="$SECRETS_DIR/access_token"
+# KACCT=2/3 -> the "(Copy)" / "(Copy 2)" pairs (parallel campaign accounts).
+KACCT="${KACCT:-1}"
+case "$KACCT" in
+  1) SFX="" ;;
+  2) SFX=" (Copy)" ;;
+  3) SFX=" (Copy 2)" ;;
+  *) echo "KACCT must be 1, 2 or 3 (got '$KACCT')"; exit 1 ;;
+esac
+TOKEN_FILE="$SECRETS_DIR/access_token$SFX"
 LEGACY_JSON="$SECRETS_DIR/kaggle.json"
-USER_FILE="$SECRETS_DIR/kaggle_username"
+USER_FILE="$SECRETS_DIR/kaggle_username$SFX"
 for f in access_token kaggle.json kaggle_username; do
   if git -C "$ROOT" ls-files --error-unmatch "secrets/$f" >/dev/null 2>&1; then
     echo "REFUSING: secrets/$f is git-tracked — untrack it before using credentials."; exit 1
@@ -78,7 +93,10 @@ case "${1:-kernel}" in
     kaggle kernels status "$KUSER/$KERNEL_SLUG"
     ;;
   --pull|pull)
-    OUT="$ROOT/data/cp33_kaggle_out"; mkdir -p "$OUT"
+    # Account 1 keeps the historical dir; extra accounts pull into their own.
+    if [ "$KACCT" = "1" ]; then OUT="$ROOT/data/cp33_kaggle_out"
+    else OUT="$ROOT/data/kaggle_out_$KUSER"; fi
+    mkdir -p "$OUT"
     kaggle kernels output "$KUSER/$KERNEL_SLUG" -p "$OUT"
     echo "kernel output -> $OUT"
     ;;
@@ -129,7 +147,14 @@ case "${1:-kernel}" in
       bash "$KAGGLE_DIR/push.sh" --cache
     fi
     K="$BUILD/kernel"; rm -rf "$K"; mkdir -p "$K"
-    cp "$KAGGLE_DIR/run.py" "$K/run.py"
+    if [ -n "${KMODE:-}" ]; then
+      # Rewrite the MODE line in the STAGED copy only — one codebase, per-account campaigns.
+      sed -E "s/^MODE       = \"[a-z_]+\"/MODE       = \"$KMODE\"/" "$KAGGLE_DIR/run.py" > "$K/run.py"
+      grep -q "^MODE       = \"$KMODE\"" "$K/run.py" || { echo "KMODE sed failed"; exit 1; }
+      echo "staged run.py with MODE=$KMODE"
+    else
+      cp "$KAGGLE_DIR/run.py" "$K/run.py"
+    fi
     sub "$KAGGLE_DIR/kernel-metadata.json" > "$K/kernel-metadata.json"
     kaggle kernels push -p "$K"
     echo "pushed $KUSER/$KERNEL_SLUG — status: bash kaggle/push.sh --status | output: bash kaggle/push.sh --pull"

@@ -27,7 +27,7 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
-MODE       = "honest_search"      # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
+MODE       = "full_finetune"      # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
 #   re-score) | full_finetune (side experiment; see eval/full_finetune.py) | graft_ablate
 #   (CP 5.2 ablation, CLOSED) | honest_search (Phase 3b: re-search under the honest
 #   Stage-0 cost model — backbone sum <= 7.16ms == e2e <= the baseline's 12.75ms;
@@ -63,6 +63,13 @@ VERIFY_BAND  = 0.020             # reproducibility noise band on |mean(fresh) �
 FULL_FT_EPOCHS      = 100         # matches eval.proxy_rank's own full_epochs precedent
 FULL_FT_SEEDS       = "0"
 FULL_FT_FREEZE_HEAD = False       # warm-start but keep training the head (default in the script)
+# CP 5.3 variant list for MODE="full_finetune": (tag, neck, adapter_init); "" = none.
+# One variant per T4 when 2 GPUs are visible (honest_search's split pattern); the bare
+# winner-v1 control is NOT re-run — its 0.841 (full_finetune.json, 2026-07-05) is the anchor.
+FULL_FT_VARIANTS = [
+    ("v3pan", "pan", ""),
+    ("v2topdown", "topdown", ""),
+]
 # -----------------------------------------------------------------------------
 
 
@@ -165,21 +172,54 @@ def main() -> None:
     if MODE == "full_finetune":
         winner_dir = repo / "state" / "winner_v1"
         freeze_flag = "--freeze-head" if FULL_FT_FREEZE_HEAD else "--no-freeze-head"
-        cmd = (f"{sys.executable} -m eval.full_finetune --winner-dir {winner_dir} "
-               f"--head-weights {head} {freeze_flag} --device cuda --imgsz 640 --batch 16 "
-               f"--epochs {FULL_FT_EPOCHS} --seeds {FULL_FT_SEEDS}")
-        print("+", cmd, flush=True)
-        rc = subprocess.run(cmd, shell=True).returncode
-        for name in ("full_finetune.json", "full_finetune_weights.pt"):
-            src = winner_dir / name
-            if src.exists():
-                shutil.copy(src, work / name)
-        if not (work / "full_finetune.json").exists():
-            raise SystemExit(f"eval.full_finetune produced no full_finetune.json (rc={rc})")
-        payload = json.loads((work / "full_finetune.json").read_text())
-        print(f"[done] full_finetune.json: proxy={payload.get('proxy_acc')} "
-              f"full_mean={payload.get('mean')} delta_vs_proxy={payload.get('delta_vs_proxy')}",
-              flush=True)
+
+        def ft_cmd(tag: str, neck: str, adapter_init: str) -> str:
+            cmd = (f"{sys.executable} -m eval.full_finetune --winner-dir {winner_dir} "
+                   f"--head-weights {head} {freeze_flag} --device cuda --imgsz 640 --batch 16 "
+                   f"--epochs {FULL_FT_EPOCHS} --seeds {FULL_FT_SEEDS}")
+            if adapter_init:
+                cmd += f" --adapter-init {adapter_init}"
+            if neck:
+                cmd += f" --neck {neck}"
+            if tag:
+                cmd += f" --tag {tag}"
+            return cmd
+
+        ngpu = int(subprocess.check_output(
+            [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
+        ).decode().strip() or "0")
+        if ngpu >= 2 and len(FULL_FT_VARIANTS) > 1:
+            procs = []
+            for i, (tag, neck, ainit) in enumerate(FULL_FT_VARIANTS):
+                env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % ngpu))
+                print(f"+ [gpu{i % ngpu}] variant {tag or 'plain'}", flush=True)
+                procs.append(subprocess.Popen(ft_cmd(tag, neck, ainit), shell=True, env=env))
+                time.sleep(10)  # guard ultralytics first-touch race
+            for pr in procs:
+                pr.wait()
+        else:
+            for tag, neck, ainit in FULL_FT_VARIANTS:
+                cmd = ft_cmd(tag, neck, ainit)
+                print("+", cmd, flush=True)
+                subprocess.run(cmd, shell=True)
+
+        missing = []
+        for tag, _neck, _ainit in FULL_FT_VARIANTS:
+            suffix = f"_{tag}" if tag else ""
+            for name in (f"full_finetune{suffix}.json", f"full_finetune{suffix}_weights.pt"):
+                src = winner_dir / name
+                if src.exists():
+                    shutil.copy(src, work / name)
+            out_json = work / f"full_finetune{suffix}.json"
+            if not out_json.exists():
+                missing.append(out_json.name)
+                continue
+            payload = json.loads(out_json.read_text())
+            print(f"[done] {out_json.name}: proxy={payload.get('proxy_acc')} "
+                  f"full_mean={payload.get('mean')} delta_vs_proxy={payload.get('delta_vs_proxy')}",
+                  flush=True)
+        if missing:
+            raise SystemExit(f"eval.full_finetune produced no {', '.join(missing)}")
         return
 
     # 4.8 CP 3.5 de-noise: re-score the pinned top-K candidates at fresh seeds to remove the
