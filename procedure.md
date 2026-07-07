@@ -2866,3 +2866,42 @@ casing at CP 6.2. `prune/` added to mypy coverage.
 **Remaining for Phase 6:** CP 6.2 (15/30/45 % ladder × `reestimate_bn` + recovery FT × Nano
 e2e per point → `data/pruning_curve.json`; optional KD-recovery per the Stage-R flag — user
 decision) and CP 6.3 (operating point, user decision) — both gated on winner-v1.5 + the board.
+
+## CP 5.2 CLOSED — graft-interface ablation: the neck is real, PAN wins (+0.026 proxy mAP) (2026-07-07)
+
+`current_checkpoint` 5.2→5.3, `last_completed` 6.1→5.2 (critical path), `completed += "5.2"`.
+Kaggle kernel v19 (T4, 96 min; v18 died on the P100-reset gotcha — fixed by pinning
+`machine_shape=NvidiaTeslaT4`); result `data/cp33_kaggle_out/graft_ablate.json` + the
+per-(variant,seed) cache. Protocol = the exact CP 3.5 oracle (5-epoch warm-head, frozen gate
+donor, fresh seeds {1,2,3}); winner-v1's backbone in all four arms.
+
+| variant | proxy mAP (mean ± σ) | Δ |
+|---|---|---|
+| V0 control (random 1×1 adapters, no neck) | 0.6027 ± 0.0131 | — |
+| V1 `adapter_init="net2wider"` | 0.5969 ± 0.0043 | −0.006 vs V0 |
+| V2 V1 + zero-gated top-down neck | 0.6106 ± 0.0073 | +0.014 vs V1 → V3 auto-ran |
+| **V3 V1 + PAN (top-down + bottom-up)** | **0.6287 ± 0.0078** | **+0.026 vs V0, +0.018 vs V2** |
+
+**Findings.**
+1. **The fusion decomposition answered the Stage-R question in the opposite direction of the
+   pre-registered negative result:** cross-scale fusion is the lever (V2−V1 = +0.014, V3−V2 =
+   +0.018 — each ≥ the ~0.014 top-cluster gaps that decided CP 3.5), while the adapter
+   *init* prior is not (V1−V0 = −0.006, inside noise; the LP-FT-style hypothesis did not pay
+   at the adapter level — worth keeping as an honest null in the thesis). V3's 0.6287 exceeds
+   every de-noised frontier point (accuracy-first arch: 0.624 @ 12.65 ms) — **fixing the
+   interface beat searching more architectures**, the pivot's core bet.
+2. **The gates opened.** Top-down: g43 ≈ 0.39, g54 ≈ 0.20, consistent across all seeds (the
+   data wants the coarse-to-fine path, especially into P3 — where 8-keypoint localization
+   lives). Bottom-up gates stayed small (|g| ≈ 0.05–0.08, mixed signs) yet V3 > V2 — the
+   return path's 3×3/s2 convs contribute beyond their gates; a thesis footnote, not a blocker.
+3. **Determinism cross-check:** V0's seeds 2/3 reproduce the CP 3.5 de-noise mAPs
+   **bit-exactly** (0.6169063798…, 0.6057934327…) — same code path, same seeds, different
+   Kaggle session. Seed 1 deviated (0.5853 vs 0.6076) — one cross-session/environment
+   nondeterministic draw; recorded as a caveat on V0's mean (its σ 0.0131 is inflated by that
+   draw), does not affect the V3 verdict (same-session comparison, margin ≫ σ).
+
+**Consequences → CP 5.3.** Top-2 = **V3 and V2**; both graphs' e2e Nano benches are in this
+session's Stage-0 batch (V3 costs +410 K params, V2 +41 K — the latency side decides how much
+of the +0.026 is affordable under the honest T_max). Next: AGX 100-epoch full-FTs
+(`eval.full_finetune --adapter-init net2wider --neck pan --tag v3pan` / `--neck topdown --tag
+v2td`) + ceiling-first selection → `state/winner_v1_5/` (user confirms the pick).
