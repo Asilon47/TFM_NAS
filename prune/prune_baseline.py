@@ -88,6 +88,20 @@ def load_baseline_model(donor: Path) -> Any:
     if dfl is not None:  # fixed integration weight — frozen by design AND DepGraph-protected
         for p in dfl.parameters():
             p.requires_grad_(False)
+    # Reset the loss plumbing to a clean, device-agnostic state, exactly as the graft path
+    # does (detect.pose_model.default_pose_args). Two donor-checkpoint hazards (both surfaced
+    # on Kaggle, 2026-07-08):
+    #  * `model.criterion` is built eagerly at load; its DFL `proj` is a plain CPU tensor (not
+    #    a registered buffer), so a later `model.to("cuda")` leaves proj on CPU → a cuda/cpu
+    #    matmul mismatch in the loss's bbox_decode.
+    #  * `model.args` is restored as a plain dict, so a freshly-built criterion trips on
+    #    `self.hyp.box` (attribute access on a dict).
+    # A fresh DEFAULT_CFG namespace + criterion=None → `.loss()` re-inits the criterion on the
+    # model's CURRENT device with the standard pose loss gains on first training forward.
+    from detect.pose_model import default_pose_args
+
+    model.args = default_pose_args()
+    model.criterion = None
     return model
 
 

@@ -40,3 +40,23 @@ def test_trace_imgsz_stays_small() -> None:
     from prune.prune_baseline import TRACE_IMGSZ
 
     assert 32 <= TRACE_IMGSZ <= 160
+
+
+# donor-dependent guards for the 2026-07-08 criterion/args reset (Kaggle rc=1). Gated on
+# ultralytics + the trained donor being present → run locally (.venv-nas), skip in CI.
+_DONOR = __import__("pathlib").Path(
+    "runs/pose/experiments/gate_baseline/weights/best.pt")
+
+
+@pytest.mark.skipif(not _DONOR.exists(), reason="gate-trained donor not present")
+def test_load_baseline_model_resets_loss_plumbing() -> None:
+    pytest.importorskip("ultralytics")
+    from prune.prune_baseline import load_baseline_model
+
+    model = load_baseline_model(_DONOR)
+    # criterion dropped so .loss() re-inits it on the model's CURRENT device (proj is a plain
+    # CPU tensor the checkpoint cached; model.to("cuda") would strand it → device mismatch).
+    assert model.criterion is None
+    # args is a namespace (not the checkpoint's dict) so the fresh criterion's hyp.box works.
+    assert hasattr(model.args, "box")
+    assert not isinstance(model.args, dict)
