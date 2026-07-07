@@ -146,6 +146,17 @@ case "${1:-kernel}" in
       echo "Seeding empty resume cache dataset $KUSER/$CACHE_SLUG ..."
       bash "$KAGGLE_DIR/push.sh" --cache
     fi
+    # Tripwire (2026-07-07 incident): the kernel `git clone`s the repo from GitHub, so any
+    # repo-module the run needs must be PUSHED before the kernel launches — a locally-committed
+    # but unpushed module fails with ModuleNotFoundError minutes later on Kaggle.
+    if git -C "$ROOT" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+      git -C "$ROOT" fetch -q origin || true
+      if [ "$(git -C "$ROOT" rev-parse HEAD)" != "$(git -C "$ROOT" rev-parse '@{u}')" ] \
+         && [ -z "${KPUSH_ANYWAY:-}" ]; then
+        echo "REFUSING: local HEAD != upstream — the kernel clones GitHub, push first"
+        echo "          (or KPUSH_ANYWAY=1 to override)."; exit 1
+      fi
+    fi
     K="$BUILD/kernel"; rm -rf "$K"; mkdir -p "$K"
     if [ -n "${KMODE:-}" ]; then
       # Rewrite the MODE line in the STAGED copy only — one codebase, per-account campaigns.
