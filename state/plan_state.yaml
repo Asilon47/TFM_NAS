@@ -284,3 +284,13 @@ notes: |
   does not apply). Export grafted + backbone-only ONNX, bench on the Nano (mode 0!), write
   data/pose_stem_head_offset.json, additively re-stamp winner.json with the honest e2e speedup;
   fallbacks [2,2,4,3,2]/[2,4,3,4,4] benched in the same session. See procedure.md "Plan pivot".
+
+  **Phase 3b CLOSED 2026-07-07 (user-directed side run; no checkpoint advance — current
+  stays 5.3):** the honest-ceiling re-search (BO under sum<=7.16ms == e2e<=baseline 12.75ms,
+  2 seeds, 42 unique evals) CONFIRMS the null trade the frontier re-scoring exposed: the
+  feasible band degenerates to the min-depth corner (41/42 evals d=[2,2,2,2,2]) and tops out
+  at proxy 0.4965 (pre-registered expectation 0.52-0.56 — a recorded miss) vs V3's measured
+  0.6287. No pick made (de-noise/e2e-bench obligations moot — noise cannot close a 0.13 gap).
+  This retires the "what if the search had used the honest cost from day one?" objection.
+  Artifacts: data/phase3b_honest_search.json + data/hs_bo_cache_r640.seed{0,1}.bo.jsonl.
+  See procedure.md "Phase 3b CLOSED". NEXT unchanged: user framing decision, then CP 5.3.

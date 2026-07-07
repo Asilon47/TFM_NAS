@@ -33,7 +33,7 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ---
 
-## Current state (as of last update: Phase 4 COMPLETE + CP 5.1/6.1 CLOSED; CP 5.2 running on Kaggle; Stage-0 Jetson session pending, 2026-07-06)
+## Current state (as of last update: STAGE 0 + CP 5.2 + Phase 3b DONE — all measurement/search contingencies closed; next = user framing decision + CP 5.3, 2026-07-07)
 
 - **Phase 0 (LUT):** COMPLETE. `data/lut.jsonl` holds all 2710 *measured* rows
   (`source=jetson_trt`, fp32, TRT 10.3.0, clocks locked); the original dummy lives
@@ -182,23 +182,20 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
-**Stages H, R, 1 are DONE; CP 5.1 + 6.1 CLOSED; CP 5.2's GPU run is on Kaggle (2026-07-06).**
+**Stages H, R, 0, 1 DONE; CP 5.1/5.2/6.1 CLOSED; Phase 3b (honest-ceiling re-search) CLOSED
+2026-07-07 — every measurement/search contingency is resolved. Two user-owned decisions gate
+the rest.**
 
-1. **Stage 0 — the Jetson session (everything is staged, board needed).** Seven ONNX + meta
-   sidecars sit in `data/e2e/` (winner e2e, winner backbone-only, two fallbacks, V2/V3 necked
-   graphs) plus the original `yolo11n_pose_640.onnx` for a byte-identical baseline re-check.
-   `bash scripts/setup_jetson.sh` → seven `python -m lut.orchestrate.bench_model --imgsz 640
-   --precision fp32 --out data/e2e/<name>.json` runs → `python -m search.pose_offset …` →
-   `python -m search.stamp_winner_e2e …` (additive `e2e` block; prints the re-pick warning if
-   the winner loses end-to-end) → "MAXN"→mode-0 doc fixes + procedure entry.
-2. **CP 5.2 results.** When the Kaggle kernel completes: `bash kaggle/push.sh --pull` →
-   `data/graft_ablate.json` (V0–V3 mean±σ + gate magnitudes) → close entry + plan_state.
-   Kernel-metadata now pins `machine_shape=NvidiaTeslaT4` (an API push used to reset the
-   accelerator to P100 → torch "no kernel image" — fixed 2026-07-06).
-3. **Then CP 5.3** (needs 1+2): AGX 100-epoch full-FT of the top-2 variants
-   (`eval.full_finetune --adapter-init/--neck --tag`), ceiling-first pick under the measured
-   e2e T_max → `state/winner_v1_5/` (user confirms). Phase 6's harness is already built and
-   smoke-tested (CP 6.1 closed out of order), so CP 6.2 follows immediately after.
+1. **Thesis framing (user decision, deferred twice — discuss, don't force).** Stage 0 retired
+   the fp32 speed claim; the honest candidate framing = "≥ baseline accuracy at
+   60-FPS-deployable latency (V3 fp16 12.75 ms = 78 FPS) + a transfer-gap findings chapter".
+   Phase 3b closed the last objection: a directed BO re-search under the honest ceiling
+   (sum ≤ 7.16 ms) tops out at proxy **0.4965** (vs V3's 0.6287) — the family cannot buy
+   accuracy inside its baseline-beating band (`data/phase3b_honest_search.json`).
+2. **CP 5.3 (needs the framing settled):** 100-epoch full-FT of V3 (+V2 control) — AGX
+   (`jetson/deploy.sh` MODE=full_finetune, FT_* selectors ready) or Kaggle; ceiling-first pick
+   under the measured e2e bar → `state/winner_v1_5/` (user confirms the pick). Phase 6's
+   pruning harness is already built + smoke-tested (CP 6.1), so CP 6.2 follows immediately.
 Donor for every warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
 whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 

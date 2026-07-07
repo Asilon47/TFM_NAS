@@ -3055,3 +3055,43 @@ unconstrained, and V3-on-winner (0.6287 measured proxy, 12.75 ms fp16) remains t
 evaluated to date. Standing rule going forward: every selection uses measured e2e (CP 5.3
 onward) or the honest fit+offset; the fast-cluster single-seed accs would need their own
 de-noise before any hypothetical re-pick (winner's-curse discipline).
+
+## Phase 3b CLOSED — the honest-ceiling band tops out at 0.4965: null trade CONFIRMED (2026-07-07)
+
+**Result vs pre-registration: a miss, below the band.** The a-priori expectation (recorded in
+the LAUNCHED entry before results) was best-band proxy ≈ 0.52–0.56. Measured
+(`data/phase3b_honest_search.json`, Kaggle T4, ~3.4 h wall): **best proxy 0.4965 @ sum
+6.989 ms**, frontier span 0.475–0.496 over 6.85–6.99 ms. Both seeds' BO trajectories
+independently proposed the same top arch (d=[2,2,2,2,2], ks mostly 3 with e=6 hotspots at
+stages 2–3; one shared-memo evaluation, two independent proposals — convergence, not
+replication). BO HV 0.1534±0.0005 over 2 seeds, both `complete`; `rs_hv=0.0` exactly as
+pre-declared (RS starves in the band — a non-claim, not a comparison).
+
+**The feasible region degenerated to the min-depth corner.** Of 42 unique archs evaluated
+(20+22; duplicates memo-deduped), **41 were d=[2,2,2,2,2]** and one was `[2,2,2,2,3]`
+(7.137 ms — inside the ceiling by 0.023 ms, didn't reach the frontier). The 0.31 ms band above
+the space's floor (6.847) admits essentially one depth pattern, so the "search" reduces to
+ks/e tuning at minimum depth — and ks/e at min depth buys ≈0.02 proxy (0.475 → 0.496).
+Notably the re-scored frontier's best honest-feasible point (0.5202 single-seed,
+`d=[2,2,3,2,2]`, margin +0.0 %) was *not* re-found: its depth pattern sits exactly on the
+ceiling and the 15-of-113 n-init draw missed it; the directed search could not recover it from
+inside the band. Both numbers tell the same story at ±0.03.
+
+**Conclusion — the negative result is now search-confirmed, not just re-scored.** Retrying the
+search under the honest cost does not rescue the beat-yolo11n-fp32 claim: the band's ceiling
+(single-seed max, i.e. *upward-biased* by the winner's-curse mechanism CP 3.5 quantified at
+≈+0.04) is 0.4965, a **−0.13 proxy sacrifice** vs V3-on-winner's measured 0.6287±0.008
+(3-seed) for a ≤1.5 % latency margin (honest e2e prediction of the band's best:
+1.115·6.989+0.926+3.837 ≈ 12.56 ms vs baseline 12.75). Under the known task saturation
+(anchor B) that trade is null. **No pick is made from this run** → the LAUNCHED entry's
+de-noise + e2e-bench obligations are moot (they gate picks); noise σ≤0.025 cannot close a
+0.13 gap, and the single-seed bias runs *against* the band, making the negative conservative.
+The deployment framing stands where Stage 0 + CP 5.2 left it: accuracy-first under the 60-FPS
+bar (V3 fp16 12.75 ms = 78 FPS), with the fp32-beat retired. Thesis value of this run: it
+closes the "but what if the search had used the honest cost from day one?" objection with a
+directed experiment — the answer is *the family cannot buy accuracy inside its
+baseline-beating band*, and the interface work (Phase 5) is where the accuracy actually came
+from. Artifacts: `data/phase3b_honest_search.json`, per-seed caches
+`data/hs_bo_cache_r640.seed{0,1}.bo.jsonl`; user-owned decisions (thesis framing, CP 5.3
+full-FT launch) remain open — this run removes the last "re-search might change the picture"
+contingency from both.
