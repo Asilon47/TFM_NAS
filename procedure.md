@@ -3013,3 +3013,20 @@ offset (both opt-in, ranking-neutral); the @224 `data/latency_calibration.json` 
 untouched (different regime). The findings chapter now has the full quantified chain:
 per-block LUT (ρ=0.991 @224) → additive ranking valid at 640 (ρ=0.983) → absolute transfer
 breaks affinely (+11.5 %, +0.93 ms) → offset 3.84 ms → fp16 asymmetry (1.43× vs 1.68×).
+
+**Addendum — the frontier re-scored with the honest cost (user question: "shouldn't the head
+latency be summed into the search?").** Answer: yes, and it is exactly what `cost.py`'s
+`stem_head` offset was built for — but a shared-head offset is **rank-neutral**, so it changes
+*feasibility*, never candidate ordering; the casualty was always the ceiling. Applying
+`e2e ≈ 1.115·sum + 0.93 + 3.84` to the full 130-point BO∪TPE frontier: **25 candidates do
+honestly beat the baseline's 12.75 ms** — but they are the frontier's cheap end (best of them:
+proxy **0.5202**, single-seed, `d=[2,2,3,2,2]`, margin **+0.0 %**; next: 0.515 at +0.4 %). The
+accurate cluster (0.60–0.63) is entirely infeasible vs the baseline. So an honest-cost search
+would have surfaced the verdict on day one: *in this family, beating yolo11n is only possible
+at a ~0.10+ proxy-mAP sacrifice for ≤0.4 % margin* — a null trade under the known saturation
+(anchor B: +70 % latency ↔ +0.5 full-train mAP). Under the surviving 60-FPS bar instead:
+**130/130 feasible at ~fp16, 112/130 even at fp32** → accuracy-first selection is
+unconstrained, and V3-on-winner (0.6287 measured proxy, 12.75 ms fp16) remains the best point
+evaluated to date. Standing rule going forward: every selection uses measured e2e (CP 5.3
+onward) or the honest fit+offset; the fast-cluster single-seed accs would need their own
+de-noise before any hypothetical re-pick (winner's-curse discipline).
