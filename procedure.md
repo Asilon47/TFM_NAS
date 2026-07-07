@@ -3014,6 +3014,31 @@ untouched (different regime). The findings chapter now has the full quantified c
 per-block LUT (ρ=0.991 @224) → additive ranking valid at 640 (ρ=0.983) → absolute transfer
 breaks affinely (+11.5 %, +0.93 ms) → offset 3.84 ms → fp16 asymmetry (1.43× vs 1.68×).
 
+## Phase 3b LAUNCHED — honest-ceiling re-search (user-directed, 2026-07-07)
+
+**User decision:** "retry the search with the new T_max." Operationalized as the honest
+beat-the-baseline ceiling: e2e ≤ 12.75 ms ⇔ **backbone sum ≤ 7.16 ms**
+(= (12.75 − 0.926 − 3.837)/1.115) — a **0.31 ms band above the space's own floor** (min corner
+6.847). The run asks: what is the best warm-head proxy accuracy this family can buy inside its
+baseline-beating band? (A-priori expectation, recorded before results: ≈ 0.52–0.56, refining
+the null trade the frontier re-scoring exposed; an upside surprise would re-open the framing.)
+
+**Design notes.** (1) Uniform arch sampling starves in the band (a *biased* local sampler hit
+2.8 %, 1,566 feasible of 56 k tried) → BO's warm-start seeds are pre-generated and pinned:
+`state/honest_search/nsga2_seeds_tmax716.json` — 113 stratified feasible archs spanning
+6.847–7.16 incl. the three reachable deeper-depth patterns (`[2,2,3,2,2]`, `[2,2,2,2,3]`);
+`bo.py`'s incumbent-mutation candidate pools then sustain band-local proposals. (2) The RS
+control **will starve** (bounded attempts by design) — the HV-vs-random comparison is
+explicitly NOT a claim of this run; the product is the band's frontier + de-noise-able top-K.
+(3) Own cache namespace **`hs_bo_cache_r640`** — the CP 3.3/3.4 DoD caches and their pinned
+`(RES, T_MAX_MS)` regime are untouched (the regime gate keeps watching them; `HS_T_MAX` is a
+separate constant). Protocol: BO, seeds {0,1}, budget 30/seed, n-init 15, the same warm-head
+oracle (5 ep, frozen gate donor, imgsz 640). Kaggle `MODE="honest_search"`, resumable.
+
+**Owed before ANY pick from this run:** 3-seed de-noise of the top-K (`search.denoise`
+machinery, new candidates file — winner's-curse discipline) **and** an e2e Nano bench of the
+chosen arch (the honest-cost prediction is a model; the claim needs the measurement).
+
 **Addendum — the frontier re-scored with the honest cost (user question: "shouldn't the head
 latency be summed into the search?").** Answer: yes, and it is exactly what `cost.py`'s
 `stem_head` offset was built for — but a shared-head offset is **rank-neutral**, so it changes

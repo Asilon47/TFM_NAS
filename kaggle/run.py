@@ -27,10 +27,16 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
-MODE       = "graft_ablate"       # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
+MODE       = "honest_search"      # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
 #   re-score) | full_finetune (side experiment; see eval/full_finetune.py) | graft_ablate
-#   (CP 5.2: V0-V3 graft-interface ablation on winner-v1's backbone — adapter init + nano-neck;
-#   see eval/graft_ablate.py; ~9-12 warm-head fine-tunes, resumable)
+#   (CP 5.2 ablation, CLOSED) | honest_search (Phase 3b: re-search under the honest
+#   Stage-0 cost model — backbone sum <= 7.16ms == e2e <= the baseline's 12.75ms;
+#   procedure.md "Phase 3b LAUNCHED")
+# Phase-3b honest-search knobs (MODE="honest_search"):
+HS_T_MAX   = 7.16                 # (12.75 - 0.926 - 3.837) / 1.115 — the honest sum ceiling
+HS_SEEDS   = "0,1"
+HS_BUDGET  = 30
+HS_N_INIT  = 15
 METHOD     = "tpe"                 # search proposer: "bo" (CP 3.3, closed) or "tpe" (CP 3.4).
 #   Same DoD/oracle/ceiling; only the sampler differs. TPE writes '.seed{s}.tpe.jsonl' shards
 #   and REUSES CP 3.3's cached '.seed{s}.rs.jsonl' random control (free), so a TPE session
@@ -226,6 +232,45 @@ def main() -> None:
         print(f"[done] v1-v0={payload.get('v1_vs_v0_delta')} "
               f"v2-v1={payload.get('v2_vs_v1_delta')} "
               f"v3_warranted={payload.get('v3_warranted')}", flush=True)
+        return
+
+    # 4.9 Phase-3b HONEST-CEILING RE-SEARCH (user-directed 2026-07-07): Stage 0 gave the
+    #     honest cost model e2e ~= 1.115*sum + 0.93 + 3.84, so beating the baseline needs a
+    #     backbone sum <= 7.16ms — a 0.31ms band above the space's floor (min corner 6.85).
+    #     Uniform sampling starves there, so BO warm-starts from the pinned band seeds
+    #     (state/honest_search/, 113 stratified feasible archs); the incumbent-mutation pools
+    #     keep proposals band-local. The RS control WILL starve (bounded attempts) — the
+    #     HV-vs-random number is not a claim of this run. Own cache namespace; the CP 3.3/3.4
+    #     DoD caches are untouched.
+    if MODE == "honest_search":
+        sh(f"ln -sf {repo}/state/honest_search/nsga2_seeds_tmax716.json "
+           "data/phase3_nsga2_frontier.json")   # override the DoD frontier symlink
+        cache = work / "hs_bo_cache_r640"
+        restored_hs = 0
+        for src in (sorted(input_root.rglob("hs_bo_cache_r640*.jsonl"))
+                    if input_root.exists() else []):
+            dst = work / src.name
+            if not dst.exists():
+                shutil.copy(src, dst)
+                restored_hs += 1
+        print(f"[resume] restored {restored_hs} honest-search shard(s)", flush=True)
+        out_hs = work / "phase3b_honest_search.json"
+        common_hs = (f"--device cuda --imgsz 640 --res {RES} --lut data/lut.jsonl "
+                     f"--head-weights {head} --freeze-head --t-max-ms {HS_T_MAX}")
+        if memo_src:
+            common_hs += f" --acc-memo {memo_src}"
+        deadline_s = max(600, int(DEADLINE_H * 3600 - (time.time() - START)))
+        cmd = (f"{sys.executable} -m search.bo --seed-list {HS_SEEDS} --budget {HS_BUDGET} "
+               f"--n-init {HS_N_INIT} --deadline-s {deadline_s} {common_hs} "
+               f"--out {out_hs} --cache {cache}")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        if not out_hs.exists():
+            raise SystemExit(f"search.bo produced no {out_hs.name} (rc={rc})")
+        payload = json.loads(out_hs.read_text())
+        print(f"[done] {out_hs.name}: complete={payload.get('complete')} — honest-ceiling "
+              f"frontier under sum<={HS_T_MAX}ms; de-noise the top-K before any pick.",
+              flush=True)
         return
 
     # 4.5 resume: Kaggle wipes /kaggle/working between commits, so the eval caches must
