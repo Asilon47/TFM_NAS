@@ -260,13 +260,48 @@ def main() -> None:
         if memo_src:
             common_hs += f" --acc-memo {memo_src}"
         deadline_s = max(600, int(DEADLINE_H * 3600 - (time.time() - START)))
-        cmd = (f"{sys.executable} -m search.bo --seed-list {HS_SEEDS} --budget {HS_BUDGET} "
-               f"--n-init {HS_N_INIT} --deadline-s {deadline_s} {common_hs} "
-               f"--out {out_hs} --cache {cache}")
-        print("+", cmd, flush=True)
-        rc = subprocess.run(cmd, shell=True).returncode
+
+        # --- Multi-GPU splitting for honest_search ---
+        ngpu = int(subprocess.check_output(
+            [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
+        ).decode().strip() or "0")
+
+        hs_seed_list = [int(s) for s in HS_SEEDS.split(",")]
+
+        if ngpu >= 2 and len(hs_seed_list) > 1:
+            from search.bo import assign_seeds_to_gpus, seed_remaining_evals
+            remaining = {s: seed_remaining_evals(cache, s, HS_BUDGET, method="bo")
+                         for s in hs_seed_list}
+            assignments = assign_seeds_to_gpus(remaining, ngpu)
+            procs, parts = [], []
+            for g, seeds_g in enumerate(assignments):
+                if not seeds_g:
+                    continue
+                part = work / f"phase3b_honest_search.part{g}.json"
+                parts.append(part)
+                sl = ",".join(map(str, seeds_g))
+                cmd = (f"{sys.executable} -m search.bo --seed-list {sl} --budget {HS_BUDGET} "
+                       f"--n-init {HS_N_INIT} --deadline-s {deadline_s} {common_hs} "
+                       f"--out {part} --cache {cache}")
+                env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(g))
+                print(f"+ [gpu{g}] seeds {seeds_g}", flush=True)
+                procs.append(subprocess.Popen(cmd, shell=True, env=env))
+                time.sleep(10) # guard ultralytics first-touch race
+
+            for pr in procs:
+                pr.wait()
+
+            sh(f"{sys.executable} -m search.bo --merge {' '.join(map(str, parts))} --out {out_hs}")
+        else:
+            # Fallback to single GPU execution
+            cmd = (f"{sys.executable} -m search.bo --seed-list {HS_SEEDS} --budget {HS_BUDGET} "
+                   f"--n-init {HS_N_INIT} --deadline-s {deadline_s} {common_hs} "
+                   f"--out {out_hs} --cache {cache}")
+            print("+", cmd, flush=True)
+            rc = subprocess.run(cmd, shell=True).returncode
+
         if not out_hs.exists():
-            raise SystemExit(f"search.bo produced no {out_hs.name} (rc={rc})")
+            raise SystemExit(f"search.bo produced no {out_hs.name}")
         payload = json.loads(out_hs.read_text())
         print(f"[done] {out_hs.name}: complete={payload.get('complete')} — honest-ceiling "
               f"frontier under sum<={HS_T_MAX}ms; de-noise the top-K before any pick.",
