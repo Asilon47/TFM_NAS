@@ -36,9 +36,9 @@ def test_analyze_guards() -> None:
 def test_rel_err_correlation_signs() -> None:
     # Plant: error grows with early depth (the DRAM hypothesis's signature).
     pairs = [
-        _pair("lo", 10.0, 10.0 * 1.10, [2, 2, 4, 4, 4]),   # early=4, +10%
+        _pair("lo", 8.0, 8.0 * 1.10, [2, 2, 4, 4, 4]),     # early=4, +10%
         _pair("mid", 10.0, 10.0 * 1.20, [3, 3, 4, 4, 4]),  # early=6, +20%
-        _pair("hi", 10.0, 10.0 * 1.30, [4, 4, 4, 4, 4]),   # early=8, +30%
+        _pair("hi", 12.0, 12.0 * 1.30, [4, 4, 4, 4, 4]),   # early=8, +30%
     ]
     r = analyze(pairs)
     assert r["rel_err_vs_early_depth_pearson"] == pytest.approx(1.0)

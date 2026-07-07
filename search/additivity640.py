@@ -65,6 +65,8 @@ def _ols(xs: Sequence[float], ys: Sequence[float]) -> tuple[float, float, float]
     n = len(xs)
     mx, my = sum(xs) / n, sum(ys) / n
     sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx == 0:
+        raise ValueError("probe sums are constant — cannot fit an affine law; vary the archs")
     sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True))
     slope = sxy / sxx
     intercept = my - slope * mx
