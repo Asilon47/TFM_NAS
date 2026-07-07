@@ -2962,3 +2962,54 @@ deploy.sh) are the **AGX** compute board, where mode 0 *is* MAXN — correct as 
 "≥ baseline accuracy at 60-FPS-deployable latency" + the quantified transfer-gap findings is
 the user's call (decision brief follows this entry). **Do not use any LUT-summed latency as an
 absolute claim anywhere; ranking-only.**
+
+## The @640 additivity study — why deployment runs slower, characterized over 9 archs (2026-07-07)
+
+User-requested follow-up ("try different BO candidates to analyze why deployment runs
+slower"). Probe = 8 new backbone-only exports benched in one Nano session (mode 0, fp32) +
+the winner's Stage-0 row: six de-noise candidates (sums 10.15–12.70, diverse `d` patterns) +
+the OFA **min corner** (`d=[2]⁵`, sum 6.85) + **max corner** (`d=[4]⁵`, sum 27.11) — a 4×
+sum range. Tool: `search/additivity640.py` (pairing via export meta sidecars; refuses
+unlocked-clock rows); report: `data/e2e/additivity640_report.json`.
+
+| arch (d) | sum ms | measured ms | ratio |
+|---|---|---|---|
+| min corner `[2,2,2,2,2]` | 6.847 | 8.054 | 1.176 |
+| `[2,4,3,4,4]` (idx3) | 10.153 | 12.269 | 1.208 |
+| `[2,2,4,3,2]` (idx11) | 10.727 | 12.813 | 1.194 |
+| `[2,3,4,2,4]` (idx4) | 11.193 | 13.128 | 1.173 |
+| **winner `[2,2,4,3,3]`** | 11.208 | 13.852 | **1.236** |
+| `[2,2,4,4,3]` (idx0) | 11.744 | 14.424 | 1.228 |
+| `[2,2,4,4,2]` (idx2) | 12.645 | 15.291 | 1.209 |
+| `[2,2,4,3,4]` (idx1) | 12.702 | 14.962 | 1.178 |
+| max corner `[4,4,4,4,4]` | 27.114 | 30.981 | 1.143 |
+
+**Findings.**
+1. **The @640 law is affine, not multiplicative: measured ≈ 1.115·sum + 0.926 ms
+   (R² = 0.9975).** The @224 fit was 0.934·sum − 0.02: at low resolution TRT cross-seam
+   fusion makes the whole *faster* than its parts; at the deploy resolution the seams *cost*
+   ~11.5 % (cross-block activation traffic on the 62.5 GB/s Nano) plus ~0.93 ms of
+   per-engine fixed overhead. **Compositional latency prediction is resolution-dependent in
+   sign** — the study's headline finding.
+2. **The search's ranking SURVIVES: Spearman(measured, sum) = 0.983 over the 9-arch probe**
+   (which spans the space's corners). Phase 3's frontier ordering, BO/TPE DoDs, and the
+   winner's-curse analysis all stand; the damage was confined to absolute claims and ceiling
+   feasibility. (Residuals are ±~0.4 ms — the winner is the largest positive residual, which
+   is why its single-point ratio read 1.236.)
+3. **The naive DRAM story is refuted in its simple form:** rel-err vs early-stage depth
+   (d0+d1) correlates **negatively** (−0.60), i.e. shallower/smaller nets suffer relatively
+   *more* — the affine intercept explains this mechanically (a fixed ~0.9 ms weighs more on
+   small nets). The per-work penalty is the 11.5 % slope; attribution finer than
+   "cross-block memory traffic + fixed engine overhead" would need per-layer profiling
+   (future work, `trtexec --dumpProfile`).
+4. **Honest feasibility, reconstructed:** for graft e2e ≤ baseline (12.75 fp32) a backbone
+   needed sum ≤ (12.75 − 3.84 − 0.93)/1.115 ≈ **7.2 ms** — only the min-corner region
+   qualifies; the searched frontier (10.15+) never contained a winner. For the 60-FPS bar
+   (16.7 ms) the honest sum ceiling is ≈ 10.7 ms fp32 — the fast half of the frontier
+   qualifies even at fp32, and everything measured qualifies at fp16.
+
+**Consequence:** `cost(..., res=640)` absolute predictions must use this fit + the pose
+offset (both opt-in, ranking-neutral); the @224 `data/latency_calibration.json` stays
+untouched (different regime). The findings chapter now has the full quantified chain:
+per-block LUT (ρ=0.991 @224) → additive ranking valid at 640 (ρ=0.983) → absolute transfer
+breaks affinely (+11.5 %, +0.93 ms) → offset 3.84 ms → fp16 asymmetry (1.43× vs 1.68×).
