@@ -170,8 +170,15 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
   (TensorRT in Docker; mode 0 + locked clocks via `scripts/setup_jetson.sh` — since the JetPack
   update the board *idles* in the 25 W/918 MHz Super regime, so never bench without the setup
   script; every repo latency is a 612 MHz mode-0 number).
-- **Stage 0 owed:** winner-v1's end-to-end latency is unmeasured (see the pivot bullet). Until it
-  lands, do not reuse the "12 % faster" figure in new claims.
+- **Stage 0 LANDED (2026-07-07) — the "12 % faster" claim is RETIRED, permanently.** Measured
+  same-session on the Nano (mode 0): baseline 12.75 ms fp32 / **7.58 ms fp16**; winner-v1 e2e
+  **17.69 ms fp32 / 12.37 ms fp16** (+38.7 % / +63 % SLOWER). Causes, quantified: the @224
+  additivity calibration inverts at 640 (measured backbone = **1.236×** the LUT sum;
+  DRAM-bound), and the pose adapter+head offset is **3.84 ms**
+  (`data/pose_stem_head_offset.json`). No LUT-frontier arch beats the baseline e2e. The good
+  number: **V3 (PAN nano-neck) fp16 = 12.75 ms = 78 FPS — meets the 60 FPS deployment bar**
+  with 24 % headroom. LUT-summed latencies are **ranking-only** in every future claim; honest
+  numbers live in `winner.json`'s `e2e` block + procedure.md "STAGE 0 COMPLETE".
 
 ### Lowest-friction next build
 

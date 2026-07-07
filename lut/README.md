@@ -34,7 +34,9 @@ Schema details: [`lut/docs/schema.md`](docs/schema.md).
 
 The LUT is only valid for the power mode that was active when it was measured. For Orin Nano 8GB the relevant modes are:
 
-- `sudo nvpmodel -m 0`   — 15 W (maximum performance)
+- `sudo nvpmodel -m 0`   — 15 W, GPU locked at 612 MHz (**the LUT / every repo latency's regime**;
+  this is the pre-Super maximum — it is NOT the JetPack-Super "MAXN SUPER" 25 W / 918 MHz mode,
+  which the Super-updated board now *idles* in and which has never been measured here)
 - `sudo nvpmodel -m 1`   — 7 W
 
 Lock clocks to maximum within the chosen mode:

@@ -177,5 +177,33 @@
   ],
   "denoise_source": "data/cp33_kaggle_out/denoise.json",
   "note": "acc is the mean of 3 fresh-seed 5-epoch warm-head PROXY mAPs (CP 2.4 ranking signal), NOT a full-train deployable number; Phase 8 distills the deployable weights.",
-  "timestamp": "2026-07-04T18:14:27Z"
+  "timestamp": "2026-07-04T18:14:27Z",
+  "e2e": {
+    "latency_ms_measured": 17.688166456222532,
+    "baseline_recheck_ms": 12.752815170288086,
+    "speedup_pct_e2e": -38.70009264646903,
+    "winner_beats_baseline_e2e": false,
+    "lut_sum_ms": 11.208314675999718,
+    "baseline_anchor_ms": 12.754786586761474,
+    "regime": {
+      "precision": "fp32",
+      "power_mode": "0",
+      "trt_version": "10.3.0",
+      "clocks_locked": true
+    },
+    "note": "measured end-to-end, one session, both sides full networks \u2014 supersedes the headline vs_yolo11n.latency_speedup_pct, which compared the backbone-blocks-only LUT sum against the full-network baseline (see procedure.md 'Plan pivot'). Existing keys are untouched by design.",
+    "timestamp": "2026-07-07T07:13:35Z",
+    "backbone_measured_ms": 13.85157277584076,
+    "offset_ms_derived": 3.836593680381773,
+    "fallbacks": {
+      "idx11_d22432": {
+        "latency_ms_measured": 16.6525057888031,
+        "speedup_pct_e2e": -30.579056988143588
+      },
+      "idx3_d24344": {
+        "latency_ms_measured": 16.11182872772217,
+        "speedup_pct_e2e": -26.33938869638776
+      }
+    }
+  }
 }

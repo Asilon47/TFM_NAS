@@ -2905,3 +2905,60 @@ session's Stage-0 batch (V3 costs +410 K params, V2 +41 K — the latency side d
 of the +0.026 is affordable under the honest T_max). Next: AGX 100-epoch full-FTs
 (`eval.full_finetune --adapter-init net2wider --neck pan --tag v3pan` / `--neck topdown --tag
 v2td`) + ceiling-first selection → `state/winner_v1_5/` (user confirms the pick).
+
+## STAGE 0 COMPLETE — the end-to-end truth: the winner does NOT beat the baseline; the claim is retired (2026-07-07)
+
+The owed measurement (procedure.md "Plan pivot" consequence #1) ran on the Orin Nano — one
+session, `power_mode 0`, `clocks_locked=true` (preflight-verified per bench), TRT fp32 first
+(the LUT-comparable regime), then the fp16 deploy-precision trio. The baseline re-check
+reproduced the anchor **exactly** (12.75 ms), so every number below is same-regime comparable.
+
+**fp32 @640 (LUT-comparable), seven models:**
+
+| model | e2e ms | vs baseline |
+|---|---|---|
+| yolo11n-pose (baseline re-check) | **12.75** | — |
+| winner-v1 graft e2e (`d=[2,2,4,3,3]`) | **17.69** | **+38.7 %** |
+| winner-v1 backbone only | 13.85 | sum was 11.208 → **×1.236** |
+| fallback `[2,2,4,3,2]` (idx 11) e2e | 16.65 | +30.6 % |
+| fallback `[2,4,3,4,4]` (idx 3) e2e | 16.11 | +26.4 % |
+| winner + V2 top-down neck e2e | 18.13 | neck costs +0.44 ms |
+| winner + V3 PAN neck e2e | 18.38 | neck costs +0.69 ms |
+
+**fp16 @640 (the deploy precision):** baseline **7.584 ms** (1.68× from fp32) — winner e2e
+**12.37 ms** (only 1.43×) — V3 e2e **12.75 ms** (1.44×). The depthwise-heavy OFA family gains
+far less from tensor cores than the baseline's dense convs, so at deploy precision the gap
+*widens* to **+63 %**.
+
+**Decomposition (all three audit fears materialized, coherently):**
+1. **The @224 additivity calibration inverts at 640**: measured whole-backbone / raw LUT sum =
+   **1.236** (at 224 the fit was 0.934 — TRT fusion made the whole *faster* than the sum; at
+   640 the cross-block activations are DRAM-bound on the 62.5 GB/s Nano and the sum
+   *under*-predicts by 23.6 %). Recorded in `data/pose_stem_head_offset.json`
+   (`backbone_measured_vs_lut_sum`) — the first @640 additivity data point.
+2. **The pose stem/adapter/head offset is 3.84 ms** (17.69 − 13.85), vs the 0.39 ms *classifier*
+   offset @224 that was never applicable.
+3. The `×1.236 + 3.84` model predicts the two fallbacks within 0.3–0.45 ms of their measured
+   values → the decomposition is sound; **no LUT-frontier candidate can beat 12.75 ms e2e**
+   (the fastest sum, 10.15, lands at 16.11 measured). The ceiling-first re-pick path is moot —
+   the gap is structural (family + offset), not arch choice.
+4. `search/cost.py`'s own limitation note (peer-review R4.3: "rankings are not
+   precision-invariant... a search result is faithful at the searched precision only")
+   **predicted exactly this**: per-block fp32 LUT fidelity (ρ=0.991 @224) survived, absolute
+   e2e transfer did not.
+
+**What was stamped/fixed:** `state/winner_v1/winner.json` now carries the additive `e2e` block
+(`speedup_pct_e2e = −38.7 %`, `winner_beats_baseline_e2e: false`, both fallbacks, regime
+stamps) — pre-existing keys untouched; `data/pose_stem_head_offset.json` is the measured
+CostOffset (`cost(..., res=640, stem_head=…)` now gives honest absolute e2e). "MAXN" audit
+item resolved with a twist: the three flagged mentions (CP33_BACKENDS.md, jetson/README.md,
+deploy.sh) are the **AGX** compute board, where mode 0 *is* MAXN — correct as written; only
+`lut/README.md`'s Nano mode-0 label needed the clarification (612 MHz / 15 W pre-Super max ≠
+"MAXN SUPER" 25 W/918 MHz, never measured here).
+
+**The one genuinely good number:** V3 (the CP 5.2 accuracy winner, +0.026 proxy) at fp16 runs
+**12.75 ms = 78 FPS — it MEETS the 60 FPS (16.7 ms) deployment bar with 24 % headroom**. The
+"faster than yolo11n" headline is retired permanently; whether the thesis pivots to
+"≥ baseline accuracy at 60-FPS-deployable latency" + the quantified transfer-gap findings is
+the user's call (decision brief follows this entry). **Do not use any LUT-summed latency as an
+absolute claim anywhere; ranking-only.**
