@@ -3149,3 +3149,49 @@ cross-family comparison must plot *recipe-consistent* numbers (ctrl_n anchors th
 axis; CP 7.2 parity anchors the winner side). Thesis framing question stays open but is now
 concretely: which measured frontier point ships, and the findings chapter explains why the
 families rank as they do.
+
+### Incident — prune_baseline OOM (rc=137) on Kaggle, and the yolo11 DepGraph prep (2026-07-08)
+
+**Symptom.** acct2's first `prune_baseline` kernel (asilarnous v14) was SIGKILL-OOM'd
+(rc=137, ~12 GB host) ~18 min in — *after* a clean donor val (0.887), so the model + data
+paths were fine. The failure was inside torch-pruning's `get_all_groups` (dependency-group
+construction), reproduced locally under a 4 GB cgroup cap (`systemd-run -p MemoryMax=4G`) with
+an RSS watchdog that `interrupt_main()`s at 3 GB to capture the live stack instead of a bare
+kill. **The OFA graft (CP 6.1) never hit this — all three causes are yolo11-structural:**
+
+1. **C2PSA attention.** The `qkv → view(B,heads,dims,H·W) → matmul` reshapes register
+   `_FlattenIndexMapping` chains whose index lists grow *multiplicatively* as groups assemble
+   → unbounded RAM. No cheap fix; the attention blocks are kept **dense** via `ignored_layers`
+   (`prune/yolo_tp_prep.attention_modules`, ~2 % of yolo11n params). tp expands an ignored
+   module to `list(.modules())`, so only the *outermost* C2PSA is passed.
+2. **C2f `chunk`.** `C2f.forward` (inherited by every `C3k2`) does `cv1(x).chunk(2,1)` — one
+   conv feeding two index spaces; DepGraph mis-couples it (`IndexError: index 384 vs size
+   256`). Fixed by rewriting each block into two explicit convs (`C2fSplit`), the canonical
+   torch-pruning-YOLOv8 remedy — **function- and param-count-preserving** (conv/BN rows are
+   independent, so slicing `cv1` into `cv0`+`cv1` is exact).
+3. **Trace resolution.** DepGraph runs a real forward holding every activation via `grad_fn`,
+   so host memory scaled with the 640 deploy res; the coupling result is res-independent.
+   Trace at `TRACE_IMGSZ=128` (the CP 6.1 DoD size).
+
+**Two silent copy bugs** in `C2fSplit`, caught only by *end-to-end* function-preservation
+(weight-equality alone missed both): ultralytics stamps `eps=1e-3, momentum=0.03` onto BN
+*after* construction (a fresh Conv has torch defaults), and a fresh `nn.Module` defaults to
+**train** mode — each drifts a "byte-identical" copy by ~5e-2 per block. Also fixed in the same
+pass: `recovery_finetune` now vals a `deepcopy` (Ultralytics' AutoBackend fuses Conv+BN *in
+place*, which would strip BN from the model we then save/export) and donor params are counted
+pre-val.
+
+**round_to=16 floor (worth recording for the ladder read).** On a net this small, snapping
+kept-channel counts to multiples of 16 dominates: measured pruning_ratio→param-sparsity is
+0.05→0.286, 0.15→0.392, 0.30→0.584, 0.45→0.664. So the 15/30/45 % ladder is really a
+**39 / 58 / 66 % param-reduction** ladder (three distinct operating points — kept as-is; going
+below 0.15 is pointless, 0.05 and 0.10 both land ~29 %). The recovery+eval measures the
+accuracy cost of each; if even the 39 % rung won't recover, that itself is the finding
+(yolo11n is already compact).
+
+**Verified** on the real donor under the 4 GB cap: prune 0.7 s @ 363 MB peak (was OOM),
+split rel-err 4e-7, pruned forward @640 finite `(1,29,8400)`. New `tests/test_yolo_tp_prep.py`
+(function-preservation in train+eval, param-count identity, train-mode inheritance, routing-attr
+carry-over, C2PSA detection) + a `TRACE_IMGSZ` regression pin; 14 prune tests green. Kernel
+re-launched. (The pre-fix launch-vs-push race that produced the *earlier* ModuleNotFoundError
+is a separate, already-fixed issue — the `push.sh` HEAD≠upstream tripwire.)
