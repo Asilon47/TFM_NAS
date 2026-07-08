@@ -304,3 +304,17 @@ notes: |
   from-scratch ctrl_n recipe control). All latencies measured-only (next Nano session benches
   everything); single-seed results owe CP 3.5 de-noise discipline before any pick. See
   procedure.md "Plan amendment — the dense-family arm".
+
+  **ALL THREE CAMPAIGNS IN 2026-07-08 (no checkpoint advance; current stays 5.3):**
+  - acct1 CP 5.3: v2topdown 0.846 / v3pan 0.842 (100ep, from-scratch bare-AdamW, seed 0).
+  - acct2 CP 6.2-B: donor 0.887; ladder r15/r30/r45 = 0.834/0.790/0.809 (39/58/66% params).
+    NON-MONOTONIC (r45>r30) ⇒ recovery-noise-bound, de-noise before CP 6.3 pick.
+  - acct3 CP 3c.1: yolo11 depth mult is DEGENERATE below n (C3k2 n-floor) → wave = a 3-point
+    WIDTH curve (w0.25/0.20/0.15 = 0.854/0.839/0.815); ctrl_n from-scratch 0.854 vs pretrained
+    0.877 ⇒ COCO-pretrain+recipe worth only ~2.3pts (re-frames winner-v1's "deficit").
+  All four families now cluster 0.79-0.85 from-scratch → LATENCY, not accuracy, separates them.
+  Two Kaggle prune bugs fixed en route (rc=137 OOM: prune/yolo_tp_prep.py splits C2f chunks +
+  keeps C2PSA dense, trace@128; rc=1: load_baseline_model resets the donor's CPU-cached
+  criterion + dict args). SOLE remaining blocker to the cross-family verdict = ONE Nano bench
+  session (winner-v1.5 e2e both necks + 3 pruned ONNX + 6 dense ONNX + deferred riders). See
+  procedure.md "CP 6.2-B" / "CP 3c.1".

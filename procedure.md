@@ -3234,3 +3234,42 @@ e2e latencies (the whole point of the dense arm — a device-native family whose
 beat the depthwise graft); and the 3 *distinct* width models must be de-noised at fresh seeds
 {1,2,3} (the wave's 3 identical w0.25 runs are the SAME seed, so they confirm determinism, not
 noise). Anchors are now baked into the report (`DENSE_ANCHORS`) for the CP 3c.3 figure.
+
+## CP 6.2-B — pruned-baseline control ladder landed (acct2); non-monotonic ⇒ recovery-noise-bound (2026-07-08)
+
+**Ran** (after the two-bug fix above): the DepGraph ladder on the gate-trained yolo11n donor —
+prune → `reestimate_bn` → 50-ep bare-AdamW recovery → same-validator eval → deploy ONNX, at
+15/30/45 % (`data/kaggle_out_asilarnous/prune_baseline/`; 3 ONNX + 3 .pt + report). 284 min,
+clean run (per-epoch recovery prints monotone through 50/50, no divergence).
+
+**Donor re-eval (same validator): 0.8869** mAP (note this is ~+0.01 over the 0.877 baseline
+anchor used elsewhere — a validator-config difference; the ladder's Δ's are self-consistent
+against THIS anchor, which is what the protocol requires).
+
+| ratio | params | Δparams | pose mAP50-95 | Δ vs donor |
+|------|--------|---------|------|------|
+| 0.15 | 1,644,859 | −39 % | **0.8343** | −0.053 |
+| 0.30 | 1,124,859 | −58 % | 0.7897 | −0.097 |
+| 0.45 |   909,435 | −66 % | 0.8090 | −0.078 |
+
+**The ladder is non-monotonic** — r45 (0.809) > r30 (0.790) despite pruning more. The recovery
+ran to completion for every rung (log-verified), so this is **genuine single-seed recovery
+variance**, not a bug: the 50-ep bare-AdamW recovery's noise is comparable to the inter-rung
+accuracy gaps. Same lesson as CP 3.5 — **the single-seed ordering is untrustworthy; de-noise
+the rungs at fresh seeds before reading any curve or picking an operating point** (CP 6.3).
+
+**Standing:** these are ACCURACY only. The whole point of B1 is **latency** — a dense,
+tensor-core-friendly pruned yolo11n may beat both the baseline and the depthwise graft e2e; the
+3 ONNX are measured-only and await the Nano session. For the cross-family read: the best
+single-seed rung (r15, 0.834, 39 % fewer params) lands just under the graft full-FTs
+(0.842–0.846) and the from-scratch dense points (ctrl_n 0.854, w0.20 0.839) — all four families
+now cluster in **0.79–0.85 from-scratch**, so latency, not accuracy, will separate them.
+
+### All three parallel campaigns are now in (2026-07-08)
+
+acct1 CP 5.3 (v2topdown 0.846 / v3pan 0.842) · acct2 CP 6.2-B (this) · acct3 CP 3c.1 (dense
+width curve + ctrl_n control). **The single remaining blocker to the cross-family verdict is
+one Nano bench session** covering: winner-v1.5 e2e (both necks), the 3 pruned-baseline ONNX,
+the 6 dense-wave ONNX, plus the deferred riders (SE ablation, 512-res, FusedMBConv/OFA-R50 LUT
+screens). Every pick (winner-v1.5, CP 6.3 operating point, CP 3c.2 wave-2, thesis framing)
+stays user-owned and de-noise-gated.

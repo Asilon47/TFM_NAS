@@ -182,23 +182,34 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
-**DENSE-FAMILY ARM LANDED (2026-07-07, user decision A+B1+B2 — see procedure.md "Plan
-amendment — the dense-family arm"). Three Kaggle accounts run campaigns in parallel
-(`KACCT=N KMODE=<mode> bash kaggle/push.sh`; accounts 2/3 pull into
-`data/kaggle_out_<user>/`):**
+**ALL THREE DENSE-FAMILY CAMPAIGNS ARE IN (2026-07-08, user decision A+B1+B2). Results
+pulled + recorded (procedure.md "CP 6.2-B" / "CP 3c.1"); the SOLE remaining blocker to the
+cross-family verdict is ONE Nano bench session.** Accuracy (all from-scratch, single-seed):
 
-1. **acct1 (owaismalekarnous): CP 5.3** — v3pan + v2topdown 100-ep full-FTs
-   (`FULL_FT_VARIANTS`, one per T4). When done: `--pull` → ceiling-first winner-v1.5 pick
-   under the measured e2e bar (user confirms) → `state/winner_v1_5/`.
-2. **acct2 (asilarnous): CP 6.2-B** — `prune/prune_baseline.py` DepGraph ladder on the
-   gate-trained yolo11n donor (the control arm). Pull → 3 ONNX await Nano benches.
-3. **acct3 (asilarnous47): Phase 3c wave 1** — `search/dense_family.py`, 6 yolo11-pose
-   scaling candidates incl. the from-scratch `ctrl_n` recipe control. Pull → 6 ONNX await
-   Nano benches; **de-noise before any pick** (single-seed wave).
-4. **Next Nano session benches EVERYTHING** (winner-v1.5 e2e, both ladders, dense wave) +
-   the deferred riders: SE ablation, 512-res sweep, FusedMBConv + OFA-R50 LUT screens.
-   Phase 3b's negative result + Phase 3c's frontier together close the framing question with
-   measurements (CP 3c.3 cross-family figure).
+| family (from-scratch) | mAP50-95 | artifact |
+|---|---|---|
+| dense w0.25 = ctrl_n (yolo11n arch) | 0.854 | `data/kaggle_out_asilarnous47/dense_scaling/` |
+| graft v2topdown / v3pan (100ep) | 0.846 / 0.842 | `data/cp33_kaggle_out/full_finetune_v*` |
+| dense w0.20 | 0.839 | dense_scaling |
+| pruned-baseline r15 (−39 % params) | 0.834 | `data/kaggle_out_asilarnous/prune_baseline/` |
+| dense w0.15 | 0.815 | dense_scaling |
+
+(baseline pretrained anchor 0.877 → COCO-pretrain+recipe worth only ~2.3pts; CP 3c.1.) All four
+families cluster **0.79–0.85 from-scratch → LATENCY, not accuracy, is the separator.**
+
+1. **NEXT NANO SESSION benches EVERYTHING** (mode 0 / 612 MHz — `scripts/setup_jetson.sh`):
+   winner-v1.5 e2e (both necks), the **3 pruned-baseline ONNX** (`prune_base_r{15,30,45}_640.onnx`),
+   the **6 dense-wave ONNX** (`dense_*_640.onnx`), + deferred riders (SE ablation, 512-res sweep,
+   FusedMBConv + OFA-R50 LUT screens). `lut.orchestrate.bench_model --imgsz 640` per model. This
+   is the CP 3c.3 cross-family figure's x-axis.
+2. **THEN de-noise before ANY pick** (single-seed everywhere): the 3 distinct dense widths AND
+   the prune rungs (CP 6.2-B is **non-monotonic** r45>r30 ⇒ recovery-noise-bound) at seeds
+   {1,2,3} — CP 3.5 discipline. User owns winner-v1.5 / CP 6.3 point / CP 3c.2 wave-2 / framing.
+- **Kaggle prune infra fixed 2026-07-08:** `prune/yolo_tp_prep.py` (splits C2f chunks, keeps
+  C2PSA dense, trace@128) makes torch-pruning tractable on ANY yolo11/dense donor; and
+  `load_baseline_model` resets the donor checkpoint's CPU-cached criterion + dict args (else a
+  cuda/cpu loss mismatch). Both have regression tests. yolo11 depth mult is **degenerate below n**
+  (C3k2 n-floor) — dense scaling is width-only; drop depth as a wave-2 knob.
 Donor for every warm-head proxy: `runs/pose/experiments/gate_baseline/weights/best.pt` (nc=1/8-kpt →
 whole head transfers + freezes cleanly; [[cp24-donor-must-be-trained]]).
 
