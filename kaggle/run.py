@@ -74,11 +74,16 @@ FULL_FT_VARIANTS = [
 # run campaigns in parallel — push each with KACCT=N KMODE=<mode> bash kaggle/push.sh):
 # MODE="prune_baseline" — CP 6.2-B control arm: DepGraph ladder on the gate-trained yolo11n
 #   donor (gate_best.pt IS the 0.877 baseline), recover, export deploy ONNX per point.
-PB_RATIOS = "0.15,0.30,0.45"
+# Round 2 (2026-07-08): the Nano canary showed the pruned baseline is ~25% FASTER than the
+# depthwise graft-loser, so both dense arms map their frontier FINER. Extended prune ratios
+# (new points around the done 0.15/0.30/0.45); fresh Kaggle session ⇒ its own output dir.
+PB_RATIOS = "0.10,0.20,0.35,0.55"
 PB_EPOCHS = 50
-# MODE="dense_scaling" — Phase-3c wave 1: yolo11-pose scaling grid, stock recipe, from
-#   scratch, one candidate subset per T4; latencies measured later on the Nano.
+# MODE="dense_scaling" — yolo11-pose scaling grid, stock recipe, from scratch, one candidate
+#   subset per T4; latencies measured later on the Nano. DS_WAVE selects the wave (2 = the
+#   finer width sweep; depth is a dead knob below n, see CP 3c.1).
 DS_EPOCHS = 100
+DS_WAVE = "2"
 # -----------------------------------------------------------------------------
 
 
@@ -252,13 +257,14 @@ def main() -> None:
     #      across the two T4s (per-tag row files make the split coordination-free), then
     #      assemble the report in one --report-only pass.
     if MODE == "dense_scaling":
-        from search.dense_family import wave_tags  # repo already on sys.path (step 1)
+        from search.dense_family import WAVES, wave_tags  # repo already on sys.path (step 1)
 
         out_dir = work / "dense_scaling"
         out_dir.mkdir(exist_ok=True)
         base_cmd = (f"{sys.executable} -m search.dense_family --data dataset/dataset.yaml "
-                    f"--epochs {DS_EPOCHS} --imgsz 640 --batch 16 --out-dir {out_dir}")
-        tags = wave_tags()
+                    f"--epochs {DS_EPOCHS} --imgsz 640 --batch 16 --wave {DS_WAVE} "
+                    f"--out-dir {out_dir}")
+        tags = wave_tags(WAVES[DS_WAVE])
         ngpu = int(subprocess.check_output(
             [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
         ).decode().strip() or "0")

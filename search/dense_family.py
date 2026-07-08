@@ -43,6 +43,21 @@ WAVE1: list[tuple[str, float, float, int]] = [
     ("d50_w15", 0.50, 0.15, 1024),
 ]
 
+# WAVE2 (2026-07-08): a finer WIDTH sweep of the dense frontier — CP 3c.1 proved depth is a
+# dead knob below n (the C3k2 repeat floor), so every candidate here fixes depth at yolo11n's
+# own 0.50 and varies only width. Fills below (w0.13), between (w0.18/0.22) and above (w0.30)
+# the wave-1 points {0.15, 0.20, 0.25} → a 7-point width/accuracy/latency curve. w0.10 is
+# INFEASIBLE (verified): the stock C2PSA attention needs dim//64 >= 1 heads, and below ~w0.13
+# the deepest block starves it → ZeroDivisionError. 0.13 is the practical width floor.
+WAVE2: list[tuple[str, float, float, int]] = [
+    ("w13", 0.50, 0.13, 1024),
+    ("w18", 0.50, 0.18, 1024),
+    ("w22", 0.50, 0.22, 1024),
+    ("w30", 0.50, 0.30, 1024),
+]
+
+WAVES: dict[str, list[tuple[str, float, float, int]]] = {"1": WAVE1, "2": WAVE2}
+
 # Cross-family reference points for the wave report (the CP 3c.3 figure's y-axis anchors).
 # baseline = deployed yolo11n-pose (COCO-pretrained + Ultralytics recipe); yolo11s is anchor B
 # (CP 3.4). ctrl_n (in-wave) is the from-scratch/stock-recipe control for the SAME arch as the
@@ -178,11 +193,12 @@ def run_wave(
     imgsz: int = 640,
     batch: int = 16,
     device: Any = 0,
+    wave: list[tuple[str, float, float, int]] | None = None,
 ) -> list[dict]:
     """Train the wave (or the ``only`` subset); per-tag row files make the loop resumable and
     let two GPU workers stripe the wave without coordination."""
     rows: list[dict] = []
-    for tag, d, w, mc in WAVE1:
+    for tag, d, w, mc in (WAVE1 if wave is None else wave):
         if only is not None and tag not in only:
             continue
         row_file = Path(out_dir) / f"dense_{tag}.row.json"
@@ -214,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--batch", type=int, default=16)
     p.add_argument("--device", default="0")
+    p.add_argument("--wave", choices=sorted(WAVES), default="1",
+                   help="which wave to run/tag (1=original 6, 2=finer width sweep)")
     p.add_argument("--report-only", action="store_true",
                    help="assemble dense_scaling.json from existing row files")
     a = p.parse_args(argv)
@@ -225,12 +243,13 @@ def main(argv: list[str] | None = None) -> int:
                   f"params={row['params']:,}  map={row['map']:.4f}")
         return 0
 
+    wave = WAVES[a.wave]
     only = a.only.split(",") if a.only else None
-    unknown = set(only or []) - set(wave_tags())
+    unknown = set(only or []) - set(wave_tags(wave))
     if unknown:
         raise SystemExit(f"unknown wave tags: {sorted(unknown)}")
     run_wave(data_yaml=a.data, out_dir=a.out_dir, only=only, epochs=a.epochs,
-             imgsz=a.imgsz, batch=a.batch, device=a.device)
+             imgsz=a.imgsz, batch=a.batch, device=a.device, wave=wave)
     return 0
 
 

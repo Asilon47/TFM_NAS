@@ -56,3 +56,13 @@ def test_assemble_wave_report_sorts_and_caveats() -> None:
     assert rep["control_tag"] == "ctrl_n"
     assert "single-seed" in rep["note"] and "de-noise" in rep["note"]
     assert rep["anchors"]["yolo11n_pretrained"] == 0.877
+
+
+def test_wave2_is_width_only_and_unique() -> None:
+    from search.dense_family import WAVE2, WAVES
+    tags = wave_tags(WAVE2)
+    assert len(tags) == len(set(tags)) == len(WAVE2)
+    assert all(d == 0.50 for _, d, _, _ in WAVE2)          # depth fixed (degenerate below n)
+    assert WAVES["1"] and WAVES["2"] == WAVE2
+    widths = sorted(w for _, _, w, _ in WAVE2)
+    assert widths[0] < 0.15 and widths[-1] > 0.25          # extends below and above wave-1
