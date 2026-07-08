@@ -43,6 +43,12 @@ WAVE1: list[tuple[str, float, float, int]] = [
     ("d50_w15", 0.50, 0.15, 1024),
 ]
 
+# Cross-family reference points for the wave report (the CP 3c.3 figure's y-axis anchors).
+# baseline = deployed yolo11n-pose (COCO-pretrained + Ultralytics recipe); yolo11s is anchor B
+# (CP 3.4). ctrl_n (in-wave) is the from-scratch/stock-recipe control for the SAME arch as the
+# baseline — its gap to `baseline` isolates the COCO-pretrain + recipe advantage.
+DENSE_ANCHORS = {"yolo11n_pretrained": 0.877, "yolo11s_pretrained": 0.882}
+
 WAVE_CAVEAT = (
     "single-seed, from-scratch (no COCO pretrain), stock Ultralytics recipe for every "
     "candidate incl. the ctrl_n control; latencies are measured-only (Nano e2e bench of the "
@@ -192,7 +198,7 @@ def run_wave(
 
 def write_report(out_dir: Path, *, anchors: dict | None = None) -> dict:
     rows = [json.loads(f.read_text()) for f in sorted(Path(out_dir).glob("dense_*.row.json"))]
-    payload = assemble_wave_report(rows, anchors=anchors)
+    payload = assemble_wave_report(rows, anchors=DENSE_ANCHORS if anchors is None else anchors)
     (Path(out_dir) / "dense_scaling.json").write_text(json.dumps(payload, indent=2) + "\n")
     return payload
 

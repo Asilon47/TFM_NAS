@@ -3195,3 +3195,42 @@ split rel-err 4e-7, pruned forward @640 finite `(1,29,8400)`. New `tests/test_yo
 carry-over, C2PSA detection) + a `TRACE_IMGSZ` regression pin; 14 prune tests green. Kernel
 re-launched. (The pre-fix launch-vs-push race that produced the *earlier* ModuleNotFoundError
 is a separate, already-fixed issue — the `push.sh` HEAD≠upstream tripwire.)
+
+## CP 3c.1 — dense-family scaling wave 1 landed (acct3); depth is a dead knob below yolo11n (2026-07-08)
+
+**Ran:** all 6 WAVE1 candidates, 100 ep from scratch (no COCO pretrain), stock Ultralytics
+recipe, seed 0, imgsz 640, on asilarnous47 (`data/kaggle_out_asilarnous47/dense_scaling/`; 6
+row.json + 6 deploy ONNX + best.pt). mAP cross-checked against each `runs/<tag>/results.csv`.
+
+**Finding — the depth multiplier does nothing sub-n.** The three width-0.25 candidates
+(ctrl_n d=0.50, d25_w25 d=0.25, d33_w25 d=0.33) came out **byte-identical**: same 2,696,611
+params AND same 0.8537 mAP to four decimals; likewise d33_w20 == d50_w20. The yamls carried the
+correct distinct triples (verified), so this is architectural, not a bug: yolo11's depth mult
+scales each C3k2 repeat by `n' = max(round(n·d), 1)`, but yolo11n's blocks already sit at base
+`n ∈ {1,2}` — `round(2·0.5)=round(2·0.33)=round(2·0.25)=1`, and n=1 can't shrink — so every
+`d ≤ 0.5` collapses to the same n=1 net. **You cannot make yolo11n shallower by scaling, only
+narrower.** ⇒ the 6-point wave is really a **3-point width-only curve**, and wave-2 should drop
+depth as a knob (or go supra-n, where the thesis budget doesn't reach).
+
+**The width curve (single-seed, from scratch):**
+
+| width | params | pose mAP50-95 |
+|------|--------|------|
+| 0.25 | 2,696,611 | 0.8537 |
+| 0.20 | 1,904,069 | 0.8389 |
+| 0.15 | 1,227,814 | 0.8147 |
+
+**ctrl_n is the load-bearing control.** From-scratch yolo11n (its own 0.50/0.25 scale) =
+**0.8537** vs the deployed COCO-pretrained + Ultralytics-recipe baseline **0.877** ⇒ pretrain +
+recipe together are worth only **≈+0.023 mAP** on this gate task. That **re-frames winner-v1's
+"deficit"**: the graft full-FT (v2topdown 0.846 / v3pan 0.842, both *also* from-scratch,
+bare-AdamW) sits within **~0.8–1.2 pts of a from-scratch yolo11n at comparable params** — the
+intrinsic *architecture* gap is small; most of the graft-vs-pretrained-baseline gap is the
+missing COCO pretrain + the weaker recipe, now quantified. (Cross-family framing stays
+user-owned; this just supplies the honest axis.)
+
+**Owed before any pick (unchanged discipline):** the 6 deploy ONNX still need measured Nano
+e2e latencies (the whole point of the dense arm — a device-native family whose *latency* may
+beat the depthwise graft); and the 3 *distinct* width models must be de-noised at fresh seeds
+{1,2,3} (the wave's 3 identical w0.25 runs are the SAME seed, so they confirm determinism, not
+noise). Anchors are now baked into the report (`DENSE_ANCHORS`) for the CP 3c.3 figure.
