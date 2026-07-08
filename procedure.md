@@ -3287,7 +3287,7 @@ saved under `models/`; per-model JSON in `data/e2e/`). fp32 is the reliable axis
 | graft | winner-v1 no-neck | 0.841 | 17.67 | 12.38 | +39 % |
 | graft | v2topdown | 0.846 | 18.15 | 12.58 | +42 % |
 | graft | v3pan | 0.842 | 18.37 | 12.76 | +44 % |
-| pruned | r15 (−39 %) | 0.834 | **9.54** | FAIL | **−25 %** |
+| pruned | r15 (−39 %) | 0.834 | **9.54** | 5.93 | **−25 %** |
 | pruned | r30 (−58 %) | 0.790 | **8.28** | 5.34 | **−35 %** |
 | pruned | r45 (−66 %) | 0.809 | **7.94** | 7.18 | **−38 %** |
 | dense | w0.25 (ctrl_n) | 0.854 | **11.33** | 8.11 | **−11 %** |
@@ -3298,7 +3298,9 @@ saved under `models/`; per-model JSON in `data/e2e/`). fp32 is the reliable axis
 (the depthwise OFA backbone is memory-bound → 17–18 ms despite fewer params). Accuracy is nearly
 flat across families (0.79–0.85 from-scratch), so **latency is the separator** — the dense-family
 arm was the right call. Two standouts (faster + best accuracy in their region): **dense w0.25
-(11.33 ms, 0.854)** and **pruned r15 (9.54 ms, 0.834)**. fp16: r15 won't build (odd pruned dims).
+(11.33 ms, 0.854)** and **pruned r15 (9.54 ms, 0.834)**. fp16: every model builds clean
+(±~20 % build variance); the earlier "r15 fp16 FAIL" was another contention artifact — retried
+on an idle board, r15 fp16 = 5.93 ms.
 
 **Measurement incident (recorded so it doesn't recur).** The first bench pass was invalid: two
 background bench batches (`bench_batch.sh`, `bench_all.sh`) plus a foreground run all hit the

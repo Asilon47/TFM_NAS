@@ -22,7 +22,7 @@ control). Single-seed except the pretrained anchors; **de-noise is owed before a
 | **graft** | `graft/winner_v1_noneck` | 0.841 | 17.67 | 12.38 | +39 % slower |
 | graft | `graft/winner_v1_v2topdown` | 0.846 | 18.15 | 12.58 | +42 % slower |
 | graft | `graft/winner_v1_v3pan` | 0.842 | 18.37 | 12.76 | +44 % slower |
-| **pruned** | `pruned_baseline/prune_r15` (−39 %) | 0.834 | **9.54** | FAIL | **−25 % faster** |
+| **pruned** | `pruned_baseline/prune_r15` (−39 %) | 0.834 | **9.54** | 5.93 | **−25 % faster** |
 | pruned | `pruned_baseline/prune_r30` (−58 %) | 0.790 | **8.28** | 5.34 | **−35 % faster** |
 | pruned | `pruned_baseline/prune_r45` (−66 %) | 0.809 | **7.94** | 7.18 | **−38 % faster** |
 | **dense** | `dense_scaled/dense_w25_ctrl_n` | **0.854** | **11.33** | 8.11 | **−11 % faster** |
@@ -37,8 +37,10 @@ control). Single-seed except the pretrained anchors; **de-noise is owed before a
   `dense w0.25` (11.33 ms, **0.854** — 11 % faster + top from-scratch accuracy) and
   `pruned r15` (9.54 ms, 0.834 — 25 % faster). Speed-vs-accuracy is the pick axis.
 - **Accuracy is nearly flat** across families (0.79–0.85 from-scratch); latency separates them.
-- fp16 quirks: `r15` won't fp16-build (odd pruned dims); fp16 latencies are noisy (build
-  variance) — a real deployability signal for the odd-channel members.
+- fp16: **every model builds cleanly** given a clean board; fp16 latencies are noisy (±~20 %
+  TRT build variance). (An earlier "r15 fp16 FAIL / odd-dim hangs" reading was a *contention*
+  artifact — under concurrent GPU load the autotuner can't time tactics and aborts; retried
+  clean, r15 fp16 = 5.93 ms.)
 
 ---
 _Not included (dead ends / redundant): the two graft fallbacks (`idx3`/`idx11`, never
