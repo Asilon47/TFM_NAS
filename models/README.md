@@ -4,53 +4,47 @@ Every architecture we've considered for the drone-gate pose task, organised by f
 weight (`.pt`) and ONNX (`.onnx`) binaries are gitignored (regenerable from the Kaggle pulls /
 the exporters); this manifest is the tracked record.
 
-**Latencies** are Jetson Orin Nano, TensorRT 10.3, **mode 0 / 612 MHz, clocks locked**, @640,
-batch 1 (fp32 / fp16 ms). **Accuracy is NOT apples-to-apples**: `baseline`/`anchor` are
-COCO-pretrained + full Ultralytics recipe; every other family is trained **from scratch**
-(grafts: bare-AdamW; pruned: 50-ep bare-AdamW recovery; dense: stock recipe) — the from-scratch
-penalty is ~2.3 mAP (CP 3c.1's `ctrl_n` control). Single-seed except the pretrained anchors;
-**de-noise is owed before any pick**.
+**Latencies** — Jetson Orin Nano, TensorRT 10.3, **mode 0 / 612 MHz, clocks locked**, @640,
+batch 1, ms. **All measured in one clean session (2026-07-08).** fp32 is the reliable axis;
+**fp16 carries ±~20 % build variance** (TRT's fp16 autotuner picks different kernels each build)
+— treat fp16 as indicative, not exact. `FAIL` = TRT could not build an fp16 engine for that
+model's channel dims.
 
-## baseline/ — the bar to beat
-| file | what | mAP | fp32 / fp16 |
-|---|---|---|---|
-| `yolo11n_pose_gate.pt` + `yolo11n_pose_640.onnx` | deployed YOLO11n-pose, gate-trained | **0.877** | 12.75 / 7.58 |
+**Accuracy is NOT apples-to-apples**: `baseline`/`anchor` are COCO-pretrained + full Ultralytics
+recipe; every other family is **from scratch** (grafts: bare-AdamW; pruned: 50-ep bare-AdamW
+recovery; dense: stock recipe). The from-scratch penalty is ~2.3 mAP (CP 3c.1's `ctrl_n`
+control). Single-seed except the pretrained anchors; **de-noise is owed before any pick.**
 
-## anchor/ — bigger-model reference (accuracy anchor B)
-| file | what | mAP | fp32 / fp16 |
-|---|---|---|---|
-| `yolo11s_pose_640.onnx` | YOLO11s-pose (ONNX is stock; latency is arch-only) | 0.882 | 21.69 / — |
+| family | model | mAP | fp32 | fp16 | vs baseline (fp32) |
+|---|---|---|---|---|---|
+| **baseline** | `baseline/yolo11n_pose_gate` | **0.877** | 12.74 | 7.75 | — |
+| anchor | `anchor/yolo11s_pose_640` | 0.882 | 21.70 | 14.93 | +70 % slower |
+| **graft** | `graft/winner_v1_noneck` | 0.841 | 17.67 | 12.38 | +39 % slower |
+| graft | `graft/winner_v1_v2topdown` | 0.846 | 18.15 | 12.58 | +42 % slower |
+| graft | `graft/winner_v1_v3pan` | 0.842 | 18.37 | 12.76 | +44 % slower |
+| **pruned** | `pruned_baseline/prune_r15` (−39 %) | 0.834 | **9.54** | FAIL | **−25 % faster** |
+| pruned | `pruned_baseline/prune_r30` (−58 %) | 0.790 | **8.28** | 5.34 | **−35 % faster** |
+| pruned | `pruned_baseline/prune_r45` (−66 %) | 0.809 | **7.94** | 7.18 | **−38 % faster** |
+| **dense** | `dense_scaled/dense_w25_ctrl_n` | **0.854** | **11.33** | 8.11 | **−11 % faster** |
+| dense | `dense_scaled/dense_w20` | 0.839 | **11.26** | 6.93 | **−12 % faster** |
+| dense | `dense_scaled/dense_w15` | 0.815 | **9.53** | 6.30 | **−25 % faster** |
 
-## graft/ — OFA-MBv3 backbone + YOLO11-pose head (the thesis approach)
-Depthwise backbone → **memory-bound on the GPU → slower than the dense baseline** despite fewer
-params (the Stage-0 finding).
-| file | what | mAP | fp32 / fp16 |
-|---|---|---|---|
-| `winner_v1_noneck.*` | winner-v1 backbone, no neck | 0.841 | 17.69 / 12.37 |
-| `winner_v1_v2topdown.*` | + zero-gated top-down neck | 0.846 | 18.13 / — |
-| `winner_v1_v3pan.*` | + PAN neck | 0.842 | 18.38 / 12.75 |
-
-## pruned_baseline/ — DepGraph structured pruning of the gate yolo11n (CP 6.2-B)
-Stays dense → **tensor-core-friendly → faster than baseline.** Recovery is noisy (non-monotonic
-mAP); latencies measured-only (off the LUT grid). fp16 build is per-model (r15's pruned dims
-lack an fp16 SiLU kernel).
-| file | prune | mAP | fp32 / fp16 |
-|---|---|---|---|
-| `prune_r15.*` | −39 % params | 0.834 | **9.50** / (fp16 build fails) |
-| `prune_r30.*` | −58 % params | 0.790 | **8.28 / 5.65** |
-| `prune_r45.*` | −66 % params | 0.809 | **7.94 / 5.13** |
-
-## dense_scaled/ — YOLO11 width-scaling from scratch (CP 3c.1)
-Depth is a dead knob below n (C3k2 repeat floor) → width-only. `w25` = yolo11n's own scale from
-scratch = the recipe/pretrain control.
-| file | width | mAP | fp32 / fp16 |
-|---|---|---|---|
-| `dense_w25_ctrl_n.*` | 0.25 (= n) | 0.854 | 11.34 / (measuring) |
-| `dense_w20.*` | 0.20 | 0.839 | (measuring) |
-| `dense_w15.*` | 0.15 | 0.815 | (measuring) |
+## The story in one read
+- **Every dense/pruned model beats the baseline on latency; every graft loses.** The depthwise
+  OFA backbone is memory-bound on the GPU (0.30 vs 0.60 TFLOP/s effective) → the graft is
+  17–18 ms despite fewer params. Pruning/scaling the *dense* baseline keeps it tensor-core-fed.
+- **Two standout candidates** (faster than baseline, best accuracy in their trade region):
+  `dense w0.25` (11.33 ms, **0.854** — 11 % faster + top from-scratch accuracy) and
+  `pruned r15` (9.54 ms, 0.834 — 25 % faster). Speed-vs-accuracy is the pick axis.
+- **Accuracy is nearly flat** across families (0.79–0.85 from-scratch); latency separates them.
+- fp16 quirks: `r15` won't fp16-build (odd pruned dims); fp16 latencies are noisy (build
+  variance) — a real deployability signal for the odd-channel members.
 
 ---
 _Not included (dead ends / redundant): the two graft fallbacks (`idx3`/`idx11`, never
 full-trained); the dense depth-duplicates (`d25_w25`/`d33_w25` ≡ `w25`, `d50_w20` ≡ `w20`).
 Round-2 Kaggle campaigns (extended prune ratios, dense wave-2 widths) will add points when they
-land._
+land. **Measurement note:** the first pass suffered GPU contention (two bench batches + a
+foreground run hit the single Jetson at once, inflating numbers to 18–35 ms); this table is the
+clean single-process re-measurement — the baseline re-benched to 12.74 vs Stage-0's 12.75,
+confirming the clocks were locked all along._

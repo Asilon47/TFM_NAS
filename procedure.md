@@ -3273,3 +3273,38 @@ one Nano bench session** covering: winner-v1.5 e2e (both necks), the 3 pruned-ba
 the 6 dense-wave ONNX, plus the deferred riders (SE ablation, 512-res, FusedMBConv/OFA-R50 LUT
 screens). Every pick (winner-v1.5, CP 6.3 operating point, CP 3c.2 wave-2, thesis framing)
 stays user-owned and de-noise-gated.
+
+## Cross-family locked-clock bench — the latency verdict (2026-07-08)
+
+**One clean session, all families, mode 0 / 612 MHz, clocks locked, @640, batch 1** (models
+saved under `models/`; per-model JSON in `data/e2e/`). fp32 is the reliable axis; **fp16 carries
+±~20 % TRT-build variance** (autotuner kernel selection) — indicative only.
+
+| family | model | mAP | fp32 ms | fp16 ms | vs baseline fp32 |
+|---|---|---|---|---|---|
+| baseline | yolo11n-pose | 0.877 | 12.74 | 7.75 | — |
+| anchor | yolo11s-pose | 0.882 | 21.70 | 14.93 | +70 % |
+| graft | winner-v1 no-neck | 0.841 | 17.67 | 12.38 | +39 % |
+| graft | v2topdown | 0.846 | 18.15 | 12.58 | +42 % |
+| graft | v3pan | 0.842 | 18.37 | 12.76 | +44 % |
+| pruned | r15 (−39 %) | 0.834 | **9.54** | FAIL | **−25 %** |
+| pruned | r30 (−58 %) | 0.790 | **8.28** | 5.34 | **−35 %** |
+| pruned | r45 (−66 %) | 0.809 | **7.94** | 7.18 | **−38 %** |
+| dense | w0.25 (ctrl_n) | 0.854 | **11.33** | 8.11 | **−11 %** |
+| dense | w0.20 | 0.839 | **11.26** | 6.93 | **−12 %** |
+| dense | w0.15 | 0.815 | **9.53** | 6.30 | **−25 %** |
+
+**Verdict.** Every dense/pruned model **beats** the baseline on latency; every graft **loses**
+(the depthwise OFA backbone is memory-bound → 17–18 ms despite fewer params). Accuracy is nearly
+flat across families (0.79–0.85 from-scratch), so **latency is the separator** — the dense-family
+arm was the right call. Two standouts (faster + best accuracy in their region): **dense w0.25
+(11.33 ms, 0.854)** and **pruned r15 (9.54 ms, 0.834)**. fp16: r15 won't build (odd pruned dims).
+
+**Measurement incident (recorded so it doesn't recur).** The first bench pass was invalid: two
+background bench batches (`bench_batch.sh`, `bench_all.sh`) plus a foreground run all hit the
+single Jetson at once — GPU contention inflated numbers to 18–35 ms. A `pgrep` at a between-bench
+gap mis-read the first batch as dead, which is why the second was launched. **Rule: exactly one
+process may bench the Jetson at a time; never a background batch (they orphan and overlap) — run
+foreground chunks.** The clean re-measurement confirms the Stage-0 numbers were fine all along
+(baseline 12.74 now vs 12.75 then → the clocks *were* locked; the user's clock-lock worry is
+answered).
