@@ -204,6 +204,10 @@ families cluster **0.79–0.85 from-scratch → LATENCY, not accuracy, is the se
    is the CP 3c.3 cross-family figure's x-axis. **(OFA-R50 screen DONE 2026-07-10 → INFEASIBLE:
    smallest R50 backbone 16.17ms fp32 > whole 12.75ms baseline; the "different supernet?" gate is
    closed by measurement — `models/screen_r50/`, procedure.md "OFA-ResNet50 screen".)**
+   **(PRUNE-THE-GRAFT screen DONE 2026-07-10 → pruning the winner graft cuts latency, but in fp16
+   only r=0.60 = 84% param sparsity beats the 7.75ms baseline (6.58ms); fp32 needs r≥0.40 (64%).
+   From a 0.61 proxy → accuracy-dominated by the dense arm. The "prune the OFA?" gate is closed too
+   — `models/screen_prune_graft/`, procedure.md "Prune-the-graft latency screen".)**
 2. **THEN de-noise before ANY pick** (single-seed everywhere): the 3 distinct dense widths AND
    the prune rungs (CP 6.2-B is **non-monotonic** r45>r30 ⇒ recovery-noise-bound) at seeds
    {1,2,3} — CP 3.5 discipline. User owns winner-v1.5 / CP 6.3 point / CP 3c.2 wave-2 / framing.

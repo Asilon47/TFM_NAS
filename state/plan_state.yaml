@@ -327,3 +327,12 @@ notes: |
   estimated. Mechanism: MBv3 lost memory-bound (~0.30 TFLOP/s), R50 loses compute-bound (15.7
   GFLOPs floor = 2.4x yolo11n at a hardware-efficient 0.97-2.10 TFLOP/s). expand/screen_r50.py,
   models/screen_r50/README.md + screen_r50_result.json. See procedure.md "OFA-ResNet50 screen".
+
+  **Prune-the-graft screen 2026-07-10 (no checkpoint advance; current stays 5.3):** the "prune the
+  OFA to reduce latency?" gate. DepGraph (prune/prune_graft.py) on the winner graft at channel
+  ratios 0.2/0.4/0.6, e2e ONNX @640, benched same-session (mode 0, fp32+fp16). Pruning cuts latency
+  monotonically but in fp16 (deploy) only r=0.60 = 84% param sparsity beats the 7.75ms baseline
+  (6.58ms); fp32 needs r>=0.40 (64%). Every rung already meets 60 FPS. 84%-gutted from a 0.61 proxy
+  => accuracy-dominated by the dense arm (prune_base_* beats baseline fp16 at 0.83+ mAP). Open: CP
+  6.2 recovery-train r=0.60 (prior: loses). prune/screen_prune_graft.py, models/screen_prune_graft/.
+  See procedure.md "Prune-the-graft latency screen".

@@ -3386,3 +3386,33 @@ supernets fail for **opposite** reasons: **MBv3 is memory-bound** (Stage 0), **R
 compute-bound** (here). yolo11n sits in the sweet spot of that trade — which is precisely why
 *compressing it* (prune/scale, the dense-family arm) beats grafting or re-searching a foreign
 supernet. Memory is not the wall (peak 60–95 MiB on the 8 GB board); FLOPs are.
+
+## Prune-the-graft latency screen — the "prune the OFA to reduce latency?" gate (2026-07-10)
+
+Not a checkpoint (winner-refinement side-measurement; current stays CP 5.3). The user asked whether
+structured pruning could drag the memory-bound OFA graft under the baseline. Screened the R50 way —
+**latency first, no recovery training** (TRT latency is weight-value-independent; the channel COUNT
+sets latency). `prune/screen_prune_graft.py` runs the CP 6.1 DepGraph harness
+(`prune/prune_graft.py`) on the winner graft `d=[2,2,4,3,3]` at channel ratios 0.2/0.4/0.6, exports
+each e2e ONNX @640 (added `prebuilt=` to `detect.export_grafted_onnx` so a pre-pruned graft exports
+as-is), benched same-session on the Nano (mode 0, clocks locked, TRT 10.3, fp32+fp16).
+
+| channel prune | param sparsity | fp32 ms | vs 12.75 | fp16 ms | vs 7.75 | fp16 FPS |
+|---|---|---|---|---|---|---|
+| unpruned | 0% | 17.69 | +38.7% | 12.38 | +59.7% | 81 |
+| r=0.20 | 39% | 14.27 | +11.9% | 10.15 | +31.0% | 98 |
+| r=0.40 | 64% | 11.81 | −7.4% | 8.41 | +8.5% | 119 |
+| r=0.60 | 84% | 9.01 | −29.4% | 6.58 | −15.2% | 152 |
+
+**Verdict.** Pruning reduces latency monotonically and the pruned e2e even beat the channel-linear
+prior (the adapter + Pose-head internals prune too, and the compute-bound 1×1s drop ~width²). But
+in **fp16 (the deployment precision) only r=0.60 — 84 % of params removed — beats the baseline**
+(crossover ~r=0.48, ~73 % params); fp32 needs r≥0.40 (64 %). Every rung already clears 60 FPS (even
+the unpruned graft at 81 FPS), so the deployment bar was never the issue — *beating the baseline* is,
+and that demands catastrophic pruning of a net whose unpruned proxy is only 0.61 mAP. The dense
+family already beats the baseline latency (`prune_base_*` fp16 < 7.75 ms) at 0.83+ mAP, so the
+pruned graft is **accuracy-dominated by the dense arm**. Open: CP 6.2 recovery-train r=0.60 to
+confirm the accuracy loss (prior: loses). Artifacts: `prune/screen_prune_graft.py`,
+`models/screen_prune_graft/README.md` + `screen_prune_graft_result.json`, `data/e2e/graft_prune_r*`.
+The "prune the OFA?" gate now joins the R50 gate: both cheaply-searchable levers on the graft are
+closed by measurement; the win stays with compressing the dense yolo11.

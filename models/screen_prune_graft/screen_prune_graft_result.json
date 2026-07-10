@@ -1,0 +1,19 @@
+{
+  "screen": "prune_graft",
+  "question": "does structured pruning drag a searched OFA subnet under the baseline latency?",
+  "date": "2026-07-10",
+  "regime": {"power_mode": "0", "clocks_locked": true, "trt_version": "10.3.0", "imgsz": 640},
+  "baseline_ms": {"fp32": 12.755, "fp16": 7.752},
+  "unpruned_graft_ms": {"fp32": 17.688, "fp16": 12.382},
+  "rungs": [
+    {"channel_ratio": 0.2, "param_sparsity": 0.387, "fp32_ms": 14.27, "fp16_ms": 10.15,
+     "beats_baseline_fp32": false, "beats_baseline_fp16": false},
+    {"channel_ratio": 0.4, "param_sparsity": 0.643, "fp32_ms": 11.81, "fp16_ms": 8.41,
+     "beats_baseline_fp32": true, "beats_baseline_fp16": false},
+    {"channel_ratio": 0.6, "param_sparsity": 0.836, "fp32_ms": 9.01, "fp16_ms": 6.58,
+     "beats_baseline_fp32": true, "beats_baseline_fp16": true}
+  ],
+  "verdict": "Pruning reduces latency monotonically. fp32: r>=0.40 (64% params) beats baseline. fp16 (deployment): only r=0.60 (84% params) beats baseline; crossover ~r=0.48 (~73% params). Every rung meets 60 FPS even unpruned (81 FPS). To beat the fp16 baseline the graft must be gutted to 84% param sparsity from a 0.61 unpruned proxy -> accuracy-dominated by the dense arm (prune_base_* beats baseline fp16 at 0.83+ mAP). Latency measured-only (off LUT grid).",
+  "finding": "pruning is a real but weak lever for the memory-bound graft: the pruned e2e beat the channel-linear prior (head/adapter prune too, 1x1s drop super-linearly), yet 84% of params must go to beat the fp16 baseline. The two supernet gates now closed by measurement bracket the axis: MBv3 graft memory-bound (this + Stage 0), R50 compute-bound (screen_r50); yolo11's dense-moderate blocks are the optimum.",
+  "next": "optional CP 6.2 accuracy check: recovery-train r=0.60 (the only fp16 latency-winner) on a GPU session and measure pose mAP. Prior: loses to the dense family. If confirmed, the dense arm remains the deploy path; if it surprises, it is a NAS-produced net under the baseline."
+}
