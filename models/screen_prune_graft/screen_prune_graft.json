@@ -1,0 +1,60 @@
+{
+  "winner": "/home/asil/Desktop/TFM_NAS/state/winner_v1/winner.json",
+  "arch_d": [
+    2,
+    2,
+    4,
+    3,
+    3
+  ],
+  "imgsz": 640,
+  "ratios": [
+    0.2,
+    0.4,
+    0.6
+  ],
+  "budget": {
+    "baseline_ms_fp32": 12.755,
+    "backbone_ms_fp32": 13.852,
+    "head_offset_ms_fp32": 3.837,
+    "backbone_cut_needed_fp32_pct": 35.6,
+    "baseline_ms_fp16": 7.752,
+    "graft_e2e_ms_fp16": 12.382
+  },
+  "rows": [
+    {
+      "channel_ratio": 0.2,
+      "achieved_param_sparsity": 0.3867,
+      "params_before": 3003835,
+      "params_after": 1842283,
+      "flops": 3833264128,
+      "all_rounded": true,
+      "onnx": "models/screen_prune_graft/graft_prune_r20_e2e_640.onnx",
+      "optimistic_e2e_ms_fp32": 14.92,
+      "beats_baseline_fp32_even_optimistic": false
+    },
+    {
+      "channel_ratio": 0.4,
+      "achieved_param_sparsity": 0.643,
+      "params_before": 3003835,
+      "params_after": 1072419,
+      "flops": 2461814784,
+      "all_rounded": true,
+      "onnx": "models/screen_prune_graft/graft_prune_r40_e2e_640.onnx",
+      "optimistic_e2e_ms_fp32": 12.15,
+      "beats_baseline_fp32_even_optimistic": true
+    },
+    {
+      "channel_ratio": 0.6,
+      "achieved_param_sparsity": 0.8356,
+      "params_before": 3003835,
+      "params_after": 493971,
+      "flops": 1299571200,
+      "all_rounded": true,
+      "onnx": "models/screen_prune_graft/graft_prune_r60_e2e_640.onnx",
+      "optimistic_e2e_ms_fp32": 9.38,
+      "beats_baseline_fp32_even_optimistic": true
+    }
+  ],
+  "note": "LATENCY IS MEASURED-ONLY: bench each onnx on the Nano (mode 0, locked clocks) -> data/e2e/. channel_ratio is torch-pruning's pruning_ratio (fraction of channels removed); achieved_param_sparsity is higher (~1-(1-r)^2, width^2). optimistic_e2e = backbone*(1-channel_ratio) + fixed head, a best-case memory-bound bound; the measured floor is higher (unprunable stem + round_to=16 + protected head). No recovery training here (TRT latency is weight-value-independent); accuracy is only worth checking (CP 6.2) if a rung clears the bar."
+}

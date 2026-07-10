@@ -102,6 +102,7 @@ def export_grafted_onnx(
     opset: int = 17,
     supernet: Any = None,
     provenance: dict | None = None,
+    prebuilt: Any = None,
 ) -> tuple[Path, dict]:
     """Build the model for ``arch`` and export it (static ``1×3×imgsz×imgsz``, batch 1).
 
@@ -114,6 +115,11 @@ def export_grafted_onnx(
     constant, and TRT/onnx constant folding would elide the whole fusion path
     (``x + 0·conv(...)`` → ``x``), silently benching a neck-less graph. Gate=1 measures the
     latency of the *live* neck, which is what a trained (gates-open) deployment pays.
+
+    ``prebuilt`` (prune screen): export an already-constructed end-to-end graft as-is — e.g. a
+    structurally-pruned model from :func:`prune.prune_graft.prune_graft` — skipping the build.
+    ``arch`` is still recorded in the sidecar for provenance; params/FLOPs come from the given
+    module, so they reflect the pruned counts. Mutually exclusive with ``backbone_only``/``neck``.
     """
     import torch
 
@@ -125,11 +131,16 @@ def export_grafted_onnx(
         raise ValueError("--backbone-only and --neck are mutually exclusive (a neck sits "
                          "between adapter and head — there is none in a backbone-only export)")
 
-    sn = supernet if supernet is not None else load_supernet()
-    if backbone_only:
-        module: Any = PoseBackbone(sample(arch, sn), arch["d"]).eval()
-        output_names = ["p3", "p4", "p5"]
+    if prebuilt is not None:
+        if backbone_only or neck is not None:
+            raise ValueError("prebuilt= exports an already-built end-to-end graft as-is; "
+                             "backbone_only/neck would rebuild it")
+        module: Any = prebuilt.eval()
+    elif backbone_only:
+        sn = supernet if supernet is not None else load_supernet()
+        module = PoseBackbone(sample(arch, sn), arch["d"]).eval()
     else:
+        sn = supernet if supernet is not None else load_supernet()
         from detect.pose_model import build_grafted_pose_model
 
         module = build_grafted_pose_model(arch, supernet=sn, neck=neck).eval()
@@ -139,6 +150,9 @@ def export_grafted_onnx(
                 for pname, param in neck_module.named_parameters():
                     if pname.startswith("g"):
                         param.fill_(1.0)  # live fusion paths — see the docstring
+    if backbone_only:
+        output_names = ["p3", "p4", "p5"]
+    else:
         head = module.model[-1]
         head.export = True        # deploy graph: the single decoded (1, 4+nc+3*nkpt, 8400)
         head.format = "onnx"
