@@ -3310,3 +3310,33 @@ process may bench the Jetson at a time; never a background batch (they orphan an
 foreground chunks.** The clean re-measurement confirms the Stage-0 numbers were fine all along
 (baseline 12.74 now vs 12.75 then → the clocks *were* locked; the user's clock-lock worry is
 answered).
+
+## Round-2 frontier extension — pruning dominates scaling (2026-07-08)
+
+The two round-2 Kaggle campaigns landed and were benched (same locked-clock session discipline,
+one process at a time): **extended prune ladder** (r10/r20/r35/r55, on top of r15/r30/r45) and
+**dense wave-2** (w13/w18/w22/w30, on top of w15/w20/w25). Full 7-rung × 7-width frontier is in
+`models/README.md` + `data/e2e/`. New points (mAP · fp32 · fp16 ms):
+
+| prune | mAP | fp32 | fp16 | | dense | mAP | fp32 | fp16 |
+|---|---|---|---|---|---|---|---|---|
+| r10 (1.9M) | 0.830 | 9.82 | 6.13 | | w13 (1.0M) | 0.813 | 9.56 | 6.45 |
+| r20 (1.6M) | **0.838** | **9.52** | 5.91 | | w18 (1.6M) | 0.834 | 10.01 | 6.48 |
+| r35 (1.1M) | 0.826 | 8.36 | 5.38 | | w22 (2.3M) | 0.845 | 11.55 | 6.95 |
+| r55 (0.65M) | 0.798 | 7.66 | 5.07 | | w30 (3.9M) | 0.856 | 15.27 | — |
+
+**Key finding — pruning Pareto-dominates dense scaling at matched accuracy.** At ~0.838: prune
+r20 (9.52 ms) vs dense w20 (11.26 ms) → **15 % faster for the same mAP**; at 0.834 r15 (9.54) <
+w18 (10.01). Pruned nets inherit the pretrained baseline weights; dense-scaled train from
+scratch, so pruning owns the frontier below 0.85 and dense w25 owns just the top (0.854 @
+11.33). **Pareto set:** dense w25 (0.854/11.33) › **prune r20 (0.838/9.52, −25 %)** › r35
+(0.826/8.36) › r45 (0.809/7.94) › r55 (0.798/7.66). Standout = **prune r20**. w30 is dominated
+(bigger *and* slower than baseline: supra-n width doesn't pay).
+
+**Caveats.** The prune ladder is **noisy / non-monotonic** (r30 @ 0.790 is an outlier for its
+1.1M params; r10 0.830 < r20 0.838 despite more params) → recovery variance, **de-noise at seeds
+{1,2,3} owed before any CP 6.3 pick**. The dense accuracy curve is by contrast clean-monotonic in
+width (0.813 → 0.856). fp16 remains ±20 % build-variance (and some dense fp16 builds are slow —
+the autotuner, not a failure). Gap to the pretrained baseline's 0.877 stays ~0.02–0.04 (the
+from-scratch/weak-recovery penalty) → the target for the Tier-2 distillation experiment (distil
+prune r20 / a gentler rung against the 0.877 teacher).
