@@ -84,6 +84,12 @@ PB_EPOCHS = 50
 #   finer width sweep; depth is a dead knob below n, see CP 3c.1).
 DS_EPOCHS = 100
 DS_WAVE = "2"
+# MODE="prune_graft" — CP 6.2 (graft arm): train the pruned winner graft to its recovered pose
+#   mAP (the accuracy half of the prune-graft latency screen, models/screen_prune_graft/ — only
+#   r=0.60 beat the fp16 baseline). Self-contained: the gate donor warm-starts the head, no
+#   trained-graft input needed. One ratio per T4 when two are visible.
+PG_RATIOS = "0.40,0.60"
+PG_EPOCHS = 100
 # -----------------------------------------------------------------------------
 
 
@@ -251,6 +257,51 @@ def main() -> None:
         payload = json.loads(rep.read_text())
         print(f"[done] prune_baseline.json: donor_map={payload['donor'].get('map')} rows="
               f"{[(r['ratio'], round(r['map'], 4)) for r in payload['rows']]}", flush=True)
+        return
+
+    # 4.78 CP 6.2 (graft arm): train the pruned winner graft to its recovered mAP — the accuracy
+    #      half of the prune-graft screen (models/screen_prune_graft/). One ratio per T4 when two
+    #      are visible; self-contained (gate donor warm-starts the head, no trained-graft input).
+    if MODE == "prune_graft":
+        base_out = work / "recover_graft"
+        ratios = [r for r in PG_RATIOS.split(",") if r]
+
+        def pg_cmd(ratio_csv: str, sub: str) -> str:
+            return (f"{sys.executable} -m prune.recover_graft "
+                    f"--winner-dir {repo}/state/winner_v1 --head-weights {head} "
+                    f"--ratios {ratio_csv} --epochs {PG_EPOCHS} --device cuda --imgsz 640 "
+                    f"--batch 16 --out-dir {base_out}_{sub}")
+
+        ngpu = int(subprocess.check_output(
+            [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
+        ).decode().strip() or "0")
+        if ngpu >= 2 and len(ratios) > 1:
+            procs = []
+            for i, r in enumerate(ratios):
+                env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % ngpu))
+                print(f"+ [gpu{i % ngpu}] ratio {r}", flush=True)
+                procs.append(subprocess.Popen(
+                    pg_cmd(r, f"r{int(round(float(r) * 100)):02d}"), shell=True, env=env))
+                time.sleep(10)  # guard ultralytics first-touch race
+            for pr in procs:
+                pr.wait()
+        else:
+            subprocess.run(pg_cmd(PG_RATIOS, "all"), shell=True)
+
+        found = []
+        for sub_dir in sorted(work.glob("recover_graft*")):
+            rep = sub_dir / "recover_graft.json"
+            if not rep.exists():
+                continue
+            shutil.copy(rep, work / f"{sub_dir.name}.json")
+            found.append(rep)
+            payload = json.loads(rep.read_text())
+            anchor = payload["donor"].get("map")
+            for row in payload["rows"]:
+                print(f"[done] {sub_dir.name} ratio={row['ratio']} map={round(row['map'], 4)} "
+                      f"(anchor {anchor}, {row.get('delta_map_vs_donor'):+.4f})", flush=True)
+        if not found:
+            raise SystemExit("prune.recover_graft produced no report")
         return
 
     # 4.77 Phase 3c wave 1 (dense-family arm): yolo11-pose scaling grid — stripe the wave
