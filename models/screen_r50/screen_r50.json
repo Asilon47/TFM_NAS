@@ -1,0 +1,127 @@
+{
+  "space": {
+    "depth_list": [
+      0,
+      1,
+      2
+    ],
+    "expand_ratio_list": [
+      0.2,
+      0.25,
+      0.35
+    ],
+    "width_mult_list": [
+      0.65,
+      0.8,
+      1.0
+    ]
+  },
+  "imgsz": 640,
+  "rows": [
+    {
+      "which": "min",
+      "imgsz": 640,
+      "params": 5210280,
+      "flops": 15687577600,
+      "gflops": 15.69,
+      "n_blocks": 10,
+      "tap_channels": [
+        336,
+        664,
+        1328
+      ],
+      "tap_shapes": [
+        [
+          1,
+          336,
+          80,
+          80
+        ],
+        [
+          1,
+          664,
+          40,
+          40
+        ],
+        [
+          1,
+          1328,
+          20,
+          20
+        ]
+      ],
+      "onnxruntime_ok": true,
+      "onnx": "models/screen_r50/ofa_r50_min_bb_640.onnx"
+    },
+    {
+      "which": "mid",
+      "imgsz": 640,
+      "params": 14219768,
+      "flops": 40547328000,
+      "gflops": 40.55,
+      "n_blocks": 14,
+      "tap_channels": [
+        408,
+        816,
+        1640
+      ],
+      "tap_shapes": [
+        [
+          1,
+          408,
+          80,
+          80
+        ],
+        [
+          1,
+          816,
+          40,
+          40
+        ],
+        [
+          1,
+          1640,
+          20,
+          20
+        ]
+      ],
+      "onnxruntime_ok": true,
+      "onnx": "models/screen_r50/ofa_r50_mid_bb_640.onnx"
+    },
+    {
+      "which": "max",
+      "imgsz": 640,
+      "params": 46056992,
+      "flops": 122279116800,
+      "gflops": 122.28,
+      "n_blocks": 18,
+      "tap_channels": [
+        512,
+        1024,
+        2048
+      ],
+      "tap_shapes": [
+        [
+          1,
+          512,
+          80,
+          80
+        ],
+        [
+          1,
+          1024,
+          40,
+          40
+        ],
+        [
+          1,
+          2048,
+          20,
+          20
+        ]
+      ],
+      "onnxruntime_ok": true,
+      "onnx": "models/screen_r50/ofa_r50_max_bb_640.onnx"
+    }
+  ]
+}

@@ -318,3 +318,12 @@ notes: |
   criterion + dict args). SOLE remaining blocker to the cross-family verdict = ONE Nano bench
   session (winner-v1.5 e2e both necks + 3 pruned ONNX + 6 dense ONNX + deferred riders). See
   procedure.md "CP 6.2-B" / "CP 3c.1".
+
+  **OFA-ResNet50 screen 2026-07-10 (no checkpoint advance; current stays 5.3):** the deferred
+  "different supernet?" gate is CLOSED by measurement. R50 is the only pretrained+samplable+dense
+  alternative to MBv3; its SMALLEST subnet backbone measures 16.17ms fp32 @640 on the Nano
+  (mode 0) — already 1.27x the whole 12.75ms baseline e2e, 1.82x the 8.91ms backbone budget,
+  before the pose head. Whole space 16->58ms => INFEASIBLE, D3 descoping now measured not
+  estimated. Mechanism: MBv3 lost memory-bound (~0.30 TFLOP/s), R50 loses compute-bound (15.7
+  GFLOPs floor = 2.4x yolo11n at a hardware-efficient 0.97-2.10 TFLOP/s). expand/screen_r50.py,
+  models/screen_r50/README.md + screen_r50_result.json. See procedure.md "OFA-ResNet50 screen".

@@ -3340,3 +3340,49 @@ width (0.813 → 0.856). fp16 remains ±20 % build-variance (and some dense fp16
 the autotuner, not a failure). Gap to the pretrained baseline's 0.877 stays ~0.02–0.04 (the
 from-scratch/weak-recovery penalty) → the target for the Tier-2 distillation experiment (distil
 prune r20 / a gentler rung against the 0.877 teacher).
+
+## OFA-ResNet50 latency screen — D3 confirmed by measurement (2026-07-10)
+
+User-directed feasibility gate (no checkpoint advance; current stays 5.3). The strategic
+question "is it worth searching a *different* supernet?" reduces to exactly one candidate:
+OFA-MBv3 is the only pretrained supernet we searched, and the **only other supernet that is
+pretrained + samplable + dense** (tensor-core-friendly, unlike depthwise MBv3) is
+**OFA-ResNet50**. Every other option is either depthwise (won't fix the Stage-0 memory-bound
+loss) or needs training a supernet from scratch (~1,000+ GPU-h, free-tier-infeasible). D3
+descoped R50 on a **roofline estimate** (~2× over budget); this session **measures** it.
+
+**Method** (`expand/screen_r50.py`, `data/screen_r50/`, `models/screen_r50/`): export the
+**min / median / max** corners of the standard `ofa_resnet50` design space as *backbones*
+(classifier stripped, P3/P4/P5 taps at 80/40/20) to ONNX @640, then `bench_model` each on the
+Nano — **mode 0 / 612 MHz, clocks locked, one process at a time**, TRT 10.3, fp32. TRT-fp32
+latency is weight-value-independent, so random init is used (no pretrained checkpoint — a
+legitimate shortcut for a latency-only screen). Legacy ONNX exporter forced (`dynamo=False`;
+torch 2.11's default dynamo path needs onnxscript, absent in `.venv-nas`). `setup_jetson.sh`
+before / `teardown_jetson.sh` after; config.local.yaml re-pointed to the LAN endpoint
+192.168.1.150:22 for the session.
+
+**Budget.** baseline yolo11n-pose = **12.75 ms** fp32 e2e; the graft's pose adapter+head offset
+is **3.84 ms** (`data/pose_stem_head_offset.json`) — a *lower* bound for R50 (its adapter carries
+~10× the channels) — so a backbone must land under **8.91 ms** for e2e ≤ baseline (Phase-3b
+honest ceiling was 7.16 ms).
+
+| corner | params | GFLOPs | backbone ms (fp32, std) | eff. TFLOP/s | e2e est. | ×baseline | ×bb-budget |
+|---|---|---|---|---|---|---|---|
+| **min** | 5.2M | 15.7 | **16.17** (±0.015) | 0.97 | ~20.0 | **1.57×** | **1.82×** |
+| mid | 14.2M | 40.5 | 27.28 (±0.020) | 1.49 | ~31.1 | 2.44× | 3.06× |
+| max | 46.1M | 122.3 | 58.11 (±0.050) | 2.10 | ~61.9 | 4.86× | 6.52× |
+
+**Verdict — INFEASIBLE.** The *smallest* OFA-R50 backbone (16.17 ms) already **exceeds the whole
+baseline e2e** (12.75 ms) — 1.82× the 8.91 ms backbone budget — *before* the pose head. The
+entire elastic space (16→58 ms backbone) is over budget; **no subnet fits**, so a search has
+nothing to find. The roofline estimate that descoped R50 is now measured, not assumed → **D3's
+descoping is vindicated with a hard number.**
+
+**Mechanism (the thesis-relevant nuance).** R50 is hardware-**efficient** — 0.97–2.10 effective
+TFLOP/s, its dense 1×1/3×3 bottlenecks saturate the Orin tensor cores at **~2× the throughput of
+yolo11n** (~0.5 TFLOP/s) and ~3–7× the MBv3 graft's ~0.30 — yet it loses anyway because it is too
+**compute-heavy** (15.7 GFLOPs floor = 2.4× yolo11n's ~6.5). So the two cheaply-searchable
+supernets fail for **opposite** reasons: **MBv3 is memory-bound** (Stage 0), **R50 is
+compute-bound** (here). yolo11n sits in the sweet spot of that trade — which is precisely why
+*compressing it* (prune/scale, the dense-family arm) beats grafting or re-searching a foreign
+supernet. Memory is not the wall (peak 60–95 MiB on the 8 GB board); FLOPs are.

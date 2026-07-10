@@ -200,8 +200,10 @@ families cluster **0.79–0.85 from-scratch → LATENCY, not accuracy, is the se
 1. **NEXT NANO SESSION benches EVERYTHING** (mode 0 / 612 MHz — `scripts/setup_jetson.sh`):
    winner-v1.5 e2e (both necks), the **3 pruned-baseline ONNX** (`prune_base_r{15,30,45}_640.onnx`),
    the **6 dense-wave ONNX** (`dense_*_640.onnx`), + deferred riders (SE ablation, 512-res sweep,
-   FusedMBConv + OFA-R50 LUT screens). `lut.orchestrate.bench_model --imgsz 640` per model. This
-   is the CP 3c.3 cross-family figure's x-axis.
+   FusedMBConv LUT screen). `lut.orchestrate.bench_model --imgsz 640` per model. This
+   is the CP 3c.3 cross-family figure's x-axis. **(OFA-R50 screen DONE 2026-07-10 → INFEASIBLE:
+   smallest R50 backbone 16.17ms fp32 > whole 12.75ms baseline; the "different supernet?" gate is
+   closed by measurement — `models/screen_r50/`, procedure.md "OFA-ResNet50 screen".)**
 2. **THEN de-noise before ANY pick** (single-seed everywhere): the 3 distinct dense widths AND
    the prune rungs (CP 6.2-B is **non-monotonic** r45>r30 ⇒ recovery-noise-bound) at seeds
    {1,2,3} — CP 3.5 discipline. User owns winner-v1.5 / CP 6.3 point / CP 3c.2 wave-2 / framing.

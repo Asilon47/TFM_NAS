@@ -1,0 +1,35 @@
+{
+  "which": "min",
+  "imgsz": 640,
+  "params": 5210280,
+  "flops": 15687577600,
+  "gflops": 15.69,
+  "n_blocks": 10,
+  "tap_channels": [
+    336,
+    664,
+    1328
+  ],
+  "tap_shapes": [
+    [
+      1,
+      336,
+      80,
+      80
+    ],
+    [
+      1,
+      664,
+      40,
+      40
+    ],
+    [
+      1,
+      1328,
+      20,
+      20
+    ]
+  ],
+  "onnxruntime_ok": true,
+  "onnx": "models/screen_r50/ofa_r50_min_bb_640.onnx"
+}

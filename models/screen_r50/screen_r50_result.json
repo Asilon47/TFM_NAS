@@ -1,0 +1,70 @@
+{
+  "screen": "ofa_resnet50",
+  "question": "Is a new NAS search on OFA-ResNet50 feasible for the 12.75 ms Nano budget @640?",
+  "baseline_e2e_ms": 12.75,
+  "head_offset_ms": 3.84,
+  "backbone_budget_ms": 8.91,
+  "phase3b_honest_ceiling_ms": 7.16,
+  "precision": "fp32",
+  "power_mode": "0",
+  "clocks_locked": true,
+  "imgsz": 640,
+  "rows": [
+    {
+      "corner": "min",
+      "params": 5210280,
+      "gflops": 15.69,
+      "n_blocks": 10,
+      "tap_channels": [
+        336,
+        664,
+        1328
+      ],
+      "backbone_ms": 16.17,
+      "std_ms": 0.015,
+      "peak_mib": 60.0,
+      "eff_tflops": 0.97,
+      "e2e_est_ms": 20.01,
+      "vs_baseline_e2e": 1.57,
+      "over_bb_budget_x": 1.82
+    },
+    {
+      "corner": "mid",
+      "params": 14219768,
+      "gflops": 40.55,
+      "n_blocks": 14,
+      "tap_channels": [
+        408,
+        816,
+        1640
+      ],
+      "backbone_ms": 27.28,
+      "std_ms": 0.02,
+      "peak_mib": 73.4,
+      "eff_tflops": 1.49,
+      "e2e_est_ms": 31.12,
+      "vs_baseline_e2e": 2.44,
+      "over_bb_budget_x": 3.06
+    },
+    {
+      "corner": "max",
+      "params": 46056992,
+      "gflops": 122.28,
+      "n_blocks": 18,
+      "tap_channels": [
+        512,
+        1024,
+        2048
+      ],
+      "backbone_ms": 58.11,
+      "std_ms": 0.05,
+      "peak_mib": 95.4,
+      "eff_tflops": 2.1,
+      "e2e_est_ms": 61.94,
+      "vs_baseline_e2e": 4.86,
+      "over_bb_budget_x": 6.52
+    }
+  ],
+  "verdict": "INFEASIBLE",
+  "finding": "The SMALLEST OFA-R50 backbone (16.17 ms) already exceeds the whole baseline e2e (12.75 ms) \u2014 1.81x the 8.91 ms backbone budget \u2014 before the pose head's >=3.84 ms. The entire elastic space (16-58 ms backbone) is over budget; no subnet fits. Mechanism: R50 is hardware-EFFICIENT (0.97-2.10 effective TFLOP/s, dense convs saturate the tensor cores, vs the MBv3 graft's ~0.30) but too COMPUTE-heavy (15.7 GFLOPs floor = 2.4x yolo11n's ~6.5). MBv3 lost memory-bound; R50 loses compute-bound. yolo11's own FLOP/efficiency balance is why compressing IT wins."
+}

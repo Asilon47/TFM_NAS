@@ -1,0 +1,35 @@
+{
+  "which": "mid",
+  "imgsz": 640,
+  "params": 14219768,
+  "flops": 40547328000,
+  "gflops": 40.55,
+  "n_blocks": 14,
+  "tap_channels": [
+    408,
+    816,
+    1640
+  ],
+  "tap_shapes": [
+    [
+      1,
+      408,
+      80,
+      80
+    ],
+    [
+      1,
+      816,
+      40,
+      40
+    ],
+    [
+      1,
+      1640,
+      20,
+      20
+    ]
+  ],
+  "onnxruntime_ok": true,
+  "onnx": "models/screen_r50/ofa_r50_mid_bb_640.onnx"
+}

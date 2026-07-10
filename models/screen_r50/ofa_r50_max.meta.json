@@ -1,0 +1,35 @@
+{
+  "which": "max",
+  "imgsz": 640,
+  "params": 46056992,
+  "flops": 122279116800,
+  "gflops": 122.28,
+  "n_blocks": 18,
+  "tap_channels": [
+    512,
+    1024,
+    2048
+  ],
+  "tap_shapes": [
+    [
+      1,
+      512,
+      80,
+      80
+    ],
+    [
+      1,
+      1024,
+      40,
+      40
+    ],
+    [
+      1,
+      2048,
+      20,
+      20
+    ]
+  ],
+  "onnxruntime_ok": true,
+  "onnx": "models/screen_r50/ofa_r50_max_bb_640.onnx"
+}
