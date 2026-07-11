@@ -100,13 +100,13 @@ PG_RATIOS = "0.50,0.60"
 PG_EPOCHS = 100
 PG_TECH = "uniform"
 PG_ITER = 1
-PG_SEED = 2
+PG_SEED = 0
 PG_INDEX = ""
 # PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
 # they replace the ratio ladder (one spec per T4; --ratio-spec overrides --ratios/--technique).
 PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
-PG_KD = 0
+PG_KD = 1
 PG_KD_ALPHA = 1.0
 # -----------------------------------------------------------------------------
 
