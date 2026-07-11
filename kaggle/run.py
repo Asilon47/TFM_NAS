@@ -102,6 +102,9 @@ PG_TECH = "global_taylor"
 PG_ITER = 1
 PG_SEED = 0
 PG_INDEX = ""
+# PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
+# they replace the ratio ladder (one spec per T4; --ratio-spec overrides --ratios/--technique).
+PG_SPECS = ""
 # -----------------------------------------------------------------------------
 
 
@@ -287,16 +290,30 @@ def main() -> None:
                     + (f" --index {PG_INDEX}" if PG_INDEX != "" else ""))
         pg_prefix = f"idx{PG_INDEX}_" if PG_INDEX != "" else ""
 
-        def pg_cmd(ratio_csv: str, sub: str) -> str:
+        def pg_cmd(ratio_csv: str, sub: str, spec: str = "") -> str:
+            spec_arg = f" --ratio-spec {repo}/{spec}" if spec else ""
             return (f"{sys.executable} -m prune.recover_graft "
                     f"--winner-dir {repo}/state/winner_v1 --head-weights {head} "
-                    f"--ratios {ratio_csv} --epochs {PG_EPOCHS} {pg_extra} "
+                    f"--ratios {ratio_csv} --epochs {PG_EPOCHS} {pg_extra}{spec_arg} "
                     f"--device cuda --imgsz 640 --batch 16 --out-dir {base_out}_{sub}")
 
         ngpu = int(subprocess.check_output(
             [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
         ).decode().strip() or "0")
-        if ngpu >= 2 and len(ratios) > 1:
+        specs = [s for s in PG_SPECS.split(",") if s]
+        if specs:
+            # Wave B: one HALP spec per T4 (spec overrides ratios/technique in recover_graft).
+            procs = []
+            for i, s in enumerate(specs):
+                sub = Path(s).stem + (f"_s{PG_SEED}" if PG_SEED != 0 else "")
+                env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % max(ngpu, 1)))
+                print(f"+ [gpu{i % max(ngpu, 1)}] spec {s} → {sub}", flush=True)
+                procs.append(subprocess.Popen(pg_cmd(PG_RATIOS, sub, spec=s),
+                                              shell=True, env=env))
+                time.sleep(10)
+            for pr in procs:
+                pr.wait()
+        elif ngpu >= 2 and len(ratios) > 1:
             procs = []
             for i, r in enumerate(ratios):
                 sub = pg_prefix + run_tag(float(r), technique=PG_TECH,

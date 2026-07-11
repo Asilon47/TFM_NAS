@@ -44,6 +44,34 @@ ROOT = Path(__file__).resolve().parents[1]
 UNPRUNED_GRAFT_ANCHOR_MAP = 0.841
 
 
+def spec_ratio_dict(model: Any, depths: list[int], spec: dict) -> tuple[dict, list]:
+    """HALP spec → (pruning_ratio_dict, extra_ignored) with allocate.py's stage grouping.
+
+    Stage s's blocks get ``stage_ratios[s]``; ratio-0 stages are protected outright (DepGraph
+    still slices their in-channels when an upstream stage shrinks — that coupling is the point);
+    adapter + head fall through to MetaPruner's default ratio = ``rest_ratio``.
+    """
+    if spec["rest_ratio"] <= 0.0:
+        raise ValueError("spec rest_ratio must be > 0 (MetaPruner default ratio); "
+                         "re-run prune.allocate with a lower target")
+    blocks = list(model.model[0].blocks)
+    ratio_dict: dict = {}
+    ignored: list = []
+    i = 1
+    for s, ds in enumerate(depths):
+        group = blocks[i:i + ds]
+        if i == 1:
+            group = [blocks[0], *group]
+        r = float(spec["stage_ratios"][s])
+        for m in group:
+            if r > 0.0:
+                ratio_dict[m] = r
+            else:
+                ignored.append(m)
+        i += ds
+    return ratio_dict, ignored
+
+
 def load_candidate_arch(candidates_json: Any, index: int) -> dict:
     """The arch dict of ``denoise_candidates.json[candidates][index]`` (select by INDEX —
     ``d=[2,2,4,3,2]`` appears twice in the top-12, so depth lists are not unique keys)."""
@@ -76,6 +104,8 @@ def graft_prune_train_ladder(
     taylor_batches: int = 8,
     arch: dict | None = None,
     arch_tag: str = "winner",
+    ratio_spec: dict | None = None,
+    spec_tag: str = "halp",
 ) -> dict:
     """Prune the graft at each ratio, train to capacity, eval mAP; per-point + report."""
     import torch
@@ -112,7 +142,8 @@ def graft_prune_train_ladder(
     del anchor_model
 
     rows: list[dict] = []
-    for ratio in ladder_plan(ratios):
+    points = ([ratio_spec["rest_ratio"]] if ratio_spec is not None else ladder_plan(ratios))
+    for ratio in points:
         # Fresh warm-head graft per point (OFA-pretrained backbone + gate-donor head, trainable):
         # points are independent, and prune_graft mutates in place. Seed BEFORE the build — the
         # 1x1 adapters are randomly initialized, so the seed owns them too.
@@ -141,17 +172,26 @@ def graft_prune_train_ladder(
                 accumulate_pose_grads(_model, data_yaml=data_yaml, device=device, imgsz=imgsz,
                                       batch=batch, n_batches=taylor_batches)
 
-        report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
-                             ratio=ratio, iterative_steps=iterative_steps,
-                             between_steps=(_between if iterative_steps > 1 else None),
-                             **tech)
+        if ratio_spec is not None:
+            prd, spec_ignored = spec_ratio_dict(model, arch["d"], ratio_spec)
+            report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
+                                 ratio=ratio, pruning_ratio_dict=prd,
+                                 extra_ignored=spec_ignored)
+        else:
+            report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
+                                 ratio=ratio, iterative_steps=iterative_steps,
+                                 between_steps=(_between if iterative_steps > 1 else None),
+                                 **tech)
 
         reestimate_bn(model.to(device), bn_feed)
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
                                     batch=batch, data_yaml=data_yaml, seed=seed,
                                     max_steps=max_steps)
 
-        tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps, seed=seed)
+        if ratio_spec is not None:
+            tag = spec_tag if seed == 0 else f"{spec_tag}_s{seed}"
+        else:
+            tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps, seed=seed)
         if arch_tag != "winner":
             tag = f"{arch_tag}_{tag}"
         weights = out_dir / f"recover_graft_{tag}.pt"
@@ -160,13 +200,18 @@ def graft_prune_train_ladder(
         _export_deploy_onnx(model, onnx, imgsz=imgsz)
         row = {"ratio": ratio, "params": report["params_after"],
                "params_sparsity": report["params_sparsity"], "all_rounded": report["all_rounded"],
-               "n_convs_changed": report["n_convs_changed"], "technique": technique,
+               "n_convs_changed": report["n_convs_changed"],
+               "technique": ("halp_spec" if ratio_spec is not None else technique),
                "iterative_steps": iterative_steps, "seed": seed, "arch_tag": arch_tag, **metrics,
                "weights": str(weights), "onnx": str(onnx)}
+        if ratio_spec is not None:
+            row["spec"] = {k: ratio_spec[k] for k in
+                           ("stage_ratios", "rest_ratio", "predicted_fp32_ms",
+                            "fp16_estimate_ms", "target_fp32_ms")}
         (out_dir / f"recover_graft_{tag}.meta.json").write_text(
             json.dumps({"pruned_graft": True, **row}, indent=2) + "\n")
         rows.append(row)
-        print(f"[graft-ladder] ratio={ratio:.2f} tech={technique} arch={arch_tag} "
+        print(f"[graft-ladder] ratio={ratio:.2f} tech={row['technique']} arch={arch_tag} "
               f"params={row['params']:,} map={row['map']:.4f}", flush=True)
 
     payload = assemble_ladder_report(donor_row, rows)
@@ -202,6 +247,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--index", type=int, default=None,
                    help="prune candidates[index] from --candidates-json instead of the winner "
                         "(G1 probe; select by index — d lists repeat)")
+    p.add_argument("--ratio-spec", type=Path, default=None,
+                   help="HALP-lite allocation spec (prune/specs/halp_*.json from "
+                        "prune.allocate) — overrides --ratios/--technique with per-stage ratios")
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--device", default="cpu")
@@ -218,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
     if a.index is not None:
         arch = load_candidate_arch(a.candidates_json, a.index)
         arch_tag = f"idx{a.index}"
+    ratio_spec = None
+    spec_tag = "halp"
+    if a.ratio_spec is not None:
+        ratio_spec = json.loads(Path(a.ratio_spec).read_text())
+        spec_tag = Path(a.ratio_spec).stem
 
     payload = graft_prune_train_ladder(
         a.winner_dir, head_weights=a.head_weights,
@@ -226,7 +279,8 @@ def main(argv: list[str] | None = None) -> int:
         data_yaml=a.data_yaml, bn_batches=a.bn_batches, max_steps=a.max_steps,
         technique=a.technique, iterative_steps=a.iterative_steps,
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
-        taylor_batches=a.taylor_batches, arch=arch, arch_tag=arch_tag)
+        taylor_batches=a.taylor_batches, arch=arch, arch_tag=arch_tag,
+        ratio_spec=ratio_spec, spec_tag=spec_tag)
     print(f"unpruned anchor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "
