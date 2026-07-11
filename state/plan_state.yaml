@@ -349,3 +349,11 @@ notes: |
   the width-aware re-search). Briefing correction recorded: the cross-family Nano bench had
   ALREADY landed 2026-07-08 — remaining Nano work is riders + champion verifications only.
   See procedure.md "CP 6.2-G CLOSED". Artifacts: models/graft_pruned/.
+
+  **Pruning-as-search rounds 1-3 (2026-07-11; no checkpoint advance):** technique table
+  CLOSED on the graft — HALP-lite (LUT-knapsack) > global_taylor > uniform > iterative >
+  global_l2; HALP champion 0.8042 @ pred 10.22 fp32 / 0.7936 @ pred 8.86 (stable at 2 seeds,
+  Nano verification owed). G1 fallback probes (idx3+idx11) show NO topology re-ranking under
+  width => Track 5 width-aware re-search CLOSED by measurement. In flight: fairness (PB
+  global_taylor r20/r35, acct1) + HALP seed 2 (acct2). Next: KD recovery (CP 8.2-early) on
+  both champions. See procedure.md same-date entries.

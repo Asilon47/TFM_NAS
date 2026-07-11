@@ -3561,3 +3561,27 @@ idx3 at matched *ratio* is a smaller net (its unpruned e2e was already faster: 1
 overtake. **Preliminary G1: NO topology re-ranking under width** (idx11 = second half,
 launched acct2 v21). Also launched: HALP de-noise both specs @ seed 1 (acct3 v11); A6
 iterative still running (acct1 v25).
+
+## Technique table CLOSED (iterative negative) + G1 VERDICT: no re-ranking → Track 5 closed (2026-07-11)
+
+**A6 — iterative ×3 @ global_taylor** (acct1 v25): r50 0.7827 (828K), r60 0.7540 (654K) —
+**worse than one-shot** at both rungs (−1.2 / −2.3). Reading: the literature's iterative
+advantage assumes pruning a TRAINED net (prune→recover cycles); in this arm's prune-then-TRAIN
+protocol the backbone is only ImageNet-pretrained at prune time, so interleaved 5-epoch
+recoveries bias Taylor's gradients toward a half-trained state while the total budget stays
+100 ep. Final technique ordering on the graft, at matched rungs:
+**HALP-lite (latency-aware) > global_taylor (saliency) > uniform > iterative > global_l2.**
+
+**Wave C second half — idx11 probe** (acct2 v21): idx11@r50_gtay 0.7816 (608K), idx11@r60_gtay
+0.7543 (364K). Neither fallback overtakes the winner topology at matched ratio (winner +1.3 to
++3.0); the one latency-matched near-crossing (idx11-r50 0.7816 vs winner-r60 0.7773, ~+0.4) is
+inside the seed tie-band, and the HALP allocation on the winner (0.8042 / 0.7936) dominates the
+entire probe region regardless. **G1 = NO topology re-ranking under width → the axes decompose
+→ Track 5 (width-aware joint re-search, the literature-clean "prune the supernet before
+searching") is CLOSED by measurement, not argument.** G2 is thereby moot for the search
+decision (gate was G1 ∧ G2); it stays optional thesis color only.
+
+**HALP de-noise, seed 1** (acct3 v11): halp_10p4 0.8082 (seed0 0.8042 → mean 0.8062 ± 0.002),
+halp_9p0 0.7926 (seed0 0.7936 → mean 0.7931 ± 0.0005). Champion band is stable so far; seed 2
+launched (acct2 v22). Fairness leg launched (acct1 v26): global_taylor on the prune-baseline
+donor at r20+r35 — the best graft technique applied to the frontier-owning family.
