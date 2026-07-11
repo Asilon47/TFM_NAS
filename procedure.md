@@ -3585,3 +3585,19 @@ decision (gate was G1 ∧ G2); it stays optional thesis color only.
 halp_9p0 0.7926 (seed0 0.7936 → mean 0.7931 ± 0.0005). Champion band is stable so far; seed 2
 launched (acct2 v22). Fairness leg launched (acct1 v26): global_taylor on the prune-baseline
 donor at r20+r35 — the best graft technique applied to the frontier-owning family.
+
+## Fairness leg — the graft's best technique does NOT transfer to the dense donor (2026-07-12)
+
+global_taylor (the graft's winning saliency) applied to the prune-baseline donor (acct1 v26,
+50-ep recovery, protocol identical to CP 6.2-B): **r20 0.8346 (vs uniform 0.8381, −0.4) ·
+r35 0.8028 (vs uniform 0.8256, −2.3)**. The technique that wins on the graft LOSES on the
+trained dense donor. Mechanism: the two arms differ in protocol — the graft is pruned at
+ImageNet-init (prune-then-TRAIN: gradients are large and informative → first-order Taylor
+works), the baseline is pruned at convergence (prune-then-recover: gradients ≈ 0, so w·g
+saliency is dominated by noise — the classic first-order-Taylor failure mode that motivates
+Fisher/second-order criteria). **Consequences:** (1) the dense champion remains uniform r20
+(0.838 @ measured 9.52/5.91 ms); (2) the cross-family comparison is provably un-rigged — the
+graft's technique advantage was offered to the competitor and declined; (3) "technique gains
+transfer across families/protocols" is now a measured NO — a thesis-grade caveat on HALP-style
+results. KD twins launched for the dense champion (acct1 v27: uniform r20+r35 + gate-donor
+teacher); graft KD twins + HALP seed 2 still running (acct3 v12 / acct2 v22).
