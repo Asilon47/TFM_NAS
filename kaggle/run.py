@@ -100,7 +100,7 @@ PG_RATIOS = "0.50,0.60"
 PG_EPOCHS = 100
 PG_TECH = "uniform"
 PG_ITER = 1
-PG_SEED = 1
+PG_SEED = 2
 PG_INDEX = ""
 # PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
 # they replace the ratio ladder (one spec per T4; --ratio-spec overrides --ratios/--technique).
