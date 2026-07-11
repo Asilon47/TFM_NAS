@@ -98,13 +98,13 @@ DS_SEED = 0
 #   the Stage-0-benched fallbacks are idx 3 and 11).
 PG_RATIOS = "0.50,0.60"
 PG_EPOCHS = 100
-PG_TECH = "global_taylor"
+PG_TECH = "uniform"
 PG_ITER = 1
-PG_SEED = 0
-PG_INDEX = "11"
+PG_SEED = 1
+PG_INDEX = ""
 # PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
 # they replace the ratio ladder (one spec per T4; --ratio-spec overrides --ratios/--technique).
-PG_SPECS = ""
+PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
 # -----------------------------------------------------------------------------
 
 
