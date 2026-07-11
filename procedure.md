@@ -3534,3 +3534,30 @@ r50+r60 (acct1 v25); Wave B = both HALP-lite specs (acct2 v20 — allocations
 8.86 ms fp32; the knapsack guts early/high-res stages + head and protects late stages — the
 EfficientNetV2 principle rediscovered from our own @640 LUT rows); Wave C = fallback idx3
 probe @ global_taylor r50+r60 (acct3 v10; idx11 takes the next free slot → gate G1).
+
+## CP 6.4 Wave B + Wave C (idx3 half) — HALP-lite leads the ladder (2026-07-11)
+
+**Wave B — the LUT-knapsack allocations, trained** (kernel acct2 v20; same prune-then-TRAIN
+100 ep protocol; latencies are the spec's PREDICTIONS until the Nano bench — the linear
+per-stage model under-credits savings, so measured should land at-or-below):
+
+| point (allocation) | params | mAP50-95 | mAP50 | pred fp32 ms (fp16 est) |
+|---|---|---|---|---|
+| halp_fp32_10p4 ([.7,.5,.1,0,0]+rest .7) | 2.36M | **0.8042** | 0.903 | 10.22 (7.16) |
+| halp_fp32_9p0 ([.7,.7,.3,.1,.1]+rest .7) | 1.82M | **0.7936** | 0.911 | 8.86 (6.20) |
+
+**Latency-matched comparison — the program's central claim, provisionally confirmed:**
+halp_9p0 (0.7936 @ pred 8.86 fp32) vs uniform r60 (0.7589 @ MEASURED 9.01) = **+3.5 pts at
+matched latency**; vs global_taylor r60 (0.7773) = +1.6. The knapsack's "gut early stages +
+head, keep late stages" allocation retains 3.7× the params of uniform-r60 at the same
+latency class — capacity survives where the ms don't live. **Latency-aware allocation >
+saliency-only allocation > uniform > global-magnitude.** Pending: Nano verification of the
+two predicted latencies (weight-independent; one bench per graph).
+
+**Wave C first half — idx3 probe (G1)** (acct3 v10): idx3@r50_gtay 0.7749 (548K),
+idx3@r60_gtay 0.7478 (323K) — the winner topology beats idx3 at both rungs (+2.0/+3.0), and
+idx3 at matched *ratio* is a smaller net (its unpruned e2e was already faster: 16.11 vs
+17.67 fp32), so the matched-LATENCY read needs the bench/surrogate — but nowhere does idx3
+overtake. **Preliminary G1: NO topology re-ranking under width** (idx11 = second half,
+launched acct2 v21). Also launched: HALP de-noise both specs @ seed 1 (acct3 v11); A6
+iterative still running (acct1 v25).
