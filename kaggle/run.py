@@ -101,7 +101,7 @@ PG_EPOCHS = 100
 PG_TECH = "global_taylor"
 PG_ITER = 1
 PG_SEED = 0
-PG_INDEX = "3"
+PG_INDEX = "11"
 # PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
 # they replace the ratio ladder (one spec per T4; --ratio-spec overrides --ratios/--technique).
 PG_SPECS = ""
