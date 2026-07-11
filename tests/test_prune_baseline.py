@@ -1,11 +1,37 @@
 """prune/prune_baseline.py — pure parts of the CP 6.2-B control-arm ladder."""
 import pytest
 
-from prune.prune_baseline import assemble_ladder_report, ladder_plan
+from prune.prune_baseline import TECHNIQUES, assemble_ladder_report, ladder_plan, run_tag
 
 
 def test_ladder_plan_canonicalizes() -> None:
     assert ladder_plan([0.45, 0.15, 0.30, 0.15]) == [0.15, 0.30, 0.45]
+
+
+def test_techniques_ladder_vocabulary() -> None:
+    """The CP 6.2-G technique names → prune_graft knobs; 'uniform' must stay the floor config
+    (per-layer magnitude — every pre-program artifact was produced by it)."""
+    assert set(TECHNIQUES) == {"uniform", "global_l2", "global_taylor"}
+    assert TECHNIQUES["uniform"] == {"global_pruning": False, "importance": "l2"}
+    assert TECHNIQUES["global_taylor"]["importance"] == "taylor"
+    assert all(TECHNIQUES[t]["global_pruning"] for t in ("global_l2", "global_taylor"))
+
+
+def test_run_tag_default_keeps_legacy_names() -> None:
+    # prune_base_r15.pt / recover_graft_r60.pt etc. were tagged pre-program — the default
+    # point must keep producing exactly those names.
+    assert run_tag(0.15) == "r15"
+    assert run_tag(0.60) == "r60"
+
+
+def test_run_tag_encodes_technique_iter_seed() -> None:
+    assert run_tag(0.50, technique="global_l2") == "r50_gl2"
+    assert run_tag(0.50, technique="global_taylor", iterative_steps=3) == "r50_gtay_it3"
+    assert run_tag(0.60, seed=2) == "r60_s2"
+    with pytest.raises(ValueError, match="technique"):
+        run_tag(0.5, technique="nope")
+    with pytest.raises(ValueError, match="iterative_steps"):
+        run_tag(0.5, iterative_steps=0)
 
 
 def test_ladder_plan_guards() -> None:

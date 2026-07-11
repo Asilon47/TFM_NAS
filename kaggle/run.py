@@ -79,17 +79,29 @@ FULL_FT_VARIANTS = [
 # (new points around the done 0.15/0.30/0.45); fresh Kaggle session ⇒ its own output dir.
 PB_RATIOS = "0.10,0.20,0.35,0.55"
 PB_EPOCHS = 50
+# Pruning-as-search knobs (CP 6.2-G program): technique in {uniform, global_l2, global_taylor},
+# PB_ITER>1 = iterative with interleaved recovery, PB_SEED != 0 = de-noise rerun (fresh out dir).
+PB_TECH = "uniform"
+PB_ITER = 1
+PB_SEED = 0
 # MODE="dense_scaling" — yolo11-pose scaling grid, stock recipe, from scratch, one candidate
 #   subset per T4; latencies measured later on the Nano. DS_WAVE selects the wave (2 = the
-#   finer width sweep; depth is a dead knob below n, see CP 3c.1).
+#   finer width sweep; depth is a dead knob below n, see CP 3c.1). DS_SEED != 0 = de-noise
+#   rerun (row files are not seed-namespaced → the runner suffixes the out dir).
 DS_EPOCHS = 100
 DS_WAVE = "2"
-# MODE="prune_graft" — CP 6.2 (graft arm): train the pruned winner graft to its recovered pose
-#   mAP (the accuracy half of the prune-graft latency screen, models/screen_prune_graft/ — only
-#   r=0.60 beat the fp16 baseline). Self-contained: the gate donor warm-starts the head, no
-#   trained-graft input needed. One ratio per T4 when two are visible.
+DS_SEED = 0
+# MODE="prune_graft" — CP 6.2-G (graft arm): train the pruned graft to its recovered pose mAP.
+#   Self-contained: the gate donor warm-starts the head, no trained-graft input needed. One
+#   ratio per T4 when two are visible. Technique ladder: PG_TECH/PG_ITER as above; PG_INDEX
+#   non-empty = prune denoise_candidates[PG_INDEX] instead of the winner (G1 topology probe;
+#   the Stage-0-benched fallbacks are idx 3 and 11).
 PG_RATIOS = "0.40,0.60"
 PG_EPOCHS = 100
+PG_TECH = "uniform"
+PG_ITER = 1
+PG_SEED = 0
+PG_INDEX = ""
 # -----------------------------------------------------------------------------
 
 
@@ -245,9 +257,13 @@ def main() -> None:
     # 4.76 CP 6.2-B (dense-family arm): the pruned-BASELINE control ladder. Single process —
     #      3 sequential prune->recover->export points (~2-3 h); gate_best.pt is the donor.
     if MODE == "prune_baseline":
-        out_dir = work / "prune_baseline"
+        pb_suffix = (f"_{PB_TECH}" if PB_TECH != "uniform" else "") + \
+                    (f"_it{PB_ITER}" if PB_ITER > 1 else "") + \
+                    (f"_s{PB_SEED}" if PB_SEED != 0 else "")
+        out_dir = work / f"prune_baseline{pb_suffix}"
         cmd = (f"{sys.executable} -m prune.prune_baseline --donor {head} "
                f"--ratios {PB_RATIOS} --epochs {PB_EPOCHS} --device cuda "
+               f"--technique {PB_TECH} --iterative-steps {PB_ITER} --seed {PB_SEED} "
                f"--imgsz 640 --batch 16 --out-dir {out_dir}")
         print("+", cmd, flush=True)
         rc = subprocess.run(cmd, shell=True).returncode
@@ -263,14 +279,19 @@ def main() -> None:
     #      half of the prune-graft screen (models/screen_prune_graft/). One ratio per T4 when two
     #      are visible; self-contained (gate donor warm-starts the head, no trained-graft input).
     if MODE == "prune_graft":
+        from prune.recover_graft import run_tag  # repo already on sys.path (step 1)
+
         base_out = work / "recover_graft"
         ratios = [r for r in PG_RATIOS.split(",") if r]
+        pg_extra = (f"--technique {PG_TECH} --iterative-steps {PG_ITER} --seed {PG_SEED}"
+                    + (f" --index {PG_INDEX}" if PG_INDEX != "" else ""))
+        pg_prefix = f"idx{PG_INDEX}_" if PG_INDEX != "" else ""
 
         def pg_cmd(ratio_csv: str, sub: str) -> str:
             return (f"{sys.executable} -m prune.recover_graft "
                     f"--winner-dir {repo}/state/winner_v1 --head-weights {head} "
-                    f"--ratios {ratio_csv} --epochs {PG_EPOCHS} --device cuda --imgsz 640 "
-                    f"--batch 16 --out-dir {base_out}_{sub}")
+                    f"--ratios {ratio_csv} --epochs {PG_EPOCHS} {pg_extra} "
+                    f"--device cuda --imgsz 640 --batch 16 --out-dir {base_out}_{sub}")
 
         ngpu = int(subprocess.check_output(
             [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
@@ -278,15 +299,16 @@ def main() -> None:
         if ngpu >= 2 and len(ratios) > 1:
             procs = []
             for i, r in enumerate(ratios):
+                sub = pg_prefix + run_tag(float(r), technique=PG_TECH,
+                                          iterative_steps=PG_ITER, seed=PG_SEED)
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % ngpu))
-                print(f"+ [gpu{i % ngpu}] ratio {r}", flush=True)
-                procs.append(subprocess.Popen(
-                    pg_cmd(r, f"r{int(round(float(r) * 100)):02d}"), shell=True, env=env))
+                print(f"+ [gpu{i % ngpu}] ratio {r} → {sub}", flush=True)
+                procs.append(subprocess.Popen(pg_cmd(r, sub), shell=True, env=env))
                 time.sleep(10)  # guard ultralytics first-touch race
             for pr in procs:
                 pr.wait()
         else:
-            subprocess.run(pg_cmd(PG_RATIOS, "all"), shell=True)
+            subprocess.run(pg_cmd(PG_RATIOS, pg_prefix + "all"), shell=True)
 
         found = []
         for sub_dir in sorted(work.glob("recover_graft*")):
@@ -310,11 +332,11 @@ def main() -> None:
     if MODE == "dense_scaling":
         from search.dense_family import WAVES, wave_tags  # repo already on sys.path (step 1)
 
-        out_dir = work / "dense_scaling"
+        out_dir = work / ("dense_scaling" + (f"_s{DS_SEED}" if DS_SEED != 0 else ""))
         out_dir.mkdir(exist_ok=True)
         base_cmd = (f"{sys.executable} -m search.dense_family --data dataset/dataset.yaml "
                     f"--epochs {DS_EPOCHS} --imgsz 640 --batch 16 --wave {DS_WAVE} "
-                    f"--out-dir {out_dir}")
+                    f"--seed {DS_SEED} --out-dir {out_dir}")
         tags = wave_tags(WAVES[DS_WAVE])
         ngpu = int(subprocess.check_output(
             [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]

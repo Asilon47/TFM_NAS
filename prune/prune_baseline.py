@@ -45,6 +45,67 @@ RECOVERY_CAVEAT = (
     "Latency per point is measured-only (Nano e2e bench; pruned widths are off the LUT grid)."
 )
 
+# Pruning-as-search technique ladder (CP 6.2-G program): name → prune_graft() knobs.
+# "uniform" is the floor configuration every earlier rung used (per-layer ratio, magnitude).
+TECHNIQUES: dict[str, dict] = {
+    "uniform": {"global_pruning": False, "importance": "l2"},
+    "global_l2": {"global_pruning": True, "importance": "l2"},
+    "global_taylor": {"global_pruning": True, "importance": "taylor"},
+}
+_TECH_ABBREV = {"uniform": "", "global_l2": "gl2", "global_taylor": "gtay"}
+
+
+def run_tag(ratio: float, *, technique: str = "uniform", iterative_steps: int = 1,
+            seed: int = 0) -> str:
+    """Canonical artifact tag for a ladder point — default point keeps the legacy ``rNN``
+    name so pre-program artifacts (prune_base_r15.pt, recover_graft_r60.pt, …) stay valid."""
+    if technique not in TECHNIQUES:
+        raise ValueError(f"unknown technique {technique!r} (have {sorted(TECHNIQUES)})")
+    if iterative_steps < 1:
+        raise ValueError(f"iterative_steps must be >= 1, got {iterative_steps}")
+    tag = f"r{int(round(ratio * 100)):02d}"
+    if _TECH_ABBREV[technique]:
+        tag += f"_{_TECH_ABBREV[technique]}"
+    if iterative_steps > 1:
+        tag += f"_it{iterative_steps}"
+    if seed != 0:
+        tag += f"_s{seed}"
+    return tag
+
+
+def accumulate_pose_grads(
+    model: Any,
+    *,
+    data_yaml: Any = None,
+    device: str = "cpu",
+    imgsz: int = 640,
+    batch: int = 16,
+    n_batches: int = 8,
+) -> int:
+    """Populate ``.grad`` on every trainable param with summed pose-loss gradients.
+
+    Taylor importance prep: first-order saliency reads ``w.grad * w``, so the gradients must
+    exist BEFORE ``prune_graft(importance="taylor")`` — and must be re-accumulated between
+    iterative steps (the ``between_steps`` hook). No optimizer step is taken.
+    """
+    from detect.evaluate import DEFAULT_DATA_YAML
+    from eval.shortft import _build_pose_loader, _preprocess_batch, _to_device
+
+    data_yaml = DEFAULT_DATA_YAML if data_yaml is None else data_yaml
+    model = model.to(device).train()
+    model.zero_grad()
+    loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
+    done = 0
+    for raw in loader:
+        if done >= n_batches:
+            break
+        loss, _items = model(_to_device(_preprocess_batch(raw), device))
+        loss.sum().backward()
+        done += 1
+    if done == 0:
+        raise RuntimeError("accumulate_pose_grads saw no batches — empty loader?")
+    return done
+
 
 def ladder_plan(ratios: Sequence[float]) -> list[float]:
     """Validate + canonicalize the sparsity ladder (each in (0,1), deduped, ascending)."""
@@ -178,8 +239,19 @@ def prune_ladder(
     data_yaml: Any = None,
     bn_batches: int = 16,
     max_steps: int | None = None,
+    technique: str = "uniform",
+    iterative_steps: int = 1,
+    iter_recover_epochs: int = 5,
+    seed: int = 0,
+    taylor_batches: int = 8,
 ) -> dict:
-    """The full control-arm ladder: prune → BN re-estimate → recover → eval → export, per ratio."""
+    """The full control-arm ladder: prune → BN re-estimate → recover → eval → export, per ratio.
+
+    ``technique``/``iterative_steps``/``seed`` are the pruning-as-search knobs (CP 6.2-G
+    program): TECHNIQUES maps the name to prune_graft's allocation/importance flags; iterative
+    runs ``iter_recover_epochs`` of recovery between prune steps (BN re-estimated first);
+    ``seed`` drives the recovery loop (de-noise waves) and lands in the artifact tags.
+    """
     import torch
 
     from detect.evaluate import DEFAULT_DATA_YAML, pose_map_model
@@ -188,6 +260,7 @@ def prune_ladder(
     from prune.prune_graft import prune_graft
     from prune.yolo_tp_prep import prepare_yolo_for_pruning_
 
+    tech = TECHNIQUES[technique]  # KeyError early on a bad name
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     data_yaml = DEFAULT_DATA_YAML if data_yaml is None else data_yaml
@@ -206,8 +279,6 @@ def prune_ladder(
         # yolo11-specific prep: split the C2f-family chunks + keep attention dense —
         # stock C3k2/C2PSA graphs break tp's DepGraph (see prune/yolo_tp_prep.py).
         extra_ignored = prepare_yolo_for_pruning_(model)
-        report = prune_graft(model, torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ), ratio=ratio,
-                             extra_ignored=extra_ignored)
 
         bn_feed = []
         loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
@@ -215,27 +286,52 @@ def prune_ladder(
             if i >= bn_batches:
                 break
             bn_feed.append(_preprocess_batch(raw)["img"].to(device))
+
+        if tech["importance"] == "taylor":
+            accumulate_pose_grads(model, data_yaml=data_yaml, device=device, imgsz=imgsz,
+                                  batch=batch, n_batches=taylor_batches)
+
+        def _between(step_i: int, _model: Any = model, _bn_feed: list = bn_feed) -> None:
+            # interleaved short recovery: fresh BN stats first, grads refreshed for taylor
+            reestimate_bn(_model.to(device), _bn_feed)
+            recovery_finetune(_model, epochs=iter_recover_epochs, lr=lr, device=device,
+                              imgsz=imgsz, batch=batch, data_yaml=data_yaml, seed=seed,
+                              max_steps=max_steps)
+            if tech["importance"] == "taylor":
+                accumulate_pose_grads(_model, data_yaml=data_yaml, device=device, imgsz=imgsz,
+                                      batch=batch, n_batches=taylor_batches)
+
+        report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
+                             ratio=ratio, extra_ignored=extra_ignored,
+                             iterative_steps=iterative_steps,
+                             between_steps=(_between if iterative_steps > 1 else None),
+                             **tech)
+
         reestimate_bn(model.to(device), bn_feed)
-
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
-                                    batch=batch, data_yaml=data_yaml, max_steps=max_steps)
+                                    batch=batch, data_yaml=data_yaml, seed=seed,
+                                    max_steps=max_steps)
 
-        tag = f"r{int(round(ratio * 100)):02d}"
+        tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps, seed=seed)
         weights = out_dir / f"prune_base_{tag}.pt"
         torch.save(model.state_dict(), str(weights))
         onnx = out_dir / f"prune_base_{tag}_640.onnx"
         _export_deploy_onnx(model, onnx, imgsz=imgsz)
         row = {"ratio": ratio, "params": report["params_after"],
                "params_sparsity": report["params_sparsity"], "all_rounded": report["all_rounded"],
-               "n_convs_changed": report["n_convs_changed"], **metrics,
+               "n_convs_changed": report["n_convs_changed"], "technique": technique,
+               "iterative_steps": iterative_steps, "seed": seed, **metrics,
                "weights": str(weights), "onnx": str(onnx)}
         (out_dir / f"prune_base_{tag}.meta.json").write_text(json.dumps(
             {"pruned_baseline": True, **row}, indent=2) + "\n")
         rows.append(row)
-        print(f"[ladder] ratio={ratio:.2f} params={row['params']:,} map={row['map']:.4f}",
-              flush=True)
+        print(f"[ladder] ratio={ratio:.2f} tech={technique} params={row['params']:,} "
+              f"map={row['map']:.4f}", flush=True)
 
     payload = assemble_ladder_report(donor_row, rows)
+    payload["technique"] = technique
+    payload["iterative_steps"] = iterative_steps
+    payload["seed"] = seed
     (out_dir / "prune_baseline.json").write_text(json.dumps(payload, indent=2) + "\n")
     return payload
 
@@ -247,6 +343,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--donor", type=Path,
                    default=ROOT / "runs/pose/experiments/gate_baseline/weights/best.pt")
     p.add_argument("--ratios", type=str, default="0.15,0.30,0.45")
+    p.add_argument("--technique", choices=sorted(TECHNIQUES), default="uniform")
+    p.add_argument("--iterative-steps", type=int, default=1)
+    p.add_argument("--iter-recover-epochs", type=int, default=5,
+                   help="recovery epochs between iterative prune steps")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--taylor-batches", type=int, default=8,
+                   help="gradient-accumulation batches for taylor importance")
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--device", default="cpu")
@@ -261,7 +364,10 @@ def main(argv: list[str] | None = None) -> int:
     payload = prune_ladder(
         a.donor, ratios=[float(s) for s in a.ratios.split(",")], epochs=a.epochs, lr=a.lr,
         device=a.device, imgsz=a.imgsz, batch=a.batch, out_dir=a.out_dir,
-        data_yaml=a.data_yaml, bn_batches=a.bn_batches, max_steps=a.max_steps)
+        data_yaml=a.data_yaml, bn_batches=a.bn_batches, max_steps=a.max_steps,
+        technique=a.technique, iterative_steps=a.iterative_steps,
+        iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
+        taylor_batches=a.taylor_batches)
     print(f"donor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "

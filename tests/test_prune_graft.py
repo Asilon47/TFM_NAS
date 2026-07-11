@@ -90,6 +90,74 @@ def test_bad_ratio_and_ignored_collection() -> None:
         prune_graft(model, torch.rand(1, 3, IMGSZ, IMGSZ), ratio=1.5)
 
 
+def test_global_pruning_smoke() -> None:
+    """global_pruning=True (non-uniform allocation) must prune, keep alignment, keep outputs."""
+    model = _build_graft()
+    x = torch.rand(1, 3, IMGSZ, IMGSZ)
+    shape_before = tuple(_decoded(model, x).shape)
+    report = prune_graft(model, x, ratio=0.2, global_pruning=True)
+    assert report["global_pruning"] is True
+    assert report["params_after"] < report["params_before"]
+    assert report["all_rounded"], f"misaligned convs: {report['misaligned']}"
+    assert tuple(_decoded(model, x).shape) == shape_before
+
+
+def test_taylor_without_grads_refused() -> None:
+    model = _build_graft()
+    with pytest.raises(ValueError, match="taylor importance needs accumulated gradients"):
+        prune_graft(model, torch.rand(1, 3, IMGSZ, IMGSZ), ratio=0.2, importance="taylor")
+
+
+def test_taylor_with_grads_prunes() -> None:
+    """Unit-level Taylor path with synthetic saliency (the real gradient feed —
+    prune_baseline.accumulate_pose_grads — needs the gate dataset, exercised on Kaggle)."""
+    model = _build_graft()
+    x = torch.rand(1, 3, IMGSZ, IMGSZ)
+    gen = torch.Generator().manual_seed(0)
+    for p in model.parameters():
+        if p.requires_grad:
+            p.grad = torch.randn(p.shape, generator=gen) * 0.01
+    report = prune_graft(model, x, ratio=0.2, importance="taylor", global_pruning=True)
+    assert report["importance"] == "group_taylor"
+    assert report["params_after"] < report["params_before"]
+    assert bool(torch.isfinite(_decoded(model, x)).all())
+
+
+def test_iterative_steps_call_between_hook() -> None:
+    model = _build_graft()
+    x = torch.rand(1, 3, IMGSZ, IMGSZ)
+    seen: list[int] = []
+    report = prune_graft(model, x, ratio=0.3, iterative_steps=3,
+                         between_steps=lambda i: seen.append(i))
+    assert seen == [0, 1]                       # hook after each NON-final step only
+    assert report["iterative_steps"] == 3
+    assert report["params_after"] < report["params_before"]
+
+
+def test_bad_importance_and_iterative_guards() -> None:
+    model = _build_graft()
+    x = torch.rand(1, 3, IMGSZ, IMGSZ)
+    with pytest.raises(ValueError, match="importance"):
+        prune_graft(model, x, ratio=0.2, importance="l1magic")
+    with pytest.raises(ValueError, match="iterative_steps"):
+        prune_graft(model, x, ratio=0.2, iterative_steps=0)
+    with pytest.raises(ValueError, match="pruning_ratio_dict"):
+        prune_graft(model, x, ratio=0.2,
+                    pruning_ratio_dict={model.model[0]: 1.5})
+
+
+def test_pruning_ratio_dict_biases_allocation() -> None:
+    """Per-module overrides (the HALP-lite emission surface): the overridden module must end
+    up sparser than the default-ratio rest."""
+    model = _build_graft()
+    x = torch.rand(1, 3, IMGSZ, IMGSZ)
+    backbone = model.model[0]
+    before = sum(p.numel() for p in backbone.parameters())
+    prune_graft(model, x, ratio=0.1, pruning_ratio_dict={backbone: 0.5})
+    after = sum(p.numel() for p in backbone.parameters())
+    assert after < before * 0.6                 # ~width² param drop at r=0.5 ≫ r=0.1
+
+
 def test_necked_graft_prunes_too() -> None:
     """The CP 6.2 input may be winner-v1.5 WITH a neck — DepGraph must cope with the scalar
     gates (0-dim params) and the fusion adds."""

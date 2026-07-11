@@ -194,9 +194,11 @@ def run_wave(
     batch: int = 16,
     device: Any = 0,
     wave: list[tuple[str, float, float, int]] | None = None,
+    seed: int = 0,
 ) -> list[dict]:
     """Train the wave (or the ``only`` subset); per-tag row files make the loop resumable and
-    let two GPU workers stripe the wave without coordination."""
+    let two GPU workers stripe the wave without coordination. De-noise reruns (seed != 0) must
+    use a fresh ``out_dir`` — row files are the resume unit and are not seed-namespaced."""
     rows: list[dict] = []
     for tag, d, w, mc in (WAVE1 if wave is None else wave):
         if only is not None and tag not in only:
@@ -206,9 +208,10 @@ def run_wave(
             print(f"[skip] {tag} (row exists)", flush=True)
             rows.append(json.loads(row_file.read_text()))
             continue
-        print(f"[train] {tag}: d={d} w={w} mc={mc}", flush=True)
+        print(f"[train] {tag}: d={d} w={w} mc={mc} seed={seed}", flush=True)
         rows.append(train_candidate(tag, d, w, mc, data_yaml=data_yaml, out_dir=out_dir,
-                                    epochs=epochs, imgsz=imgsz, batch=batch, device=device))
+                                    epochs=epochs, imgsz=imgsz, batch=batch, device=device,
+                                    seed=seed))
     return rows
 
 
@@ -232,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--device", default="0")
     p.add_argument("--wave", choices=sorted(WAVES), default="1",
                    help="which wave to run/tag (1=original 6, 2=finer width sweep)")
+    p.add_argument("--seed", type=int, default=0,
+                   help="training seed (de-noise waves; use a fresh --out-dir per seed)")
     p.add_argument("--report-only", action="store_true",
                    help="assemble dense_scaling.json from existing row files")
     a = p.parse_args(argv)
@@ -249,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         raise SystemExit(f"unknown wave tags: {sorted(unknown)}")
     run_wave(data_yaml=a.data, out_dir=a.out_dir, only=only, epochs=a.epochs,
-             imgsz=a.imgsz, batch=a.batch, device=a.device, wave=wave)
+             imgsz=a.imgsz, batch=a.batch, device=a.device, wave=wave, seed=a.seed)
     return 0
 
 

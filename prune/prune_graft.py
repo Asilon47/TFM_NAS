@@ -61,6 +61,11 @@ def prune_graft(
     round_to: int = 16,
     importance_p: int = 2,
     extra_ignored: list[nn.Module] | None = None,
+    global_pruning: bool = False,
+    importance: str = "l2",
+    iterative_steps: int = 1,
+    between_steps: Any = None,
+    pruning_ratio_dict: dict[nn.Module, float] | None = None,
 ) -> dict:
     """Structurally prune ``model`` in place by ``ratio`` (group sparsity); return a report.
 
@@ -68,11 +73,31 @@ def prune_graft(
     ``torch.randn(1, 3, 640, 640)``). The report carries params before/after, the achieved
     sparsity, and an alignment audit: every conv whose channel count *changed* must land on a
     multiple of ``round_to`` (unchanged convs keep their original counts).
+
+    Technique knobs (pruning-as-search program, CP 6.2-G):
+
+    * ``global_pruning`` — rank groups across the WHOLE net instead of a uniform per-layer
+      ratio (non-uniform allocation; ``ratio`` becomes the global budget).
+    * ``importance`` — ``"l2"`` (data-free group magnitude, the default) or ``"taylor"``
+      (first-order saliency; REQUIRES ``.grad`` populated on every trainable param — run
+      :func:`prune.prune_baseline.accumulate_pose_grads` first, and again in
+      ``between_steps`` when iterating).
+    * ``iterative_steps`` — split the budget into N prune steps; ``between_steps(i)`` (if
+      given) runs after each non-final step for interleaved short recovery.
+    * ``pruning_ratio_dict`` — per-module ratio overrides (HALP-lite allocation emits this);
+      ``ratio`` still applies to modules not in the dict.
     """
     import torch_pruning as tp
 
     if not 0.0 < ratio < 1.0:
         raise ValueError(f"ratio must be in (0, 1), got {ratio}")
+    if importance not in ("l2", "taylor"):
+        raise ValueError(f"importance must be 'l2' or 'taylor', got {importance!r}")
+    if iterative_steps < 1:
+        raise ValueError(f"iterative_steps must be >= 1, got {iterative_steps}")
+    for mod, r in (pruning_ratio_dict or {}).items():
+        if not 0.0 < r < 1.0:
+            raise ValueError(f"pruning_ratio_dict[{type(mod).__name__}] out of (0,1): {r}")
 
     ignored = head_ignored_layers(model) + list(extra_ignored or [])
     # Frozen params are only tolerable inside the *protected* modules (e.g. the DFL conv is
@@ -87,6 +112,18 @@ def prune_graft(
             "consumer in-channels, so pruning around frozen weights corrupts them. Unfreeze "
             "the head (CP 6.2's recovery fine-tune trains it) and retry.")
 
+    if importance == "taylor":
+        missing = [name for name, p in model.named_parameters()
+                   if p.requires_grad and p.grad is None]
+        if missing:
+            raise ValueError(
+                f"taylor importance needs accumulated gradients on every trainable param "
+                f"({len(missing)} missing, e.g. {missing[0]!r}) — run "
+                "prune.prune_baseline.accumulate_pose_grads(model, ...) first.")
+        imp: Any = tp.importance.GroupTaylorImportance()
+    else:
+        imp = tp.importance.GroupMagnitudeImportance(p=importance_p)
+
     before = {name: (m.in_channels, m.out_channels)
               for name, m in model.named_modules() if isinstance(m, nn.Conv2d)}
     params_before = sum(p.numel() for p in model.parameters())
@@ -94,12 +131,18 @@ def prune_graft(
     pruner = tp.pruner.MetaPruner(
         model,
         example_input,
-        importance=tp.importance.GroupMagnitudeImportance(p=importance_p),
+        importance=imp,
         pruning_ratio=ratio,
+        pruning_ratio_dict=pruning_ratio_dict,
         ignored_layers=ignored,
         round_to=round_to,
+        global_pruning=global_pruning,
+        iterative_steps=iterative_steps,
     )
-    pruner.step()
+    for i in range(iterative_steps):
+        pruner.step()
+        if between_steps is not None and i < iterative_steps - 1:
+            between_steps(i)
 
     params_after = sum(p.numel() for p in model.parameters())
     changed: list[dict] = []
@@ -120,7 +163,9 @@ def prune_graft(
     return {
         "ratio": ratio,
         "round_to": round_to,
-        "importance": f"group_l{importance_p}",
+        "importance": ("group_taylor" if importance == "taylor" else f"group_l{importance_p}"),
+        "global_pruning": global_pruning,
+        "iterative_steps": iterative_steps,
         "params_before": params_before,
         "params_after": params_after,
         "params_sparsity": 1.0 - params_after / params_before,
