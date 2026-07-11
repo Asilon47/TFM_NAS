@@ -3502,3 +3502,35 @@ latency-driven — the search is part of the deployed network's production eithe
 Artifacts: `data/cp33_kaggle_out/recover_graft_r{40,60}*` (gitignored), `models/graft_pruned/`
 (README + result JSON tracked, binaries staged), frontier rows added to `models/README.md`.
 No checkpoint-number advance (current stays 5.3; recorded like CP 6.2-B).
+
+## CP 6.2-T Wave A — technique ladder round 1: global_taylor wins both rungs (2026-07-11)
+
+First round of the pruning-as-search technique ladder (procedure "CP 6.2-G CLOSED", Track 3):
+the winner graft pruned at r50/r60 under three allocation/importance configs, prune-then-TRAIN
+100 ep bare-AdamW seed 0, one technique per Kaggle account (kernels v24/v19/v9), same protocol
+as the CP 6.2-G rungs (which serve as the uniform-r40/r60 anchors).
+
+| technique | r50 mAP (params) | r60 mAP (params) |
+|---|---|---|
+| uniform (floor) | 0.7883 (775K) | 0.7589 (494K) |
+| global_l2 | 0.7758 (725K) | 0.7305 (424K) |
+| **global_taylor** | **0.7947** (764K) | **0.7773** (443K) |
+
+**Reading.**
+1. **global_taylor wins both rungs and its margin GROWS with sparsity** (+0.6 pts at r50 →
+   +1.8 at r60 vs uniform) — allocation+selection matter most where damage is extreme, exactly
+   the literature's claim. At r60 it also keeps FEWER params than uniform (443K vs 494K) while
+   scoring +1.8: strictly better selection, not more capacity.
+2. **global_l2 is WORSE than uniform at both rungs** (−1.3 / −2.8): global *magnitude* ranking
+   is scale-confounded across layers (raw L2 norms aren't comparable layer-to-layer without
+   gradient weighting) — a useful negative: "global" alone is not the upgrade, saliency is.
+3. **Latency caveat**: the global variants carry different per-layer channel profiles than the
+   screened uniform rungs, so 7.4/6.58 ms do NOT transfer — technique champions are benched on
+   the Nano before any frontier claim (TRT latency is weight-independent; one bench per graph).
+
+**Launched same-session (all three accounts RUNNING):** A6 = iterative×3 @ global_taylor
+r50+r60 (acct1 v25); Wave B = both HALP-lite specs (acct2 v20 — allocations
+[0.7,0.5,0.1,0,0]+rest0.7 → pred 10.22 ms fp32, and [0.7,0.7,0.3,0.1,0.1]+rest0.7 → pred
+8.86 ms fp32; the knapsack guts early/high-res stages + head and protects late stages — the
+EfficientNetV2 principle rediscovered from our own @640 LUT rows); Wave C = fallback idx3
+probe @ global_taylor r50+r60 (acct3 v10; idx11 takes the next free slot → gate G1).
