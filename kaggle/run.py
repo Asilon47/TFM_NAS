@@ -105,6 +105,9 @@ PG_INDEX = ""
 # PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
 # they replace the ratio ladder (one spec per T4; --ratio-spec overrides --ratios/--technique).
 PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
+# PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
+PG_KD = 0
+PG_KD_ALPHA = 1.0
 # -----------------------------------------------------------------------------
 
 
@@ -287,8 +290,10 @@ def main() -> None:
         base_out = work / "recover_graft"
         ratios = [r for r in PG_RATIOS.split(",") if r]
         pg_extra = (f"--technique {PG_TECH} --iterative-steps {PG_ITER} --seed {PG_SEED}"
-                    + (f" --index {PG_INDEX}" if PG_INDEX != "" else ""))
+                    + (f" --index {PG_INDEX}" if PG_INDEX != "" else "")
+                    + (f" --teacher {head} --kd-alpha {PG_KD_ALPHA}" if PG_KD else ""))
         pg_prefix = f"idx{PG_INDEX}_" if PG_INDEX != "" else ""
+        pg_kd_sfx = "_kd" if PG_KD else ""
 
         def pg_cmd(ratio_csv: str, sub: str, spec: str = "") -> str:
             spec_arg = f" --ratio-spec {repo}/{spec}" if spec else ""
@@ -305,7 +310,7 @@ def main() -> None:
             # Wave B: one HALP spec per T4 (spec overrides ratios/technique in recover_graft).
             procs = []
             for i, s in enumerate(specs):
-                sub = Path(s).stem + (f"_s{PG_SEED}" if PG_SEED != 0 else "")
+                sub = Path(s).stem + (f"_s{PG_SEED}" if PG_SEED != 0 else "") + pg_kd_sfx
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % max(ngpu, 1)))
                 print(f"+ [gpu{i % max(ngpu, 1)}] spec {s} → {sub}", flush=True)
                 procs.append(subprocess.Popen(pg_cmd(PG_RATIOS, sub, spec=s),
@@ -317,7 +322,7 @@ def main() -> None:
             procs = []
             for i, r in enumerate(ratios):
                 sub = pg_prefix + run_tag(float(r), technique=PG_TECH,
-                                          iterative_steps=PG_ITER, seed=PG_SEED)
+                                          iterative_steps=PG_ITER, seed=PG_SEED) + pg_kd_sfx
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % ngpu))
                 print(f"+ [gpu{i % ngpu}] ratio {r} → {sub}", flush=True)
                 procs.append(subprocess.Popen(pg_cmd(r, sub), shell=True, env=env))
@@ -325,7 +330,7 @@ def main() -> None:
             for pr in procs:
                 pr.wait()
         else:
-            subprocess.run(pg_cmd(PG_RATIOS, pg_prefix + "all"), shell=True)
+            subprocess.run(pg_cmd(PG_RATIOS, pg_prefix + "all" + pg_kd_sfx), shell=True)
 
         found = []
         for sub_dir in sorted(work.glob("recover_graft*")):

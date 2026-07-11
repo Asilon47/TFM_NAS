@@ -177,8 +177,15 @@ def recovery_finetune(
     data_yaml: Any = None,
     seed: int = 0,
     max_steps: int | None = None,
+    teacher: Any = None,
+    kd_alpha: float = 1.0,
 ) -> dict[str, float]:
-    """Bare-AdamW recovery fine-tune (the shortft loop, on an EXISTING model) → pose mAP."""
+    """Bare-AdamW recovery fine-tune (the shortft loop, on an EXISTING model) → pose mAP.
+
+    ``teacher`` (a frozen raw-map teacher from ``distill.kd_loss.load_frozen_teacher``) adds
+    output-level KD: ``pose_loss + kd_alpha · kd_map_loss`` (CP 8.2-early). ``None`` = the
+    plain loop, bit-identical to the pre-KD behavior.
+    """
     import torch
 
     from detect.evaluate import DEFAULT_DATA_YAML, pose_map_model
@@ -187,6 +194,9 @@ def recovery_finetune(
     _seed_everything(seed)
     data_yaml = DEFAULT_DATA_YAML if data_yaml is None else data_yaml
     model = model.to(device).train()
+    if teacher is not None:
+        from distill.kd_loss import kd_map_loss
+        teacher = teacher.to(device)
     loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
 
@@ -194,9 +204,21 @@ def recovery_finetune(
     for epoch in range(epochs):
         for raw in loader:
             batch_dict = _to_device(_preprocess_batch(raw), device)
-            loss, _items = model(batch_dict)
+            if teacher is None:
+                loss, _items = model(batch_dict)
+                loss = loss.sum()
+            else:
+                preds = model(batch_dict["img"])
+                task_loss, _items = model.loss(batch_dict, preds)
+                with torch.no_grad():
+                    tpreds = teacher(batch_dict["img"])
+                kd = kd_map_loss(preds, tpreds)
+                loss = task_loss.sum() + kd_alpha * kd
+                if step == 0:
+                    print(f"[kd] step0 task={float(task_loss.sum()):.3f} "
+                          f"kd={float(kd):.3f} alpha={kd_alpha}", flush=True)
             optimizer.zero_grad()
-            loss.sum().backward()
+            loss.backward()
             optimizer.step()
             step += 1
             if max_steps is not None and step >= max_steps:
@@ -244,6 +266,8 @@ def prune_ladder(
     iter_recover_epochs: int = 5,
     seed: int = 0,
     taylor_batches: int = 8,
+    teacher_path: Any = None,
+    kd_alpha: float = 1.0,
 ) -> dict:
     """The full control-arm ladder: prune → BN re-estimate → recover → eval → export, per ratio.
 
@@ -264,6 +288,10 @@ def prune_ladder(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     data_yaml = DEFAULT_DATA_YAML if data_yaml is None else data_yaml
+    teacher = None
+    if teacher_path is not None:
+        from distill.kd_loss import load_frozen_teacher
+        teacher = load_frozen_teacher(teacher_path, device=device)
 
     donor_model = load_baseline_model(donor)
     # Params counted pre-val: the validator fuses Conv+BN in place, dropping the BN params.
@@ -310,9 +338,11 @@ def prune_ladder(
         reestimate_bn(model.to(device), bn_feed)
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
                                     batch=batch, data_yaml=data_yaml, seed=seed,
-                                    max_steps=max_steps)
+                                    max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha)
 
         tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps, seed=seed)
+        if teacher is not None:
+            tag += "_kd"
         weights = out_dir / f"prune_base_{tag}.pt"
         torch.save(model.state_dict(), str(weights))
         onnx = out_dir / f"prune_base_{tag}_640.onnx"
@@ -320,7 +350,9 @@ def prune_ladder(
         row = {"ratio": ratio, "params": report["params_after"],
                "params_sparsity": report["params_sparsity"], "all_rounded": report["all_rounded"],
                "n_convs_changed": report["n_convs_changed"], "technique": technique,
-               "iterative_steps": iterative_steps, "seed": seed, **metrics,
+               "iterative_steps": iterative_steps, "seed": seed,
+               "kd": (None if teacher is None else {"teacher": str(teacher_path),
+                                                    "alpha": kd_alpha}), **metrics,
                "weights": str(weights), "onnx": str(onnx)}
         (out_dir / f"prune_base_{tag}.meta.json").write_text(json.dumps(
             {"pruned_baseline": True, **row}, indent=2) + "\n")
@@ -350,6 +382,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--taylor-batches", type=int, default=8,
                    help="gradient-accumulation batches for taylor importance")
+    p.add_argument("--teacher", type=Path, default=None,
+                   help="frozen raw-map KD teacher .pt (CP 8.2-early; e.g. the gate donor)")
+    p.add_argument("--kd-alpha", type=float, default=1.0)
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--device", default="cpu")
@@ -367,7 +402,7 @@ def main(argv: list[str] | None = None) -> int:
         data_yaml=a.data_yaml, bn_batches=a.bn_batches, max_steps=a.max_steps,
         technique=a.technique, iterative_steps=a.iterative_steps,
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
-        taylor_batches=a.taylor_batches)
+        taylor_batches=a.taylor_batches, teacher_path=a.teacher, kd_alpha=a.kd_alpha)
     print(f"donor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "

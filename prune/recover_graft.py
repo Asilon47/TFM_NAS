@@ -106,6 +106,8 @@ def graft_prune_train_ladder(
     arch_tag: str = "winner",
     ratio_spec: dict | None = None,
     spec_tag: str = "halp",
+    teacher_path: Any = None,
+    kd_alpha: float = 1.0,
 ) -> dict:
     """Prune the graft at each ratio, train to capacity, eval mAP; per-point + report."""
     import torch
@@ -131,6 +133,10 @@ def graft_prune_train_ladder(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     data_yaml = DEFAULT_DATA_YAML if data_yaml is None else data_yaml
+    teacher = None
+    if teacher_path is not None:
+        from distill.kd_loss import load_frozen_teacher
+        teacher = load_frozen_teacher(teacher_path, device=device)
     if arch is None:
         arch = load_winner(Path(winner_dir))["arch"]
 
@@ -186,12 +192,14 @@ def graft_prune_train_ladder(
         reestimate_bn(model.to(device), bn_feed)
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
                                     batch=batch, data_yaml=data_yaml, seed=seed,
-                                    max_steps=max_steps)
+                                    max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha)
 
         if ratio_spec is not None:
             tag = spec_tag if seed == 0 else f"{spec_tag}_s{seed}"
         else:
             tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps, seed=seed)
+        if teacher is not None:
+            tag += "_kd"
         if arch_tag != "winner":
             tag = f"{arch_tag}_{tag}"
         weights = out_dir / f"recover_graft_{tag}.pt"
@@ -202,7 +210,9 @@ def graft_prune_train_ladder(
                "params_sparsity": report["params_sparsity"], "all_rounded": report["all_rounded"],
                "n_convs_changed": report["n_convs_changed"],
                "technique": ("halp_spec" if ratio_spec is not None else technique),
-               "iterative_steps": iterative_steps, "seed": seed, "arch_tag": arch_tag, **metrics,
+               "iterative_steps": iterative_steps, "seed": seed, "arch_tag": arch_tag,
+               "kd": (None if teacher is None else {"teacher": str(teacher_path),
+                                                    "alpha": kd_alpha}), **metrics,
                "weights": str(weights), "onnx": str(onnx)}
         if ratio_spec is not None:
             row["spec"] = {k: ratio_spec[k] for k in
@@ -250,6 +260,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ratio-spec", type=Path, default=None,
                    help="HALP-lite allocation spec (prune/specs/halp_*.json from "
                         "prune.allocate) — overrides --ratios/--technique with per-stage ratios")
+    p.add_argument("--teacher", type=Path, default=None,
+                   help="frozen raw-map KD teacher .pt (CP 8.2-early; e.g. the gate donor)")
+    p.add_argument("--kd-alpha", type=float, default=1.0)
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--device", default="cpu")
@@ -280,7 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         technique=a.technique, iterative_steps=a.iterative_steps,
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
         taylor_batches=a.taylor_batches, arch=arch, arch_tag=arch_tag,
-        ratio_spec=ratio_spec, spec_tag=spec_tag)
+        ratio_spec=ratio_spec, spec_tag=spec_tag,
+        teacher_path=a.teacher, kd_alpha=a.kd_alpha)
     print(f"unpruned anchor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "
