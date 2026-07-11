@@ -1,0 +1,20 @@
+{
+  "checkpoint": "CP 6.2-G",
+  "question": "does the latency-screened pruned graft (r=0.60 the only fp16 winner) keep usable accuracy?",
+  "date": "2026-07-11",
+  "protocol": "prune-then-TRAIN: fresh graft (OFA-ImageNet backbone + warm gate head), CP 6.1 DepGraph (uniform per-layer, group-L2, one-shot, round_to=16), BN re-estimate, 100-epoch bare-AdamW, seed 0; dense_scaling-comparable; latencies = screen's measured Nano numbers (weight-independent)",
+  "anchor": {"model": "winner-v1 full-FT", "params": 3003835, "map": 0.841,
+             "fp32_ms": 17.69, "fp16_ms": 12.38},
+  "rungs": [
+    {"ratio": 0.4, "params": 1072419, "params_sparsity": 0.643, "map": 0.8163, "map50": 0.9218,
+     "fp32_ms": 11.81, "fp16_ms": 8.41, "beats_baseline_fp16": false,
+     "dominated_by": ["prune_r35 (0.826 @ 8.36/5.38)", "dense_w18 (0.834 @ 10.01/6.48)"]},
+    {"ratio": 0.6, "params": 493971, "params_sparsity": 0.836, "map": 0.7589, "map50": 0.8958,
+     "fp32_ms": 9.01, "fp16_ms": 6.58, "beats_baseline_fp16": true,
+     "dominated_by": ["prune_r55 (0.798 @ 7.66/5.07)", "prune_r35 (0.826 @ 8.36/5.38)",
+                      "prune_r20 (0.838 @ 9.52/5.91)"]}
+  ],
+  "verdict": "Retention far exceeds the crater-prior (-2.5 pts at 64% sparsity, -8.2 at 84%; mAP50 >= 0.896) and accuracy-per-param is mid-pack (r40 0.816 edges dense w13 0.813 at ~1M params despite the recipe handicap). But against the measured cross-family frontier both rungs are strictly dominated (gap ~+7-8 pts at matched latency): the graft's deficit is ms-per-param (memory-bound depthwise), and pruning to latency-parity cannot buy it back. Screen prior CONFIRMED. Caveat: floor pruner config (uniform/magnitude/one-shot/no-KD) -> these are lower bounds; the pruning-as-search program upgrades the technique symmetrically.",
+  "program": "pruning-as-search (user decision 2026-07-11) - see procedure.md 'CP 6.2-G CLOSED'",
+  "sources": "data/cp33_kaggle_out/recover_graft_r{40,60}/ (Kaggle acct1, tfm-nas-cp3-3-search v23)"
+}

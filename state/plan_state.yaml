@@ -336,3 +336,16 @@ notes: |
   => accuracy-dominated by the dense arm (prune_base_* beats baseline fp16 at 0.83+ mAP). Open: CP
   6.2 recovery-train r=0.60 (prior: loses). prune/screen_prune_graft.py, models/screen_prune_graft/.
   See procedure.md "Prune-the-graft latency screen".
+
+  **CP 6.2-G CLOSED 2026-07-11 (no checkpoint advance; current stays 5.3):** the pruned-graft
+  recovery train (Kaggle acct1 v23, prune-then-TRAIN 100ep bare-AdamW): r40 = 0.8163 @ 1.07M
+  (measured 11.81/8.41 ms), r60 = 0.7589 @ 0.49M (9.01/6.58 ms) vs anchor 0.841. Retention
+  crushes the crater-prior (no cliff, mAP50 >= 0.896; r40 edges dense w13 per-param) BUT both
+  rungs are strictly dominated on the MEASURED frontier (models/README.md — the 2026-07-08
+  bench; gap ~+7-8 pts at matched latency). Screen prior confirmed; floor-pruner-config caveat
+  recorded (uniform/magnitude/one-shot/no-KD => lower bounds). USER DECISION: the
+  PRUNING-AS-SEARCH program (pruning = stage 2 of the HW-aware search, symmetric across
+  families; Tracks 0-5 with gates G1 topology-re-ranking + G2 pruned-proxy-fidelity guarding
+  the width-aware re-search). Briefing correction recorded: the cross-family Nano bench had
+  ALREADY landed 2026-07-08 — remaining Nano work is riders + champion verifications only.
+  See procedure.md "CP 6.2-G CLOSED". Artifacts: models/graft_pruned/.

@@ -29,11 +29,13 @@ any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its
 | prune | r15 (−39 %) | 1.6M | 0.834 | 9.54 | 5.93 | −25 % |
 | prune | r10 (−31 %) | 1.9M | 0.830 | 9.82 | 6.13 | −23 % |
 | prune | r35 (−59 %) | 1.1M | 0.826 | 8.36 | 5.38 | −34 % |
+| graft-pruned | r40 (−64 %) | 1.1M | 0.816 | 11.81 | 8.41 | −7 % |
 | dense | w15 | 1.2M | 0.815 | 9.53 | 6.30 | −25 % |
 | dense | w13 | 1.0M | 0.813 | 9.56 | 6.45 | −25 % |
 | prune | r45 (−66 %) | 0.9M | 0.809 | 7.94 | 7.18 | −38 % |
 | prune | r55 (−76 %) | 0.65M | 0.798 | 7.66 | 5.07 | −40 % |
 | prune | r30 (−58 %) | 1.1M | 0.790 | 8.28 | 5.34 | −35 % |
+| graft-pruned | r60 (−84 %) | 0.49M | 0.759 | 9.01 | 6.58 | −29 % |
 
 ## The story
 - **Every dense/pruned model beats the baseline on latency; every graft loses** (the depthwise
@@ -50,6 +52,11 @@ any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its
 - Gap to baseline's 0.877 is ~0.02–0.04 (from-scratch / weak recovery) → the target for
   distillation: **distil prune r20 (or a gentler rung) against the 0.877 teacher** is the
   clearest shot at a Pareto-dominant model.
+- **The pruned graft (CP 6.2-G, 2026-07-11) recovers far better than predicted but stays
+  strictly dominated**: r40 0.816 (−2.5 vs its 0.841 anchor at 64 % sparsity) and r60 0.759
+  (−8.2 at 84 %) are mid-pack per-param, yet every dense/pruned point beats them per-ms — even
+  84 % pruning can't buy back the memory-bound deficit. Floor pruner config (uniform/magnitude/
+  one-shot/no-KD) → lower bounds; see `graft_pruned/README.md`.
 
 ## Folder
 ```
@@ -59,6 +66,7 @@ models/
   graft/            winner_v1_{noneck,v2topdown,v3pan}  (.pt + e2e .onnx)
   pruned_baseline/  prune_r{10,15,20,30,35,45,55}       (.pt + .onnx)   ← 7-rung ladder
   dense_scaled/     dense_w{13,15,18,20,22,25,30}       (.pt + .onnx)   ← 7-width curve
+  graft_pruned/     recover_graft_r{40,60}              (.pt + .onnx)   ← CP 6.2-G rungs
 ```
 _Excludes dead ends (graft fallbacks; dense depth-duplicates). fp16 latencies are single clean
 builds (±20 % variance); w30 fp16 skipped (dominated). Some fp16 builds are slow (autotuner) but

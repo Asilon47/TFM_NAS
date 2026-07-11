@@ -3416,3 +3416,89 @@ confirm the accuracy loss (prior: loses). Artifacts: `prune/screen_prune_graft.p
 `models/screen_prune_graft/README.md` + `screen_prune_graft_result.json`, `data/e2e/graft_prune_r*`.
 The "prune the OFA?" gate now joins the R50 gate: both cheaply-searchable levers on the graft are
 closed by measurement; the win stays with compressing the dense yolo11.
+
+## CP 6.2-G CLOSED — pruned-graft recovery: retention is real, dominance is not (2026-07-11)
+
+**The accuracy half of the prune-the-graft screen** (its open question: does an 84 %-pruned
+graft retain usable accuracy? prior: craters). `prune/recover_graft.py` (48dc6ad) built the
+winner graft fresh per point (OFA-ImageNet backbone + warm gate head, all trainable), pruned
+with the SAME CP 6.1 DepGraph harness the latency screen used (identical channel outcome —
+r60 params match the screen exactly: 493,971), BN-re-estimated, then trained to capacity with
+the repo's bare-AdamW loop (100 ep, seed 0) — **prune-then-TRAIN**, the `dense_scaling`-
+comparable protocol. One ratio per T4 (Kaggle acct1, `tfm-nas-cp3-3-search` v23). Latencies are
+the screen's measured numbers (TRT latency is weight-value-independent; params match ⇒ same graph).
+
+| rung | params | sparsity | mAP50-95 | mAP50 | fp32 ms | fp16 ms |
+|---|---|---|---|---|---|---|
+| unpruned (anchor, full-FT) | 3.00M | — | 0.841 | — | 17.69 | 12.38 |
+| r40 | 1.07M | 64.3 % | **0.8163** | 0.9218 | 11.81 | 8.41 |
+| r60 | 0.49M | 83.6 % | **0.7589** | 0.8958 | 9.01 | 6.58 |
+
+**Reading.**
+1. **Retention beats the prior by a mile**: −2.5 pts at 64 % params gone, −8.2 pts at 84 %,
+   mAP50 ≥ 0.896 everywhere. No accuracy cliff — the narrow-MBConv regime is *viable*.
+2. **Accuracy-per-param is mid-pack**: r40 (0.816 @ 1.07M) edges dense w13 (0.813 @ 1.0M) even
+   though the graft trained bare-AdamW while the dense wave got the stock Ultralytics recipe.
+   The graft's deficit was never capacity; it is **ms-per-param** (memory-bound depthwise).
+3. **Against the measured frontier both rungs are strictly dominated** (models/README.md, the
+   2026-07-08 cross-family bench): r60 (0.759 @ 9.01/6.58) loses to prune r55 (0.798 @
+   7.66/5.07), r35 (0.826 @ 8.36/5.38) and r20 (0.838 @ 9.52/5.91) on BOTH axes; r40 (0.816 @
+   11.81/8.41) loses to r35 and w18. Gap to the front at matched latency ≈ **+7–8 pts** — beyond
+   any plausible recovery-technique stack (+3–5, see the program's literature scan). **The
+   screen's prior is confirmed: pruned to latency-parity, the graft is accuracy-dominated by
+   the dense arm.**
+4. **Floor-config caveat (lower bound, not a death certificate)**: these rungs used the weakest
+   pruning configuration on every axis — uniform per-layer ratios (no global allocation),
+   magnitude importance, one-shot at extreme sparsity, bare-AdamW recovery, no KD.
+
+**Correction to the session briefing (recorded for honesty).** The briefing that framed this
+result told the user the dense/prune latencies were "unbenched — pending THE Nano session".
+Stale: the cross-family bench landed 2026-07-08 ("Round-2 frontier extension" above); the
+frontier comparison here uses those measured numbers, and the expected-outcome statement in the
+approved plan ("photo-finish at ~7.5 ms") was too rosy — the measured front sits at 5.1–5.9 ms
+fp16 in the graft rungs' accuracy band. Remaining Nano work is only: deferred riders (SE /
+512-res / FusedMBConv screen), optional recovered-r60 sanity bench, and future
+technique-champion verifications.
+
+**Program decision (user, AskUserQuestion 2026-07-11): PRUNING-AS-SEARCH** — chosen over
+"consolidate & finish" and "full width re-search now" after a briefing + literature scan (HALP
+latency-saliency knapsack, NeurIPS'22 · Pruning-as-Search, IJCAI'22 · AutoSlim · MetaPruning ·
+Joint-DetNAS · prune+channel-KD as the standard edge-YOLO recipe · EfficientNetV2's Fused-MBConv
+as the architecture-side fix for exactly our memory-bound diagnosis). Pruning is promoted to the
+**second stage of the hardware-aware search** (latency-guided width search, driven by the same
+LUT + measured-e2e machinery as stage 1), applied **symmetrically** to both families:
+- **Track 0** (this entry + plumbing commits): technique knobs in `prune/prune_graft.py`
+  (`global_pruning` / Taylor importance / `iterative_steps` / `pruning_ratio_dict`);
+  `--technique --seed --candidates-json/--index` in `prune/recover_graft.py`; `--seed` +
+  technique passthrough in `prune/prune_baseline.py`, `--seed` in `search/dense_family.py`;
+  kaggle `PG_*` config extension.
+- **Track 2**: `search/latency_model.py` — per-precision e2e latency surrogate fitted on the
+  ~30 measured points in `data/e2e/` (replaces the 640-inverted additivity as the width-search
+  latency oracle; **ranking-only**, on-device verification for any claim).
+- **Track 3** (Kaggle): graft technique ladder — r50 knee rung, global_l2 vs global_taylor,
+  iterative, then **HALP-lite** (`prune/allocate.py`: per-STAGE knapsack on latency-saved per
+  saliency-lost, stage latencies from the @640 LUT rows + measured adapter/head share) at
+  7.5 / 6.6 ms fp16 targets. Also produces the **G1 probe**: fallback topologies idx3 / idx11
+  (the Stage-0-benched pair) pruned to matched latency — does topology RE-RANK under width?
+- **Track 4** (Kaggle): fairness (best technique on the prune-baseline champion), **KD recovery**
+  on both families' champions (teacher = gate donor 0.887; pulls Phase 8 forward),
+  recipe-parity-lite (SGD+EMA+cosine in the bare loop), **de-noise at seeds {1,2,3}** (the prune
+  ladder is non-monotonic ⇒ owed before ANY pick), and **G2**: 5-ep warm-head proxy fidelity on
+  ~10 pruned nets vs their accumulated 100-ep oracles (pass = Spearman ρ≥0.70 AND top-1 regret
+  ≤0.01 — the CP 2.4 bar).
+- **Track 5 (GATED on G1 ∧ G2)**: the width-aware (ks,e,d,r) BO re-search — the
+  literature-clean version of "prune the supernet before searching" (no supernet retraining:
+  prune-derived candidates + the Track-2 latency oracle). Either gate failing = the measured
+  answer that the joint search is unnecessary (decomposition) or unrankable (no proxy signal),
+  recorded as a finding. User briefing before any Track-5 spend.
+
+**Honest expectation, restated post-correction**: the graft likely stays off the front even with
+the full technique stack; the program's value = the hardware-aware pruning method demonstrated
+cross-family (its gains accrue to the DENSE champion too — prune r20 + KD is models/README's own
+"clearest shot at Pareto-dominance"), the two measured gates closing the "prune the supernet?"
+question, and the thesis-structural claim (NAS = stage-1 topology + stage-2 width, both
+latency-driven — the search is part of the deployed network's production either way).
+
+Artifacts: `data/cp33_kaggle_out/recover_graft_r{40,60}*` (gitignored), `models/graft_pruned/`
+(README + result JSON tracked, binaries staged), frontier rows added to `models/README.md`.
+No checkpoint-number advance (current stays 5.3; recorded like CP 6.2-B).

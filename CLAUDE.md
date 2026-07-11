@@ -33,7 +33,7 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ---
 
-## Current state (as of last update: STAGE 0 + CP 5.2 + Phase 3b DONE — all measurement/search contingencies closed; next = user framing decision + CP 5.3, 2026-07-07)
+## Current state (as of last update: CP 6.2-G closed + PRUNING-AS-SEARCH program adopted; frontier fully measured — see "Lowest-friction next build", 2026-07-11)
 
 - **Phase 0 (LUT):** COMPLETE. `data/lut.jsonl` holds all 2710 *measured* rows
   (`source=jetson_trt`, fp32, TRT 10.3.0, clocks locked); the original dummy lives
@@ -182,35 +182,33 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
-**ALL THREE DENSE-FAMILY CAMPAIGNS ARE IN (2026-07-08, user decision A+B1+B2). Results
-pulled + recorded (procedure.md "CP 6.2-B" / "CP 3c.1"); the SOLE remaining blocker to the
-cross-family verdict is ONE Nano bench session.** Accuracy (all from-scratch, single-seed):
+**THE CROSS-FAMILY FRONTIER IS FULLY MEASURED** (2026-07-08 locked-clock bench + CP 6.2-G
+2026-07-11) — the 21-row table lives in `models/README.md`. Pareto set (fp32): dense w25
+0.854@11.33 › prune r20 0.838@9.52 › r35 0.826@8.36 › r45 0.809@7.94 › r55 0.798@7.66. Every
+dense/pruned point beats the baseline latency; **every graft — even pruned — is strictly
+dominated** (CP 6.2-G: r40 0.816@11.81/8.41, r60 0.759@9.01/6.58; retention crushed the
+crater-prior but the +7–8 pt gap at matched latency stands). Both supernet gates (R50
+compute-bound, MBv3 memory-bound) are closed by measurement.
 
-| family (from-scratch) | mAP50-95 | artifact |
-|---|---|---|
-| dense w0.25 = ctrl_n (yolo11n arch) | 0.854 | `data/kaggle_out_asilarnous47/dense_scaling/` |
-| graft v2topdown / v3pan (100ep) | 0.846 / 0.842 | `data/cp33_kaggle_out/full_finetune_v*` |
-| dense w0.20 | 0.839 | dense_scaling |
-| pruned-baseline r15 (−39 % params) | 0.834 | `data/kaggle_out_asilarnous/prune_baseline/` |
-| dense w0.15 | 0.815 | dense_scaling |
-
-(baseline pretrained anchor 0.877 → COCO-pretrain+recipe worth only ~2.3pts; CP 3c.1.) All four
-families cluster **0.79–0.85 from-scratch → LATENCY, not accuracy, is the separator.**
-
-1. **NEXT NANO SESSION benches EVERYTHING** (mode 0 / 612 MHz — `scripts/setup_jetson.sh`):
-   winner-v1.5 e2e (both necks), the **3 pruned-baseline ONNX** (`prune_base_r{15,30,45}_640.onnx`),
-   the **6 dense-wave ONNX** (`dense_*_640.onnx`), + deferred riders (SE ablation, 512-res sweep,
-   FusedMBConv LUT screen). `lut.orchestrate.bench_model --imgsz 640` per model. This
-   is the CP 3c.3 cross-family figure's x-axis. **(OFA-R50 screen DONE 2026-07-10 → INFEASIBLE:
-   smallest R50 backbone 16.17ms fp32 > whole 12.75ms baseline; the "different supernet?" gate is
-   closed by measurement — `models/screen_r50/`, procedure.md "OFA-ResNet50 screen".)**
-   **(PRUNE-THE-GRAFT screen DONE 2026-07-10 → pruning the winner graft cuts latency, but in fp16
-   only r=0.60 = 84% param sparsity beats the 7.75ms baseline (6.58ms); fp32 needs r≥0.40 (64%).
-   From a 0.61 proxy → accuracy-dominated by the dense arm. The "prune the OFA?" gate is closed too
-   — `models/screen_prune_graft/`, procedure.md "Prune-the-graft latency screen".)**
-2. **THEN de-noise before ANY pick** (single-seed everywhere): the 3 distinct dense widths AND
-   the prune rungs (CP 6.2-B is **non-monotonic** r45>r30 ⇒ recovery-noise-bound) at seeds
-   {1,2,3} — CP 3.5 discipline. User owns winner-v1.5 / CP 6.3 point / CP 3c.2 wave-2 / framing.
+**ACTIVE PROGRAM (user decision 2026-07-11): PRUNING-AS-SEARCH** — pruning = stage 2 of the
+hardware-aware search (latency-guided width search), symmetric across families; full design in
+procedure.md "CP 6.2-G CLOSED". Order of work:
+1. ~~Track 0 plumbing~~ (DONE with this update): technique knobs in `prune/prune_graft.py`
+   (`global_pruning`/`taylor`/`iterative_steps`/`pruning_ratio_dict`); `--technique/--seed/
+   --index` in `prune/recover_graft.py`; `--seed` in `search/dense_family.py` +
+   `prune/prune_baseline.py`; kaggle `PG_*` config.
+2. **Track 2**: fit `search/latency_model.py` on the ~30 measured e2e points (`data/e2e/`) —
+   the ranking-only latency oracle for off-grid widths.
+3. **Track 3 (Kaggle)**: graft technique ladder — r50 knee, global_l2 vs global_taylor,
+   iterative, HALP-lite (`prune/allocate.py`, per-stage knapsack from @640 LUT rows) at
+   7.5/6.6 ms fp16 targets; **G1 probe** = fallbacks idx3/idx11 pruned to matched latency.
+4. **Track 4 (Kaggle)**: fairness (best technique on prune_base), KD on both champions
+   (teacher = gate donor 0.887), recipe-parity-lite, **de-noise seeds {1,2,3}** (prune ladder
+   non-monotonic ⇒ owed before ANY pick), **G2** pruned-proxy fidelity (ρ≥0.70, regret ≤0.01).
+5. **Track 5 GATED on G1∧G2**: width-aware (ks,e,d,r) BO re-search — user briefing first.
+Remaining Nano work: deferred riders (SE ablation / 512-res / FusedMBConv screen) + technique-
+champion verification benches only — the big session already happened. User owns: CP 6.3
+operating point, Track-5 go, metric framing (mAP50 vs 50-95), Phase-8 teacher.
 - **Kaggle prune infra fixed 2026-07-08:** `prune/yolo_tp_prep.py` (splits C2f chunks, keeps
   C2PSA dense, trace@128) makes torch-pruning tractable on ANY yolo11/dense donor; and
   `load_baseline_model` resets the donor checkpoint's CPU-cached criterion + dict args (else a
