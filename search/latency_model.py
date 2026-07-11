@@ -231,7 +231,7 @@ def fit_report(points: list[dict], lam: float = 1e-2) -> dict:
             "loo_mape": loo_mape(x, y, lam=lam),
             "points": [{"name": p["name"], "ms": p["ms"], "pred": round(pr, 3),
                         "resid_pct": round(100 * (pr - p["ms"]) / p["ms"], 1)}
-                       for p, pr in zip(pts, preds)],
+                       for p, pr in zip(pts, preds, strict=True)],
         }
     return out
 

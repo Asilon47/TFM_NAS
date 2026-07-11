@@ -29,10 +29,6 @@ CHECKPOINT_URL = (
 )
 PINNED_SHA256 = "a7def36bb4e4c688c16d37eb60d5d34b2e6dcf6438c05bc86dea918fda04c6c7"
 
-# Project-relative cache (was ~/.cache/ofa/ — see procedure.md "Cache
-# relocation"). Derived from this file's location, not CWD, so the
-# contract holds whether the script is run as `python -m supernet.download_ofa`
-# from the repo root or `python supernet/download_ofa.py` from anywhere else.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = PROJECT_ROOT / ".cache" / "ofa"
 CHECKPOINT_PATH = CACHE_DIR / CHECKPOINT_NAME

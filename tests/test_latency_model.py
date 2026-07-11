@@ -27,7 +27,7 @@ def test_fit_ridge_recovers_exact_linear():
     m = fit_ridge(x, y, lam=1e-6)
     assert np.allclose(m["coef"], w_true, atol=1e-3)
     assert m["intercept"] == pytest.approx(2.0, abs=1e-2)
-    feats = dict(zip(FEATURES, x[0]))
+    feats = dict(zip(FEATURES, x[0], strict=True))
     assert predict_ms(m, feats) == pytest.approx(y[0], rel=1e-3)
 
 
