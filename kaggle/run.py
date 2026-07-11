@@ -96,9 +96,9 @@ DS_SEED = 0
 #   ratio per T4 when two are visible. Technique ladder: PG_TECH/PG_ITER as above; PG_INDEX
 #   non-empty = prune denoise_candidates[PG_INDEX] instead of the winner (G1 topology probe;
 #   the Stage-0-benched fallbacks are idx 3 and 11).
-PG_RATIOS = "0.50"
+PG_RATIOS = "0.50,0.60"
 PG_EPOCHS = 100
-PG_TECH = "uniform"
+PG_TECH = "global_l2"
 PG_ITER = 1
 PG_SEED = 0
 PG_INDEX = ""
