@@ -77,11 +77,11 @@ FULL_FT_VARIANTS = [
 # Round 2 (2026-07-08): the Nano canary showed the pruned baseline is ~25% FASTER than the
 # depthwise graft-loser, so both dense arms map their frontier FINER. Extended prune ratios
 # (new points around the done 0.15/0.30/0.45); fresh Kaggle session ⇒ its own output dir.
-PB_RATIOS = "0.10,0.20,0.35,0.55"
+PB_RATIOS = "0.20,0.35"
 PB_EPOCHS = 50
 # Pruning-as-search knobs (CP 6.2-G program): technique in {uniform, global_l2, global_taylor},
 # PB_ITER>1 = iterative with interleaved recovery, PB_SEED != 0 = de-noise rerun (fresh out dir).
-PB_TECH = "uniform"
+PB_TECH = "global_taylor"
 PB_ITER = 1
 PB_SEED = 0
 # MODE="dense_scaling" — yolo11-pose scaling grid, stock recipe, from scratch, one candidate
