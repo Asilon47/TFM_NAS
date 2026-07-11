@@ -81,9 +81,11 @@ PB_RATIOS = "0.20,0.35"
 PB_EPOCHS = 50
 # Pruning-as-search knobs (CP 6.2-G program): technique in {uniform, global_l2, global_taylor},
 # PB_ITER>1 = iterative with interleaved recovery, PB_SEED != 0 = de-noise rerun (fresh out dir).
-PB_TECH = "global_taylor"
+PB_TECH = "uniform"
 PB_ITER = 1
 PB_SEED = 0
+PB_KD = 1          # KD recovery twin (teacher = the in-Dataset gate donor, CP 8.2-early)
+PB_KD_ALPHA = 1.0
 # MODE="dense_scaling" — yolo11-pose scaling grid, stock recipe, from scratch, one candidate
 #   subset per T4; latencies measured later on the Nano. DS_WAVE selects the wave (2 = the
 #   finer width sweep; depth is a dead knob below n, see CP 3c.1). DS_SEED != 0 = de-noise
@@ -265,12 +267,13 @@ def main() -> None:
     if MODE == "prune_baseline":
         pb_suffix = (f"_{PB_TECH}" if PB_TECH != "uniform" else "") + \
                     (f"_it{PB_ITER}" if PB_ITER > 1 else "") + \
-                    (f"_s{PB_SEED}" if PB_SEED != 0 else "")
+                    (f"_s{PB_SEED}" if PB_SEED != 0 else "") + ("_kd" if PB_KD else "")
         out_dir = work / f"prune_baseline{pb_suffix}"
         cmd = (f"{sys.executable} -m prune.prune_baseline --donor {head} "
                f"--ratios {PB_RATIOS} --epochs {PB_EPOCHS} --device cuda "
                f"--technique {PB_TECH} --iterative-steps {PB_ITER} --seed {PB_SEED} "
-               f"--imgsz 640 --batch 16 --out-dir {out_dir}")
+               + (f"--teacher {head} --kd-alpha {PB_KD_ALPHA} " if PB_KD else "")
+               + f"--imgsz 640 --batch 16 --out-dir {out_dir}")
         print("+", cmd, flush=True)
         rc = subprocess.run(cmd, shell=True).returncode
         rep = out_dir / "prune_baseline.json"
