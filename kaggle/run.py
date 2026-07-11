@@ -99,7 +99,7 @@ DS_SEED = 0
 PG_RATIOS = "0.50,0.60"
 PG_EPOCHS = 100
 PG_TECH = "global_taylor"
-PG_ITER = 1
+PG_ITER = 3
 PG_SEED = 0
 PG_INDEX = ""
 # PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
