@@ -90,8 +90,8 @@ PB_KD_ALPHA = 1.0
 #   subset per T4; latencies measured later on the Nano. DS_WAVE selects the wave (2 = the
 #   finer width sweep; depth is a dead knob below n, see CP 3c.1). DS_SEED != 0 = de-noise
 #   rerun (row files are not seed-namespaced → the runner suffixes the out dir).
-DS_EPOCHS = 100
-DS_WAVE = "2"
+DS_EPOCHS = 30
+DS_WAVE = "1"
 DS_SEED = 0
 # MODE="prune_graft" — CP 6.2-G (graft arm): train the pruned graft to its recovered pose mAP.
 #   Self-contained: the gate donor warm-starts the head, no trained-graft input needed. One
@@ -357,7 +357,8 @@ def main() -> None:
     if MODE == "dense_scaling":
         from search.dense_family import WAVES, wave_tags  # repo already on sys.path (step 1)
 
-        out_dir = work / ("dense_scaling" + (f"_s{DS_SEED}" if DS_SEED != 0 else ""))
+        out_dir = work / ("dense_scaling" + (f"_e{DS_EPOCHS}" if DS_EPOCHS != 100 else "")
+                          + (f"_s{DS_SEED}" if DS_SEED != 0 else ""))
         out_dir.mkdir(exist_ok=True)
         base_cmd = (f"{sys.executable} -m search.dense_family --data dataset/dataset.yaml "
                     f"--epochs {DS_EPOCHS} --imgsz 640 --batch 16 --wave {DS_WAVE} "
