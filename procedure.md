@@ -3670,3 +3670,26 @@ family's honest ceiling after search + technique program + KD: ~0.80–0.816 @ 7
 fp16. The program's value stands as methodology (technique ordering ×2 protocol-dependence
 findings, G1 decomposition, measured-only discipline), not the deploy pick. → CP 6.3
 operating-point briefing (user decision).
+
+## STAGE 3 LAUNCHED — NAS over the device-native family (user decision 2026-07-12)
+
+**Decision (AskUserQuestion, after the champion bench).** The user asked whether the search can
+be improved to beat prune_base r20 (0.8381 @ 9.52/5.91). "Prune the supernet" is dead three
+measured ways (primitive wall: the technique-maxed graft ceiling is 0.795–0.816 @ 7.5–8.4 fp16;
+G1 decomposition; prune_base r55 dominates every graft point). The live door: **the gate task
+un-binds the pretrained-supernet constraint** (~1.5 GPU-h/candidate from scratch), so the search
+moves to the family the hardware measurably rewards. The thesis's hardware-awareness becomes
+three-layered: LUT-driven stage-1 topology search → measured cross-family SPACE selection →
+latency-fenced stage-3 width search.
+
+**Design (`search/dense_nas.py`, committed):** TPE (CP 3.4 precedent) over 5 per-stage width
+scales of yolo11-pose (`stagewise_yaml` — absolute /16 channels; box [0.10, 0.40], stage-5
+floor 0.13 for C2PSA; depth pinned 0.50, the dead knob). Accuracy = 30-ep from-scratch stock-
+recipe proxy, **gated by G3** = Spearman ρ≥0.70 + top-1 regret vs the ten 100-ep dense oracles
+(30-ep re-trains running: kernels v28 wave-1 acct1 / v23 wave-2 acct2). Latency = the tracked
+whole-net surrogate as a COARSE fence at pred-fp32 ≤ 14.0 (the family band is over-predicted
+~+20 % — the smoke showed the yolo11n point probing at 14.57 pred vs 11.33 measured), finalists
+gate on MEASURED ms only (the HALP misprediction is the standing warning). One independent TPE
+seed per T4, shared row files (dedup + resume), `MODE=dense_nas` (DN_BUDGET=20/GPU). Build-check
+rejects starved graphs pre-GPU. prune_base r20 sits inside this space's closure — the search
+cannot do worse than re-finding its ladder.
