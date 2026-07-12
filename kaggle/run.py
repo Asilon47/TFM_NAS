@@ -91,7 +91,7 @@ PB_KD_ALPHA = 1.0
 #   finer width sweep; depth is a dead knob below n, see CP 3c.1). DS_SEED != 0 = de-noise
 #   rerun (row files are not seed-namespaced → the runner suffixes the out dir).
 DS_EPOCHS = 30
-DS_WAVE = "1"
+DS_WAVE = "2"
 DS_SEED = 0
 # MODE="prune_graft" — CP 6.2-G (graft arm): train the pruned graft to its recovered pose mAP.
 #   Self-contained: the gate donor warm-starts the head, no trained-graft input needed. One
