@@ -3709,3 +3709,25 @@ studies ≈ up to 96 proxy-trained candidates over per-stage widths, surrogate f
 ≤ 14.0, build-check rejects pre-GPU. Next after they land: merge rows → top-5 at 100 ep →
 seeds {1,2,3} de-noise → Nano finalist session (MEASURED gate) → winner-v2 briefing vs
 prune_base r20 (0.8381 @ 9.52/5.91).
+
+## Stage-3 search wave IN — the space's structure is discovered (2026-07-12/13)
+
+Six TPE studies (seeds 0–5, 16 trials/GPU) trained **60 unique candidates** at the 30-ep proxy.
+Leaders (proxy mAP · pred fp32 · params): **s31-40-40-40-13 = 0.8054 · 9.10 · 3.10M** ›
+s10-34-36-35-20 0.8038 · 11.65 › s18-34-31-38-14 0.8033 · 10.74 › s23-38-34-36-18 0.8014 ›
+s40-38-39-36-13 **0.8009 · 8.88** · 2.66M. Anchors at the same proxy: ctrl_n (yolo11n shape)
+0.7684, w30 (3.9M) 0.7867 — the leader beats the n-shape by **+3.7 pts at equal params** and
+the 1.4×-bigger w30 by +1.9.
+
+**The discovered pattern — consistent across the whole top-10: wide stages 2–4 (0.34–0.40),
+GUTTED stage 5 (0.13–0.20).** yolo11's 1024-nominal SPPF/C2PSA stage is over-provisioned for
+gate pose (single large-object class, P3/P4-scale targets); reallocating its budget to the
+P3/P4 feature stages is worth ~+2–4 pts at fixed size. This is a per-stage allocation neither
+the global-width curve nor DepGraph's saliency ladder could express — exactly the AutoSlim
+argument the plan bet on. Stage-1 width is a weak knob (0.10–0.40 all present in the top-10).
+
+G3 offset (+6.9…+8.6 from 30→100 ep on the anchors) projects the leader to **~0.87–0.88 at
+100 ep** — r20-class-or-better accuracy at r20-class predicted latency. ORACLE ROUND LAUNCHED
+(acct1: the five finalists above at 100 ep, striped). Then: seeds {1,2,3} on the oracle
+leader, one Nano finalist session (MEASURED gate — the fence stays coarse), winner-v2 briefing
+vs prune_base r20.
