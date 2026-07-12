@@ -180,11 +180,40 @@ def run_tpe(
     return rows
 
 
+def scales_from_tag(tag: str) -> list[float]:
+    """Invert candidate_tag: 's31-40-40-40-13' → [0.31, 0.40, 0.40, 0.40, 0.13]."""
+    body = tag[1:].split("_")[0]
+    parts = body.split("-")
+    if len(parts) != N_STAGES:
+        raise ValueError(f"tag {tag!r} does not carry {N_STAGES} stage scales")
+    return [int(x) / 100 for x in parts]
+
+
+def train_oracles(tags: list[str], *, epochs: int, out_dir: Path, data_yaml: Path,
+                  imgsz: int = 640, batch: int = 16, device: Any = 0, seed: int = 0) -> None:
+    """Finalist round: re-train tag-encoded candidates to capacity (the 100-ep oracle)."""
+    from search.dense_family import _base_pose_yaml, train_from_yaml
+
+    base = _base_pose_yaml()
+    for tag in tags:
+        spec = stagewise_yaml(base, scales_from_tag(tag))
+        otag = f"{tag.split('_')[0]}_o{epochs}" + (f"_s{seed}" if seed else "")
+        if (Path(out_dir) / f"dense_{otag}.row.json").exists():
+            print(f"[skip] {otag}", flush=True)
+            continue
+        row = train_from_yaml(otag, spec, data_yaml=data_yaml, out_dir=out_dir,
+                              epochs=epochs, imgsz=imgsz, batch=batch, device=device,
+                              seed=seed)
+        print(f"[oracle] {otag} map={row['map']:.4f} params={row['params']:,}", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--budget", type=int, default=20)
+    p.add_argument("--oracle-tags", type=str, default=None,
+                   help="comma list of sNN-NN-NN-NN-NN tags → finalist re-train instead of TPE")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--proxy-epochs", type=int, default=30)
     p.add_argument("--ceiling-fp32-ms", type=float, default=14.0,
@@ -196,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--batch", type=int, default=16)
     p.add_argument("--device", default="0")
     a = p.parse_args(argv)
+
+    if a.oracle_tags:
+        train_oracles([t for t in a.oracle_tags.split(",") if t], epochs=a.proxy_epochs,
+                      out_dir=a.out_dir, data_yaml=a.data, imgsz=a.imgsz, batch=a.batch,
+                      device=a.device, seed=a.seed)
+        return 0
 
     rows = run_tpe(budget=a.budget, seed=a.seed, out_dir=a.out_dir, data_yaml=a.data,
                    proxy_epochs=a.proxy_epochs, ceiling_fp32_ms=a.ceiling_fp32_ms,

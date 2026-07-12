@@ -110,9 +110,12 @@ PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
 # MODE="dense_nas" — Stage-3 NAS over the device-native family (search/dense_nas.py): one
 #   independent TPE study per T4 (seeds DN_SEED_BASE / +1), shared row files → dedup + resume.
 DN_BUDGET = 16
-DN_SEED_BASE = 4
+DN_SEED_BASE = 0
 DN_PROXY_EPOCHS = 30
 DN_CEILING = 14.0
+# DN_ORACLE: comma list of finalist tags → 100-ep oracle re-train (striped across the T4s)
+DN_ORACLE = "s31-40-40-40-13,s40-38-39-36-13,s18-34-31-38-14,s10-34-36-35-20,s39-40-38-38-14"
+DN_ORACLE_EPOCHS = 100
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
 PG_KD = 1
 PG_KD_ALPHA = 1.0
@@ -365,18 +368,34 @@ def main() -> None:
             [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
         ).decode().strip() or "0")
         procs = []
+        oracle_tags = [t for t in DN_ORACLE.split(",") if t]
         for g in range(max(1, min(2, ngpu))):
             env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(g))
-            cmd = (f"{sys.executable} -m search.dense_nas --budget {DN_BUDGET} "
-                   f"--seed {DN_SEED_BASE + g} --proxy-epochs {DN_PROXY_EPOCHS} "
-                   f"--ceiling-fp32-ms {DN_CEILING} --data dataset/dataset.yaml "
-                   f"--out-dir {out_dir} --device 0")
-            print(f"+ [gpu{g}] dense_nas seed {DN_SEED_BASE + g}", flush=True)
+            if oracle_tags:
+                subset = ",".join(oracle_tags[g::2])
+                cmd = (f"{sys.executable} -m search.dense_nas --oracle-tags {subset} "
+                       f"--proxy-epochs {DN_ORACLE_EPOCHS} --data dataset/dataset.yaml "
+                       f"--out-dir {out_dir} --device 0")
+                print(f"+ [gpu{g}] dense_nas ORACLE {subset}", flush=True)
+            else:
+                cmd = (f"{sys.executable} -m search.dense_nas --budget {DN_BUDGET} "
+                       f"--seed {DN_SEED_BASE + g} --proxy-epochs {DN_PROXY_EPOCHS} "
+                       f"--ceiling-fp32-ms {DN_CEILING} --data dataset/dataset.yaml "
+                       f"--out-dir {out_dir} --device 0")
+                print(f"+ [gpu{g}] dense_nas seed {DN_SEED_BASE + g}", flush=True)
             procs.append(subprocess.Popen(cmd, shell=True, env=env))
             time.sleep(10)
         for pr in procs:
             pr.wait()
         reports = sorted(out_dir.glob("dense_nas_seed*.json"))
+        if oracle_tags:
+            rows = sorted(out_dir.glob("dense_s*_o*.row.json"))
+            if not rows:
+                raise SystemExit("oracle round produced no rows")
+            for rf in rows:
+                r = json.loads(rf.read_text())
+                print(f"[done] {r['tag']} map={r['map']} params={r['params']}", flush=True)
+            return
         if not reports:
             raise SystemExit("search.dense_nas produced no study report")
         for rep in reports:
