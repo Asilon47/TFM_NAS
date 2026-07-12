@@ -41,14 +41,19 @@ ALIASES = {
     "baseline_recheck_640": "yolo11n_pose_640",
     "graft_prune_r40_e2e_640": "recover_graft_r40_640",   # params-matched same graph (CP 6.2-G)
     "graft_prune_r60_e2e_640": "recover_graft_r60_640",
+    # champion-session names (2026-07-12) → their deploy ONNX stems
+    "graft_halp_10p4_640": "recover_graft_halp_fp32_10p4_640",
+    "graft_halp_9p0_640": "recover_graft_halp_fp32_9p0_640",
+    "graft_r50_gtay_640": "recover_graft_r50_gtay_640",
+    "graft_r60_gtay_640": "recover_graft_r60_gtay_640",
 }
 
 # Where deploy/bench ONNX live (searched in order; first hit wins).
 ONNX_ROOTS = (
     "data/e2e",
     "models",
-    "data/kaggle_out_asilarnous/prune_baseline",
-    "data/kaggle_out_asilarnous47/dense_scaling",
+    "data/kaggle_out_asilarnous",
+    "data/kaggle_out_asilarnous47",
     "data/cp33_kaggle_out",
 )
 

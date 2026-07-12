@@ -3632,3 +3632,41 @@ program's cross-family caveat, now measured twice from both directions.
 - dense: **prune_base r20 (uniform, no KD) = 0.8381 @ measured 9.52 / 5.91 ms** — unmoved.
 Remaining before the cross-family verdict + CP 6.3 pick: ONE Nano session (halp_10p4 +
 halp_9p0 graphs, optional gtay r50/r60 + riders), mode 0 / locked clocks as always.
+
+## Champion bench session — measured latency flips the technique crown to global_taylor (2026-07-12)
+
+One locked-clock session (mode 0, TRT 10.3, setup→8 foreground benches→teardown), the four
+champion graphs (KD twins share graphs — prune precedes recovery):
+
+| graph | mAP (best variant) | pred fp32 | **meas fp32** | pred fp16 | **meas fp16** | vs 7.75 bar |
+|---|---|---|---|---|---|---|
+| halp_10p4 | 0.8126 (+KD) | 10.22 | **12.58** (+23 %) | ~7.16 | **8.91** | ✗ |
+| halp_9p0 | 0.8021 (+KD) | 8.86 | **11.37** (+28 %) | ~6.20 | **8.14** | ✗ |
+| r50_gtay | 0.7947 | — | **10.23** | — | **7.48** | **✓ under bar** |
+| r60_gtay | 0.7773 | — | **8.85** | — | **6.36** | ✓ |
+
+**The HALP demotion (Stage-0's lesson, relearned at stage 2).** The knapsack's linear
+per-stage latency model over-credited concentrated cuts by +23–28 %: slashing 70 % of an
+early stage's channels does not remove 70 % of its time (per-launch/fixed cost floors —
+which is also why adding these 8 points DEGRADES the whole-net surrogate: fp32 LOO-MAPE
+8.7→12.0 %, fp16 11.8→15.3 %, n=37/25; refit committed). At MEASURED latency uniform-r40
+(0.8163 @ 11.81/8.41) dominates halp_10p4(+KD) (0.8126 @ 12.58/8.91) on both axes. The
+"+3.5 pts at matched latency" Wave-B claim was matched-PREDICTED-latency and is RETIRED;
+HALP-lite's real result is accuracy-per-PARAM (3.7× capacity at a similar nominal class),
+not accuracy-per-ms. Every allocation claim goes through the board — no exceptions survive
+this program.
+
+**The global_taylor promotion.** r60_gtay (0.7773 @ 6.36) dominates uniform-r60 (0.7589 @
+6.58) on BOTH measured axes, and **r50_gtay = 0.7947 @ 7.48 ms fp16 is the first graft point
+in the whole project under the deployed baseline's fp16 latency** (the uniform ladder only
+got there at r60/0.759). Measured technique ordering, final: **global_taylor > uniform >
+HALP-lite (at matched ms) > iterative > global_l2** — near-inverted from the
+predicted-latency ordering. Optional last lever: KD on r50_gtay (twin precedent +0.85) →
+est ~0.80 @ 7.48, the graft's best "legal" point; user-owned whether to spend it.
+
+**Cross-family verdict (measured, final unless KD-on-gtay is run):** prune_base r20
+(0.8381 @ 9.52/5.91) leads every graft point by ≥ +2.3 pts AND ≥ 1.1 ms fp16. The searched
+family's honest ceiling after search + technique program + KD: ~0.80–0.816 @ 7.5–8.4 ms
+fp16. The program's value stands as methodology (technique ordering ×2 protocol-dependence
+findings, G1 decomposition, measured-only discipline), not the deploy pick. → CP 6.3
+operating-point briefing (user decision).
