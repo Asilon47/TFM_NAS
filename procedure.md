@@ -3693,3 +3693,19 @@ gate on MEASURED ms only (the HALP misprediction is the standing warning). One i
 seed per T4, shared row files (dedup + resume), `MODE=dense_nas` (DN_BUDGET=20/GPU). Build-check
 rejects starved graphs pre-GPU. prune_base r20 sits inside this space's closure — the search
 cannot do worse than re-finding its ladder.
+
+## G3 PASSED (ρ=1.000, regret 0) → Stage-3 search LAUNCHED on all six GPUs (2026-07-12)
+
+The 30-ep from-scratch proxy re-trains of all ten dense oracles (kernels v28/v23) rank their
+100-ep counterparts PERFECTLY: Spearman ρ = 1.000, top-1 regret = 0.0000 (7 distinct
+architectures; the depth-degenerate duplicates reproduce bit-identically — a determinism
+check). Proxy gaps between widths (~1–3 pts) dwarf seed noise (±0.3), so the signal is real.
+Recorded caveat: the oracle set is width-monotone (easy ranking); within-band allocation
+discrimination is stressed only by the search itself.
+
+**Stage-3 launched**: MODE=dense_nas on the three accounts (kernels v29/v25/v13-equivalents;
+seeds {0,1}/{2,3}/{4,5}, DN_BUDGET=16/GPU for the 12-h kill margin) — six independent TPE
+studies ≈ up to 96 proxy-trained candidates over per-stage widths, surrogate fence pred-fp32
+≤ 14.0, build-check rejects pre-GPU. Next after they land: merge rows → top-5 at 100 ep →
+seeds {1,2,3} de-noise → Nano finalist session (MEASURED gate) → winner-v2 briefing vs
+prune_base r20 (0.8381 @ 9.52/5.91).
