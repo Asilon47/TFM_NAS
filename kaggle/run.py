@@ -110,7 +110,7 @@ PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
 # MODE="dense_nas" — Stage-3 NAS over the device-native family (search/dense_nas.py): one
 #   independent TPE study per T4 (seeds DN_SEED_BASE / +1), shared row files → dedup + resume.
 DN_BUDGET = 16
-DN_SEED_BASE = 2
+DN_SEED_BASE = 4
 DN_PROXY_EPOCHS = 30
 DN_CEILING = 14.0
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
