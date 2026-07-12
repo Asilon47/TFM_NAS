@@ -32,9 +32,13 @@ any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its
 | graft-pruned | r40 (−64 %) | 1.1M | 0.816 | 11.81 | 8.41 | −7 % |
 | dense | w15 | 1.2M | 0.815 | 9.53 | 6.30 | −25 % |
 | dense | w13 | 1.0M | 0.813 | 9.56 | 6.45 | −25 % |
+| graft-pruned | halp_10p4 +KD | 2.4M | 0.813 | 12.58 | 8.91 | −1 % |
 | prune | r45 (−66 %) | 0.9M | 0.809 | 7.94 | 7.18 | −38 % |
+| graft-pruned | halp_9p0 +KD | 1.8M | 0.802 | 11.37 | 8.14 | −11 % |
 | prune | r55 (−76 %) | 0.65M | 0.798 | 7.66 | 5.07 | −40 % |
 | prune | r30 (−58 %) | 1.1M | 0.790 | 8.28 | 5.34 | −35 % |
+| **graft-pruned** | **r50_gtay** | 0.76M | **0.795** | 10.23 | **7.48** | −20 % |
+| graft-pruned | r60_gtay | 0.44M | 0.777 | 8.85 | 6.36 | −31 % |
 | graft-pruned | r60 (−84 %) | 0.49M | 0.759 | 9.01 | 6.58 | −29 % |
 
 ## The story
@@ -57,6 +61,13 @@ any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its
   (−8.2 at 84 %) are mid-pack per-param, yet every dense/pruned point beats them per-ms — even
   84 % pruning can't buy back the memory-bound deficit. Floor pruner config (uniform/magnitude/
   one-shot/no-KD) → lower bounds; see `graft_pruned/README.md`.
+- **The pruning-as-search program (2026-07-11/12) lifted the graft but not past the dense arm**:
+  measured technique ordering global_taylor > uniform > HALP-lite (whose linear allocation
+  model over-credited concentrated cuts +23–28 % — predicted-latency claims retired) >
+  iterative > global_l2; KD +0.85 on the from-init graft, negative on the converged dense
+  recovery (technique gains are training-state-dependent, measured both directions).
+  **r50_gtay (0.795 @ 7.48 fp16) is the first graft point under the deployed baseline's fp16
+  latency**; prune r20 still leads it by +4.3 pts at −1.6 ms. procedure.md 2026-07-11/12.
 
 ## Folder
 ```
