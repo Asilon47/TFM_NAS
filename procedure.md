@@ -3601,3 +3601,34 @@ graft's technique advantage was offered to the competitor and declined; (3) "tec
 transfer across families/protocols" is now a measured NO — a thesis-grade caveat on HALP-style
 results. KD twins launched for the dense champion (acct1 v27: uniform r20+r35 + gate-donor
 teacher); graft KD twins + HALP seed 2 still running (acct3 v12 / acct2 v22).
+
+## KD twins + HALP de-noise CLOSED — KD helps the from-init graft, hurts the converged dense recovery (2026-07-12)
+
+**HALP de-noise triple (seeds {0,1,2}):** halp_10p4 = {0.8042, 0.8082, 0.8068} → **0.8064 ±
+0.0017**; halp_9p0 = {0.7936, 0.7926, 0.8001} → **0.7954 ± 0.0033**. CP 3.5 discipline
+satisfied — the graft champion band is real, not a seed artifact.
+
+**KD twins (CP 8.2-early, teacher = gate donor 0.887, α=1.0, matched seed 0):**
+
+| point | no-KD | KD | Δ | DoD ≥ +0.3 |
+|---|---|---|---|---|
+| graft halp_10p4 | 0.8042 | **0.8126** | **+0.84** | PASS |
+| graft halp_9p0 | 0.7936 | **0.8021** | +0.85 | PASS |
+| dense prune_base r20 | 0.8381 | 0.8310 | −0.71 | FAIL |
+| dense prune_base r35 | 0.8256 | 0.8230 | −0.26 | FAIL |
+
+**Reading — the second protocol-dependence result, mirror of the fairness leg:** output-level
+KD adds ~+0.85 to the ImageNet-init prune-then-TRAIN graft (an under-trained student drinks
+teacher signal) and is null-to-negative for the converged prune-then-recover baseline (the
+student is a sub-network of its own teacher — the labels already carry the signal, and the
+logit-MSE pull can fight recovery). Combined with "global_taylor wins on the graft / loses on
+the donor": **compression-technique gains are TRAINING-STATE-dependent, not universal** — the
+program's cross-family caveat, now measured twice from both directions.
+
+**Accuracy side of the pruning-as-search program is COMPLETE.** Champions:
+- graft: **halp_fp32_10p4 + KD = 0.8126** (2.36M params, pred 10.22 fp32 / ~7.16 fp16) and
+  halp_fp32_9p0 + KD = 0.8021 (1.82M, pred 8.86 / ~6.20). KD twins share the non-KD graphs
+  (prune precedes recovery) → ONE Nano bench per spec covers both.
+- dense: **prune_base r20 (uniform, no KD) = 0.8381 @ measured 9.52 / 5.91 ms** — unmoved.
+Remaining before the cross-family verdict + CP 6.3 pick: ONE Nano session (halp_10p4 +
+halp_9p0 graphs, optional gtay r50/r60 + riders), mode 0 / locked clocks as always.
