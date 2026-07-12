@@ -1,0 +1,420 @@
+{
+  "n_points": 62,
+  "skipped": [],
+  "doctrine": "ranking-only, WHOLE-NET-only; never marginal/allocation use (collinear features -> unphysical per-feature signs); any claimed latency is verified on-device (Stage-0 lesson: the @224 additivity inverted at 640)",
+  "timestamp": "2026-07-12T06:17:20Z",
+  "fits": {
+    "fp16": {
+      "coef": [
+        0.022189310136165274,
+        0.52446219287224,
+        0.3733550505348505,
+        -1.2078325914197527
+      ],
+      "intercept": -36.1231052206077,
+      "lam": 0.01,
+      "features": [
+        "act_mbytes",
+        "param_mbytes",
+        "n_convs",
+        "conv_gflops"
+      ],
+      "n": 25,
+      "loo_mape": 0.15275980978906906,
+      "points": [
+        {
+          "name": "baseline_recheck_640_fp16",
+          "ms": 7.752224488258362,
+          "pred": 9.211,
+          "resid_pct": 18.8
+        },
+        {
+          "name": "dense_ctrl_n_640_fp16",
+          "ms": 8.110831508636474,
+          "pred": 8.967,
+          "resid_pct": 10.6
+        },
+        {
+          "name": "dense_d33_w20_640_fp16",
+          "ms": 6.928907845020294,
+          "pred": 7.843,
+          "resid_pct": 13.2
+        },
+        {
+          "name": "dense_d50_w15_640_fp16",
+          "ms": 6.296040818691254,
+          "pred": 6.58,
+          "resid_pct": 4.5
+        },
+        {
+          "name": "dense_w13_640_fp16",
+          "ms": 6.445990076065064,
+          "pred": 6.19,
+          "resid_pct": -4.0
+        },
+        {
+          "name": "dense_w18_640_fp16",
+          "ms": 6.480628952980042,
+          "pred": 7.371,
+          "resid_pct": 13.7
+        },
+        {
+          "name": "dense_w22_640_fp16",
+          "ms": 6.945441763401032,
+          "pred": 8.448,
+          "resid_pct": 21.6
+        },
+        {
+          "name": "graft_halp_10p4_640_fp16",
+          "ms": 8.913136992454529,
+          "pred": 10.142,
+          "resid_pct": 13.8
+        },
+        {
+          "name": "graft_halp_9p0_640_fp16",
+          "ms": 8.136131706237792,
+          "pred": 8.681,
+          "resid_pct": 6.7
+        },
+        {
+          "name": "graft_prune_r20_e2e_640",
+          "ms": 10.153318276405335,
+          "pred": 9.124,
+          "resid_pct": -10.1
+        },
+        {
+          "name": "graft_prune_r40_e2e_640",
+          "ms": 8.409682407379151,
+          "pred": 7.247,
+          "resid_pct": -13.8
+        },
+        {
+          "name": "graft_prune_r60_e2e_640",
+          "ms": 6.575110402107239,
+          "pred": 5.426,
+          "resid_pct": -17.5
+        },
+        {
+          "name": "graft_r50_gtay_640_fp16",
+          "ms": 7.4824488067626955,
+          "pred": 6.383,
+          "resid_pct": -14.7
+        },
+        {
+          "name": "graft_r60_gtay_640_fp16",
+          "ms": 6.355128152370453,
+          "pred": 5.429,
+          "resid_pct": -14.6
+        },
+        {
+          "name": "prune_base_r10_640_fp16",
+          "ms": 6.130431520938873,
+          "pred": 6.314,
+          "resid_pct": 3.0
+        },
+        {
+          "name": "prune_base_r15_640_fp16",
+          "ms": 5.927883832454682,
+          "pred": 6.134,
+          "resid_pct": 3.5
+        },
+        {
+          "name": "prune_base_r20_640_fp16",
+          "ms": 5.911296474933624,
+          "pred": 6.076,
+          "resid_pct": 2.8
+        },
+        {
+          "name": "prune_base_r30_640_fp16",
+          "ms": 5.3441852807998655,
+          "pred": 6.049,
+          "resid_pct": 13.2
+        },
+        {
+          "name": "prune_base_r35_640_fp16",
+          "ms": 5.3782833433151245,
+          "pred": 5.96,
+          "resid_pct": 10.8
+        },
+        {
+          "name": "prune_base_r45_640_fp16",
+          "ms": 7.184760322570801,
+          "pred": 5.758,
+          "resid_pct": -19.9
+        },
+        {
+          "name": "prune_base_r55_640_fp16",
+          "ms": 5.073599371910095,
+          "pred": 5.523,
+          "resid_pct": 8.9
+        },
+        {
+          "name": "winner_v1_e2e_640_fp16",
+          "ms": 12.381500821113587,
+          "pred": 10.901,
+          "resid_pct": -12.0
+        },
+        {
+          "name": "winner_v1_v2topdown_e2e_640_fp16",
+          "ms": 12.575561089515686,
+          "pred": 11.836,
+          "resid_pct": -5.9
+        },
+        {
+          "name": "winner_v1_v3pan_e2e_640_fp16",
+          "ms": 12.761927046775817,
+          "pred": 12.829,
+          "resid_pct": 0.5
+        },
+        {
+          "name": "yolo11s_pose_640_fp16",
+          "ms": 14.93188973903656,
+          "pred": 14.163,
+          "resid_pct": -5.1
+        }
+      ]
+    },
+    "fp32": {
+      "coef": [
+        0.02336037579625323,
+        1.1617199650653889,
+        0.05178501832845718,
+        -2.0997037437945765
+      ],
+      "intercept": -1.1943796663704074,
+      "lam": 0.01,
+      "features": [
+        "act_mbytes",
+        "param_mbytes",
+        "n_convs",
+        "conv_gflops"
+      ],
+      "n": 37,
+      "loo_mape": 0.12012475564968035,
+      "points": [
+        {
+          "name": "addv_idx0_backbone_640",
+          "ms": 14.423735370635987,
+          "pred": 13.649,
+          "resid_pct": -5.4
+        },
+        {
+          "name": "addv_idx11_backbone_640",
+          "ms": 12.812732658386231,
+          "pred": 12.111,
+          "resid_pct": -5.5
+        },
+        {
+          "name": "addv_idx1_backbone_640",
+          "ms": 14.961640634536742,
+          "pred": 14.652,
+          "resid_pct": -2.1
+        },
+        {
+          "name": "addv_idx2_backbone_640",
+          "ms": 15.290773406028748,
+          "pred": 16.209,
+          "resid_pct": 6.0
+        },
+        {
+          "name": "addv_idx3_backbone_640",
+          "ms": 12.269104623794556,
+          "pred": 12.939,
+          "resid_pct": 5.5
+        },
+        {
+          "name": "addv_idx4_backbone_640",
+          "ms": 13.127890863418578,
+          "pred": 13.203,
+          "resid_pct": 0.6
+        },
+        {
+          "name": "addv_max_corner_backbone_640",
+          "ms": 30.981489095687866,
+          "pred": 26.166,
+          "resid_pct": -15.5
+        },
+        {
+          "name": "addv_min_corner_backbone_640",
+          "ms": 8.053753576278687,
+          "pred": 6.983,
+          "resid_pct": -13.3
+        },
+        {
+          "name": "baseline_recheck_640",
+          "ms": 12.742724804878234,
+          "pred": 14.118,
+          "resid_pct": 10.8
+        },
+        {
+          "name": "dense_ctrl_n_640",
+          "ms": 11.332005023956299,
+          "pred": 14.037,
+          "resid_pct": 23.9
+        },
+        {
+          "name": "dense_d33_w20_640",
+          "ms": 11.257768321037293,
+          "pred": 12.281,
+          "resid_pct": 9.1
+        },
+        {
+          "name": "dense_d50_w15_640",
+          "ms": 9.525354695320129,
+          "pred": 10.757,
+          "resid_pct": 12.9
+        },
+        {
+          "name": "dense_w13_640",
+          "ms": 9.560670409202576,
+          "pred": 10.079,
+          "resid_pct": 5.4
+        },
+        {
+          "name": "dense_w18_640",
+          "ms": 10.011483674049378,
+          "pred": 11.82,
+          "resid_pct": 18.1
+        },
+        {
+          "name": "dense_w22_640",
+          "ms": 11.545241274833678,
+          "pred": 13.067,
+          "resid_pct": 13.2
+        },
+        {
+          "name": "dense_w30_640",
+          "ms": 15.266025137901305,
+          "pred": 15.932,
+          "resid_pct": 4.4
+        },
+        {
+          "name": "fallback_idx11_e2e_640",
+          "ms": 16.6525057888031,
+          "pred": 13.615,
+          "resid_pct": -18.2
+        },
+        {
+          "name": "fallback_idx3_e2e_640",
+          "ms": 16.11182872772217,
+          "pred": 14.444,
+          "resid_pct": -10.4
+        },
+        {
+          "name": "graft_halp_10p4_640",
+          "ms": 12.58422734260559,
+          "pred": 16.904,
+          "resid_pct": 34.3
+        },
+        {
+          "name": "graft_halp_9p0_640",
+          "ms": 11.365983362197875,
+          "pred": 14.625,
+          "resid_pct": 28.7
+        },
+        {
+          "name": "graft_prune_r20_e2e_640",
+          "ms": 14.27422179698944,
+          "pred": 14.078,
+          "resid_pct": -1.4
+        },
+        {
+          "name": "graft_prune_r40_e2e_640",
+          "ms": 11.811259994506836,
+          "pred": 11.456,
+          "resid_pct": -3.0
+        },
+        {
+          "name": "graft_prune_r60_e2e_640",
+          "ms": 9.005082397460937,
+          "pred": 9.163,
+          "resid_pct": 1.8
+        },
+        {
+          "name": "graft_r50_gtay_640",
+          "ms": 10.228130702972413,
+          "pred": 10.283,
+          "resid_pct": 0.5
+        },
+        {
+          "name": "graft_r60_gtay_640",
+          "ms": 8.845916771888733,
+          "pred": 9.061,
+          "resid_pct": 2.4
+        },
+        {
+          "name": "prune_base_r10_640",
+          "ms": 9.824011821746826,
+          "pred": 8.564,
+          "resid_pct": -12.8
+        },
+        {
+          "name": "prune_base_r15_640",
+          "ms": 9.535252933502198,
+          "pred": 8.109,
+          "resid_pct": -15.0
+        },
+        {
+          "name": "prune_base_r20_640",
+          "ms": 9.522759003639221,
+          "pred": 7.968,
+          "resid_pct": -16.3
+        },
+        {
+          "name": "prune_base_r30_640",
+          "ms": 8.282849459648132,
+          "pred": 7.873,
+          "resid_pct": -4.9
+        },
+        {
+          "name": "prune_base_r35_640",
+          "ms": 8.356114044189454,
+          "pred": 7.69,
+          "resid_pct": -8.0
+        },
+        {
+          "name": "prune_base_r45_640",
+          "ms": 7.937834379673004,
+          "pred": 7.23,
+          "resid_pct": -8.9
+        },
+        {
+          "name": "prune_base_r55_640",
+          "ms": 7.65934433221817,
+          "pred": 6.708,
+          "resid_pct": -12.4
+        },
+        {
+          "name": "winner_v1_backbone_640",
+          "ms": 13.85157277584076,
+          "pred": 15.085,
+          "resid_pct": 8.9
+        },
+        {
+          "name": "winner_v1_e2e_640",
+          "ms": 17.670958862304687,
+          "pred": 16.59,
+          "resid_pct": -6.1
+        },
+        {
+          "name": "winner_v1_v2topdown_e2e_640",
+          "ms": 18.14699457168579,
+          "pred": 16.944,
+          "resid_pct": -6.6
+        },
+        {
+          "name": "winner_v1_v3pan_e2e_640",
+          "ms": 18.37337484359741,
+          "pred": 17.774,
+          "resid_pct": -3.3
+        },
+        {
+          "name": "yolo11s_pose_640",
+          "ms": 21.702819480895997,
+          "pred": 22.738,
+          "resid_pct": 4.8
+        }
+      ]
+    }
+  }
+}

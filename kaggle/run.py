@@ -107,6 +107,12 @@ PG_INDEX = ""
 # PG_SPECS: comma list of repo-relative HALP-lite specs (prune/specs/halp_*.json) — when set,
 # they replace the ratio ladder (one spec per T4; --ratio-spec overrides --ratios/--technique).
 PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
+# MODE="dense_nas" — Stage-3 NAS over the device-native family (search/dense_nas.py): one
+#   independent TPE study per T4 (seeds DN_SEED_BASE / +1), shared row files → dedup + resume.
+DN_BUDGET = 20
+DN_SEED_BASE = 0
+DN_PROXY_EPOCHS = 30
+DN_CEILING = 14.0
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
 PG_KD = 1
 PG_KD_ALPHA = 1.0
@@ -349,6 +355,35 @@ def main() -> None:
                       f"(anchor {anchor}, {row.get('delta_map_vs_donor'):+.4f})", flush=True)
         if not found:
             raise SystemExit("prune.recover_graft produced no report")
+        return
+
+    # 4.79 Stage-3 dense-space NAS: TPE over per-stage widths of the yolo11-pose family.
+    if MODE == "dense_nas":
+        out_dir = work / "dense_nas"
+        out_dir.mkdir(exist_ok=True)
+        ngpu = int(subprocess.check_output(
+            [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
+        ).decode().strip() or "0")
+        procs = []
+        for g in range(max(1, min(2, ngpu))):
+            env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(g))
+            cmd = (f"{sys.executable} -m search.dense_nas --budget {DN_BUDGET} "
+                   f"--seed {DN_SEED_BASE + g} --proxy-epochs {DN_PROXY_EPOCHS} "
+                   f"--ceiling-fp32-ms {DN_CEILING} --data dataset/dataset.yaml "
+                   f"--out-dir {out_dir} --device 0")
+            print(f"+ [gpu{g}] dense_nas seed {DN_SEED_BASE + g}", flush=True)
+            procs.append(subprocess.Popen(cmd, shell=True, env=env))
+            time.sleep(10)
+        for pr in procs:
+            pr.wait()
+        reports = sorted(out_dir.glob("dense_nas_seed*.json"))
+        if not reports:
+            raise SystemExit("search.dense_nas produced no study report")
+        for rep in reports:
+            payload = json.loads(rep.read_text())
+            best = payload.get("best") or {}
+            print(f"[done] {rep.name}: n={payload['n_rows']} "
+                  f"best={best.get('tag')} map={best.get('map')}", flush=True)
         return
 
     # 4.77 Phase 3c wave 1 (dense-family arm): yolo11-pose scaling grid — stripe the wave

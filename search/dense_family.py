@@ -133,11 +133,9 @@ def _prepare_data_yaml(data_yaml: Path, workdir: Path) -> Path:
     return out
 
 
-def train_candidate(
+def train_from_yaml(
     tag: str,
-    depth_mult: float,
-    width_mult: float,
-    max_channels: int,
+    model_yaml_dict: dict,
     *,
     data_yaml: Path,
     out_dir: Path,
@@ -147,14 +145,17 @@ def train_candidate(
     device: Any = 0,
     seed: int = 0,
 ) -> dict:
-    """Train + val + export one scaling candidate (stock model, stock recipe); return its row."""
+    """Train + val + export one candidate from an explicit model-yaml dict; return its row.
+
+    The shared trainer for the scaling waves AND the Stage-3 dense-space NAS
+    (search/dense_nas.py) — stock Ultralytics recipe, from scratch, deploy-ONNX contract.
+    """
     from ultralytics import YOLO
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     model_yaml = out_dir / f"yolo11n-pose_{tag}.yaml"
-    model_yaml.write_text(yaml.safe_dump(
-        scaled_yaml(_base_pose_yaml(), depth_mult, width_mult, max_channels), sort_keys=False))
+    model_yaml.write_text(yaml.safe_dump(model_yaml_dict, sort_keys=False))
     data = _prepare_data_yaml(data_yaml, out_dir)
 
     model = YOLO(str(model_yaml))
@@ -172,8 +173,7 @@ def train_candidate(
     shutil.copy(onnx_src, onnx)
 
     row = {
-        "tag": tag, "depth_mult": depth_mult, "width_mult": width_mult,
-        "max_channels": max_channels,
+        "tag": tag,
         "params": int(sum(p.numel() for p in model.model.parameters())),
         "map": float(metrics.pose.map), "map50": float(metrics.pose.map50),
         "box_map": float(metrics.box.map),
@@ -181,6 +181,31 @@ def train_candidate(
         "weights": str(weights), "onnx": str(onnx),
     }
     (out_dir / f"dense_{tag}.row.json").write_text(json.dumps(row, indent=2) + "\n")
+    return row
+
+
+def train_candidate(
+    tag: str,
+    depth_mult: float,
+    width_mult: float,
+    max_channels: int,
+    *,
+    data_yaml: Path,
+    out_dir: Path,
+    epochs: int = 100,
+    imgsz: int = 640,
+    batch: int = 16,
+    device: Any = 0,
+    seed: int = 0,
+) -> dict:
+    """Train + val + export one scaling candidate (stock model, stock recipe); return its row."""
+    row = train_from_yaml(
+        tag, scaled_yaml(_base_pose_yaml(), depth_mult, width_mult, max_channels),
+        data_yaml=data_yaml, out_dir=out_dir, epochs=epochs, imgsz=imgsz, batch=batch,
+        device=device, seed=seed)
+    row.update({"depth_mult": depth_mult, "width_mult": width_mult,
+                "max_channels": max_channels})
+    (Path(out_dir) / f"dense_{tag}.row.json").write_text(json.dumps(row, indent=2) + "\n")
     return row
 
 
