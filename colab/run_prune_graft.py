@@ -33,7 +33,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "colab"))
 import colab_common as C  # noqa: E402
 
-STACK = "'ofa==0.1.0.post202307202001' 'ultralytics>=8.3' 'torch-pruning>=1.4,<2'"
+# onnx is REQUIRED by _export_deploy_onnx (torch.onnx.export's onnxscript hook) — the Kaggle
+# base image bundled it, free-tier Colab/Lightning VMs do not (smoke caught this 2026-07-13).
+STACK = "'ofa==0.1.0.post202307202001' 'ultralytics>=8.3' 'torch-pruning>=1.4,<2' onnx"
 
 
 def compose_recover_cmd(a: argparse.Namespace, *, donor: Path, data_yaml: Path,
@@ -45,10 +47,14 @@ def compose_recover_cmd(a: argparse.Namespace, *, donor: Path, data_yaml: Path,
            f"--ckpt-every {a.ckpt_every}")
     if a.max_steps is not None:
         cmd += f" --max-steps {a.max_steps}"
+    # --technique is ALWAYS passed: with a spec it selects the importance metric
+    # (global_taylor picks better channels; per-stage counts stay spec-pinned, so shapes
+    # are importance-invariant) — without it, recover_graft would default to uniform/l2.
+    cmd += f" --technique {a.technique}"
     if a.spec:
         cmd += f" --ratio-spec {a.spec}"
     else:
-        cmd += f" --ratios {a.ratios} --technique {a.technique}"
+        cmd += f" --ratios {a.ratios}"
     if a.arch_json:
         cmd += f" --arch-json {a.arch_json}"
     if a.kd:
