@@ -116,7 +116,7 @@ DN_CEILING = 14.0
 # DN_ORACLE: comma list of finalist tags → 100-ep oracle re-train (striped across the T4s)
 DN_ORACLE = "s31-40-40-40-13,s39-40-38-38-14,s40-38-39-36-13"   # top-3, de-noise tie band
 DN_ORACLE_EPOCHS = 100
-DN_ORACLE_SEED = 1   # !=0 -> fresh-seed de-noise re-train (CP 3.5 winner's-curse discipline)
+DN_ORACLE_SEED = 3   # !=0 -> fresh-seed de-noise re-train (CP 3.5 winner's-curse discipline)
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
 PG_KD = 1
 PG_KD_ALPHA = 1.0
