@@ -3838,3 +3838,35 @@ re-search under the corrected MEASURED fence (~5–7 sessions); (c) prune the se
 to ≤ baseline latency (pruning-as-search stage 2 on the NAS output; ~2–3 sessions; cheapest shot
 at a searched-and-compressed Pareto winner). Artifacts: data/e2e/densenas_s*_640*.json,
 models/dense_nas/, refit search/latency_model_fit.json.
+
+## Wave-2 recalibrated re-search — physical latency fence + constrained box (2026-07-13)
+
+User chose the recalibrated re-search after the Stage-3 Nano gate; Kaggle quota nearly exhausted
+(40+47 min, owaismalekarnous dead) → Colab/Lightning fallback.
+
+**Two corrections vs wave-1:**
+1. **The latency fence is now PHYSICAL, not the ML surrogate.** The refit ridge over-predicted
+   small nets badly (a 1.17M-param net → pred 13.6 ms; it should be ~9). Root cause = the
+   documented collinearity ("whole-net-only, never marginal") — using it as a per-candidate fence
+   was exactly the misuse. Replaced by a single-feature memory-bound model:
+   **ms ≈ 2.994 + 0.017627·act_mbytes**, which fits the 6 measured dense/search points within
+   **±3.6 %** (R²≈0.99) — activation traffic IS the latency for this DRAM-bound family
+   (`search.latency_model.act_bytes_to_ms`; fence at pred ≤ 12.0 → act ≤ ~512 MB ⇒ measured ≤
+   ~baseline). Finalists still gate on MEASURED ms.
+2. **The constrained box caps the true cost center.** Physical cost ∝ Σ channels × spatial², so
+   the STEM/early stages dominate (stage1 64×320², stage2 256×160² ≫ P3 512×80² > P4 > P5) — NOT
+   the feature stages. Wave-1's finalists were expensive because they ran WIDE EARLY stages
+   (s1≈s2≈0.40). `STAGE_HI_FEASIBLE = [0.20, 0.22, 0.40, 0.40, 0.25]`: cap the high-spatial early
+   stages hard (cheap on accuracy — low-level features), keep the accuracy-bearing P3/P4 open, gut
+   the P5 tail. Build-check smoke: ~3/8 random draws feasible; infeasible rejected free (CPU).
+
+**Honest expectation (recorded up front):** from-scratch accuracy caps ~0.87 (wave-1), and the
+feasible region narrows the early stages, so wave-2's realistic best is ~0.83–0.85 @ ~7 ms fp16 —
+a Pareto TRADE with the baseline (faster, less accurate), possibly NOT beating prune_base r20
+(0.838 @ 5.91, which inherits pretrained weights). Value = closing the recalibrated-search
+question definitively + the physical-fence result, not a guaranteed dominator.
+
+**Launched:** Kaggle canary (both remaining accounts, seeds 10–13, DN_STAGE_HI=feasible,
+DN_CEILING=12.0) burns the last quota for ~4 feasible points; `colab/run_dense_nas.py`
+(Drive-persisted, resumable) is the workhorse for the bulk. Artifacts land in
+data/dense_nas_w2/.
