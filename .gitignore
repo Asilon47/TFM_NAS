@@ -84,4 +84,4 @@ runs/
 wandb/
 *.tfevents.*
 
-dataset.zip
+dataset.zip.venv-cloud/

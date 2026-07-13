@@ -44,7 +44,9 @@ def pin_torch_and_install(extra_pkgs: str) -> None:
     torch_ver = subprocess.check_output(
         [sys.executable, "-c", "import torch; print(torch.__version__)"]
     ).decode().strip()
-    constraint = Path("/content/constraints.txt")
+    # tempdir, not /content: the same helper now serves Lightning studios (2026-07-13).
+    import tempfile
+    constraint = Path(tempfile.gettempdir()) / "tfm_nas_constraints.txt"
     constraint.write_text(f"torch=={torch_ver}\n")
     print(f"[torch] pinning resident CUDA torch=={torch_ver}", flush=True)
     sh(f"{sys.executable} -m pip install -q --constraint {constraint} {extra_pkgs}")
