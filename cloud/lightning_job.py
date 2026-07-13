@@ -10,8 +10,8 @@ persists across stop/start, so the entry's 10-epoch resume ckpt makes interrupti
 Auth: ``secrets/lightning_user_id`` + ``secrets/lightning_api_key`` (gitignored; from
 lightning.ai → profile → Keys), or the LIGHTNING_USER_ID / LIGHTNING_API_KEY env vars.
 
-    python cloud/lightning_job.py launch --name tfm-w1 --machine T4 -- \
-        --ratios 0.50 --technique global_taylor --seed 0
+    python cloud/lightning_job.py launch --name tfm-w1 --machine T4 \
+        --entry-args "--ratios 0.50 --technique global_taylor --seed 0 --epochs 100"
     python cloud/lightning_job.py poll --name tfm-w1
     python cloud/lightning_job.py pull --name tfm-w1
     python cloud/lightning_job.py stop --name tfm-w1
@@ -82,7 +82,9 @@ def main() -> None:
     ap.add_argument("--teamspace", default="asilarnous/data-optimization-project")
     ap.add_argument("--kacct", type=int, default=1, choices=(1, 2, 3))
     ap.add_argument("--dest", type=Path, default=None)
-    ap.add_argument("entry", nargs="*", help="run_prune_graft.py args (after --)")
+    ap.add_argument("--entry-args", default="",
+                    help="run_prune_graft.py args as ONE quoted string (avoids argparse '--' "
+                         "ambiguity), e.g. \"--ratios 0.50 --technique global_taylor --seed 0\"")
     a = ap.parse_args()
 
     session = a.name
@@ -101,7 +103,10 @@ def main() -> None:
         print(f"[lightning] {session} status={studio.status}", flush=True)
         studio.upload_file(str(token), remote_path="tfm_secrets/secrets/access_token")
         studio.upload_file(str(user), remote_path="tfm_secrets/secrets/kaggle_username")
-        entry = a.entry[1:] if a.entry and a.entry[0] == "--" else a.entry
+        import shlex
+        entry = shlex.split(a.entry_args)
+        if not entry:
+            raise SystemExit("launch needs --entry-args \"...\"")
         print(studio.run(_launch_cmd(entry, session)), flush=True)
         print(f"[lightning] poll: python cloud/lightning_job.py poll --name {session}",
               flush=True)
