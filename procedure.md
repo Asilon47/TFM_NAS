@@ -3797,3 +3797,44 @@ s31 pred 9.10 fp32, both unverified). Latency is weight-independent, so the seed
 serve (staged in data/cp33_kaggle_out/dense_nas/). The bench also breaks the s39/s31 accuracy
 tie on the Pareto axis. Then: winner-v2 pick (s39 recommended — robust) vs prune_base r20 on
 measured axes → Phases 7–9.
+
+## STAGE-3 NANO GATE — the searched winner is latency-dominated (HALP lesson, 3rd strike) (2026-07-13)
+
+Finalist bench (mode 0, TRT 10.3, locked clocks; tunnel endpoint 138.100.76.68:5100 — laptop
+moved to 192.168.0.x so config.local re-pointed off the dead 192.168.1.150 LAN IP):
+
+| model | mAP50-95 (de-noised) | fp32 ms | fp16 ms | pred fp32 | surrogate miss |
+|---|---|---|---|---|---|
+| **s39-40-38-38-14** | 0.8709 | **15.27** | **8.84** | 9.47 | **−38 %** |
+| s31-40-40-40-13 | 0.8702 | 15.14 | 8.94 | 9.04 | −40 % |
+| s40-38-39-36-13 | 0.8677 | 14.98 | 8.67 | 9.07 | −39 % |
+| baseline yolo11n | 0.877 | 12.74 | 7.75 | — | — |
+| prune_base r20 | 0.8381 | 9.52 | 5.91 | — | — |
+
+**Verdict: no searched finalist is Pareto-superior — all three are DOMINATED by the baseline**
+(slower AND ≤ its accuracy: 8.7–8.9 vs 7.75 fp16, 0.868–0.871 vs 0.877). The surrogate
+under-predicted every finalist by ~40 % (pred ~9 ms → measured ~15 ms).
+
+**Root cause (the HALP lesson, now at the SEARCH level):** the latency fence used a surrogate
+fit on the dense/prune/graft distribution; the search then explored a NEW region — wide,
+LOW-STRIDE feature stages (P3 80×80 / P4 40×40 at width ×0.38–0.40) — that the surrogate had
+never seen, so it extrapolated ~40 % low. Those wide high-res stages are the project's recurring
+memory-bound cost center: the very allocation that WON on accuracy-per-param is the most
+expensive per-ms. The search optimized accuracy honestly, but under a latency budget it could
+not actually measure. The refit surrogate (now including these 3 points) is calibrated in-region
+(LOO-MAPE fp32 13.0 %); a corrected re-search would reject them.
+
+**What stands vs what doesn't:**
+- STANDS: the accuracy finding (searched arch = 0.871 from scratch, matches baseline, +3.3 vs
+  r20 — accuracy-EFFICIENT per param); the gutted-tail/wide-feature discovery; the search
+  machinery (proxy top-1 = oracle top-1); the measured methodology chain.
+- DOESN'T: "the deployable comes from the search." At MEASURED latency the searched nets lose to
+  both the baseline and the pruned-baseline family. r20 (0.838 @ 5.91) remains the measured
+  Pareto standout among buildable nets; the baseline (0.877 @ 7.75) is unbeaten on its own axis.
+
+**→ USER DECISION (winner-v2 / CP 6.3) — three paths, briefed next:** (a) accept prune_base r20
+as winner-v2 (honest measured pick; search = the finding + methodology); (b) recalibrate +
+re-search under the corrected MEASURED fence (~5–7 sessions); (c) prune the search winner s39
+to ≤ baseline latency (pruning-as-search stage 2 on the NAS output; ~2–3 sessions; cheapest shot
+at a searched-and-compressed Pareto winner). Artifacts: data/e2e/densenas_s*_640*.json,
+models/dense_nas/, refit search/latency_model_fit.json.

@@ -46,6 +46,10 @@ ALIASES = {
     "graft_halp_9p0_640": "recover_graft_halp_fp32_9p0_640",
     "graft_r50_gtay_640": "recover_graft_r50_gtay_640",
     "graft_r60_gtay_640": "recover_graft_r60_gtay_640",
+    # Stage-3 dense-NAS finalists (2026-07-13 bench)
+    "densenas_s39_640": "dense_s39-40-38-38-14_o100_640",
+    "densenas_s31_640": "dense_s31-40-40-40-13_o100_640",
+    "densenas_s40_640": "dense_s40-38-39-36-13_o100_640",
 }
 
 # Where deploy/bench ONNX live (searched in order; first hit wins).
