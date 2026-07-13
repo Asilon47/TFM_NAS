@@ -38,14 +38,21 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def run_remote_bench(conn, cfg, row_key: str, local_onnx: Path,
                      precision: str, warmup: int, iters: int,
-                     min_window_s: float) -> dict:
+                     min_window_s: float, fresh_timing_cache: bool = False) -> dict:
     remote_job = f"{cfg.remote_workdir}/job/{row_key}"
     conn.run(f"mkdir -p {remote_job}", hide=True)
     try:
         conn.put(str(local_onnx), remote=f"{remote_job}/model.onnx")
         # /job mounts the per-row dir; bench/ rides in via an explicit second
         # mount because `..` traversal in container paths is brittle. /cache
-        # persists the trtexec timing cache across rows AND sweeps.
+        # persists the trtexec timing cache across rows AND sweeps — which makes
+        # a build reuse a prior run's autotuner tactics. For the LUT sweep that
+        # is the intended speedup, but a median-of-N fp16 REBUILD study (winner-v2
+        # variance de-risk) must NOT reuse tactics or every rebuild is identical;
+        # fresh_timing_cache points each build at a unique cache file inside /job
+        # (torn down with the row) so the autotuner re-searches from scratch.
+        cache_flag = (f"--timing-cache /job/trt_timing_{row_key}.cache"
+                      if fresh_timing_cache else "--timing-cache /cache/trt_timing.cache")
         cmd = (
             f"docker run --rm --runtime nvidia "
             f"-v {remote_job}:/job "
@@ -54,7 +61,7 @@ def run_remote_bench(conn, cfg, row_key: str, local_onnx: Path,
             f"{cfg.docker_image} bash -c "
             f"'python3 /bench/build_engine.py "
             f"--onnx /job/model.onnx --engine /job/model.plan --precision {precision} "
-            f"--timing-cache /cache/trt_timing.cache "
+            f"{cache_flag} "
             f"&& python3 /bench/run_bench.py "
             f"--engine /job/model.plan --warmup {warmup} --iters {iters} "
             f"--min-window-s {min_window_s}'"
