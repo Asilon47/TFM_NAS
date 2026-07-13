@@ -118,6 +118,7 @@ def graft_prune_train_ladder(
     spec_tag: str = "halp",
     teacher_path: Any = None,
     kd_alpha: float = 1.0,
+    ckpt_every: int = 10,
 ) -> dict:
     """Prune the graft at each ratio, train to capacity, eval mAP; per-point + report."""
     import torch
@@ -160,6 +161,17 @@ def graft_prune_train_ladder(
     rows: list[dict] = []
     points = ([ratio_spec["rest_ratio"]] if ratio_spec is not None else ladder_plan(ratios))
     for ratio in points:
+        # Tag first (it names the resume ckpt): spec stem / run_tag + _kd + arch prefix.
+        if ratio_spec is not None:
+            tag = spec_tag if seed == 0 else f"{spec_tag}_s{seed}"
+        else:
+            tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps,
+                          seed=seed)
+        if teacher is not None:
+            tag += "_kd"
+        if arch_tag != "winner":
+            tag = f"{arch_tag}_{tag}"
+
         # Fresh warm-head graft per point (OFA-pretrained backbone + gate-donor head, trainable):
         # points are independent, and prune_graft mutates in place. Seed BEFORE the build — the
         # 1x1 adapters are randomly initialized, so the seed owns them too.
@@ -206,16 +218,10 @@ def graft_prune_train_ladder(
         reestimate_bn(model.to(device), bn_feed)
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
                                     batch=batch, data_yaml=data_yaml, seed=seed,
-                                    max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha)
+                                    max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha,
+                                    ckpt_path=out_dir / f"ckpt_{tag}.pt",
+                                    ckpt_every=ckpt_every)
 
-        if ratio_spec is not None:
-            tag = spec_tag if seed == 0 else f"{spec_tag}_s{seed}"
-        else:
-            tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps, seed=seed)
-        if teacher is not None:
-            tag += "_kd"
-        if arch_tag != "winner":
-            tag = f"{arch_tag}_{tag}"
         weights = out_dir / f"recover_graft_{tag}.pt"
         torch.save(model.state_dict(), str(weights))
         onnx = out_dir / f"recover_graft_{tag}_640.onnx"
@@ -290,6 +296,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--data-yaml", type=Path, default=None)
     p.add_argument("--bn-batches", type=int, default=16)
     p.add_argument("--max-steps", type=int, default=None, help="cap optimizer steps (CPU smoke)")
+    p.add_argument("--ckpt-every", type=int, default=10,
+                   help="resume-ckpt cadence in epochs (0 = off); the ckpt lives in --out-dir "
+                        "so a durable out-dir (Drive/studio) survives free-tier disconnects")
     a = p.parse_args(argv)
 
     arch = None
@@ -316,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
         taylor_batches=a.taylor_batches, arch=arch, arch_tag=arch_tag,
         ratio_spec=ratio_spec, spec_tag=spec_tag,
-        teacher_path=a.teacher, kd_alpha=a.kd_alpha)
+        teacher_path=a.teacher, kd_alpha=a.kd_alpha, ckpt_every=a.ckpt_every)
     print(f"unpruned anchor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "

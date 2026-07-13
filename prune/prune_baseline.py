@@ -166,6 +166,39 @@ def load_baseline_model(donor: Path) -> Any:
     return model
 
 
+def _save_train_ckpt(path: Path, model: Any, optimizer: Any, *, epoch: int,
+                     step: int) -> None:
+    """Atomic resume-ckpt write (tmp + rename) — a disconnect mid-save leaves the old file."""
+    import torch
+
+    tmp = path.with_suffix(".tmp")
+    torch.save({"epoch": epoch, "step": step, "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "torch_rng": torch.get_rng_state()}, tmp)
+    tmp.replace(path)
+
+
+def _load_train_ckpt(path: Path, model: Any, optimizer: Any) -> tuple[int, int] | None:
+    """Resume from a ckpt if usable → (start_epoch, step); None (fresh start) otherwise.
+
+    Model weights load FIRST — a shape-drifted ckpt raises before the optimizer is touched
+    (the caller re-prunes deterministically, but GPU nondeterminism can flip near-tie
+    channel picks between sessions)."""
+    import torch
+
+    try:
+        state = torch.load(path, map_location="cpu", weights_only=True)
+        model.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        if "torch_rng" in state:
+            torch.set_rng_state(state["torch_rng"].cpu())
+        return int(state["epoch"]) + 1, int(state.get("step", 0))
+    except (RuntimeError, KeyError, ValueError, EOFError) as e:
+        print(f"[resume] IGNORING unusable ckpt {path.name} ({e}) — training fresh",
+              flush=True)
+        return None
+
+
 def recovery_finetune(
     model: Any,
     *,
@@ -179,12 +212,22 @@ def recovery_finetune(
     max_steps: int | None = None,
     teacher: Any = None,
     kd_alpha: float = 1.0,
+    ckpt_path: Any = None,
+    ckpt_every: int = 10,
 ) -> dict[str, float]:
     """Bare-AdamW recovery fine-tune (the shortft loop, on an EXISTING model) → pose mAP.
 
     ``teacher`` (a frozen raw-map teacher from ``distill.kd_loss.load_frozen_teacher``) adds
     output-level KD: ``pose_loss + kd_alpha · kd_map_loss`` (CP 8.2-early). ``None`` = the
     plain loop, bit-identical to the pre-KD behavior.
+
+    ``ckpt_path`` (free-tier hardening, 2026-07-13): save {epoch, model, optimizer, rng}
+    every ``ckpt_every`` epochs (atomic tmp+rename) and auto-resume when the file exists —
+    a Colab/Lightning disconnect loses ≤ ckpt_every epochs when the out-dir is durable
+    (Drive / studio storage). A stale/shape-mismatched ckpt is ignored with a warning (the
+    caller re-prunes deterministically, but GPU nondeterminism can flip near-tie channel
+    picks). The ckpt is deleted only AFTER the final eval, so an eval-time crash resumes
+    straight to eval. Resume is not bit-identical to an uninterrupted run (fresh loader RNG).
     """
     import torch
 
@@ -201,7 +244,16 @@ def recovery_finetune(
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
 
     step = 0
-    for epoch in range(epochs):
+    start_epoch = 0
+    ckpt = Path(ckpt_path) if ckpt_path is not None else None
+    if ckpt is not None and ckpt.exists():
+        resumed = _load_train_ckpt(ckpt, model, optimizer)
+        if resumed is not None:
+            start_epoch, step = resumed
+            print(f"[resume] {ckpt.name}: continuing at epoch {start_epoch + 1}/{epochs} "
+                  f"({step} steps done)", flush=True)
+
+    for epoch in range(start_epoch, epochs):
         for raw in loader:
             batch_dict = _to_device(_preprocess_batch(raw), device)
             if teacher is None:
@@ -224,13 +276,20 @@ def recovery_finetune(
             if max_steps is not None and step >= max_steps:
                 break
         print(f"[recover] epoch {epoch + 1}/{epochs} done ({step} steps)", flush=True)
+        if ckpt is not None and ckpt_every > 0 and (
+                (epoch + 1) % ckpt_every == 0 or epoch + 1 == epochs):
+            _save_train_ckpt(ckpt, model, optimizer, epoch=epoch, step=step)
+            print(f"[ckpt] {ckpt.name} @ epoch {epoch + 1}/{epochs}", flush=True)
         if max_steps is not None and step >= max_steps:
             break
     # Val a throwaway copy: the validator's AutoBackend fuses Conv+BN IN PLACE, which would
     # leave the model we return (and prune_ladder then saves/exports) without its BNs.
     import copy
-    return pose_map_model(copy.deepcopy(model).eval(), data_yaml=data_yaml, imgsz=imgsz,
-                          device=device)
+    metrics = pose_map_model(copy.deepcopy(model).eval(), data_yaml=data_yaml, imgsz=imgsz,
+                             device=device)
+    if ckpt is not None and ckpt.exists():
+        ckpt.unlink()          # run complete — a leftover ckpt must not seed the next tag
+    return metrics
 
 
 def _export_deploy_onnx(model: Any, out: Path, *, imgsz: int, opset: int = 17) -> None:

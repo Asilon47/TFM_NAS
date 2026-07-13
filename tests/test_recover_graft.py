@@ -41,7 +41,7 @@ def test_spec_branch_passes_importance_not_global():
     import inspect
 
     src = inspect.getsource(recover_graft.graft_prune_train_ladder)
-    spec_branch = src.split("if ratio_spec is not None:")[1].split("else:")[0]
+    spec_branch = src.split("spec_ratio_dict(model")[1].split("else:")[0]
     assert 'importance=tech["importance"]' in spec_branch
     assert "global_pruning=" not in spec_branch    # the kwarg must never be passed here
     assert "**tech" not in spec_branch

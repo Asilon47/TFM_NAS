@@ -86,3 +86,33 @@ def test_load_baseline_model_resets_loss_plumbing() -> None:
     # args is a namespace (not the checkpoint's dict) so the fresh criterion's hyp.box works.
     assert hasattr(model.args, "box")
     assert not isinstance(model.args, dict)
+
+
+def test_train_ckpt_roundtrip_and_stale_tolerance(tmp_path) -> None:
+    """Free-tier resume (2026-07-13): save/load round-trips epoch+step+weights atomically;
+    a shape-drifted ckpt is refused WITHOUT touching the optimizer (fresh-start signal)."""
+    torch = pytest.importorskip("torch")
+    from torch import nn
+
+    from prune.prune_baseline import _load_train_ckpt, _save_train_ckpt
+
+    model = nn.Linear(4, 2)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    # one step so the optimizer has real state
+    model(torch.randn(3, 4)).sum().backward()
+    opt.step()
+    ckpt = tmp_path / "ckpt_r50_gtay_kd.pt"
+    _save_train_ckpt(ckpt, model, opt, epoch=29, step=1234)
+    assert ckpt.exists() and not ckpt.with_suffix(".tmp").exists()   # atomic rename
+
+    fresh = nn.Linear(4, 2)
+    fresh_opt = torch.optim.AdamW(fresh.parameters(), lr=1e-3)
+    resumed = _load_train_ckpt(ckpt, fresh, fresh_opt)
+    assert resumed == (30, 1234)
+    assert torch.equal(fresh.weight, model.weight)
+
+    drifted = nn.Linear(8, 2)          # pruned differently between sessions
+    drifted_opt = torch.optim.AdamW(drifted.parameters(), lr=1e-3)
+    before = {k: v.clone() for k, v in drifted.state_dict().items()}
+    assert _load_train_ckpt(ckpt, drifted, drifted_opt) is None
+    assert torch.equal(drifted.weight, before["weight"])             # untouched on refusal
