@@ -3731,3 +3731,37 @@ G3 offset (+6.9…+8.6 from 30→100 ep on the anchors) projects the leader to *
 (acct1: the five finalists above at 100 ep, striped). Then: seeds {1,2,3} on the oracle
 leader, one Nano finalist session (MEASURED gate — the fence stays coarse), winner-v2 briefing
 vs prune_base r20.
+
+## STAGE-3 ORACLE ROUND — the searched architecture BEATS THE BASELINE (2026-07-13)
+
+The five finalists re-trained at 100 ep (kernel acct1, seed 0). **Winner s31-40-40-40-13 =
+0.8786 mAP50-95 / 0.9439 mAP50 @ 2.90M params, pred 9.10 ms fp32** — see
+`models/dense_nas/README.md` for the full table. Context:
+
+- vs the pretrained **yolo11n-pose baseline (0.877)**: **+0.0016, and FROM SCRATCH** (no COCO
+  pretrain). The searched per-stage allocation closes — and slightly exceeds — the gap that
+  ctrl_n (yolo11n's own shape from scratch) left at 0.854 (CP 3c.1's "COCO+recipe worth ~2.3pts"
+  is now *erased by architecture*).
+- vs the pruning champion **prune_base r20 (0.8381 @ measured 9.52/5.91)**: **+4.0 pts** at
+  r20-class predicted latency.
+- **Proxy top-1 == oracle top-1** (s31 led both the 30-ep proxy and the 100-ep oracle): the
+  G3-gated search machinery is validated end-to-end — the proxy didn't just correlate, it
+  picked the winner.
+
+**The architectural finding (consistent across the whole top-10):** wide feature stages 2–4
+(width × 0.34–0.40) + a GUTTED final stage 5 (0.13–0.20). yolo11's 1024-nominal SPPF/C2PSA
+tail is over-provisioned for single-class large-object gate pose (P3/P4-scale targets);
+reallocating that budget forward buys +2–4 pts at fixed params. This is exactly the per-stage
+allocation neither the 1-knob global-width curve (CP 3c) nor DepGraph's saliency ladder (CP
+6.2) could express — the AutoSlim thesis realized on this task, and the payoff of moving the
+search into the device-native space.
+
+**Two gates before winner-v2 (both this project's own hard-won lessons):**
+1. Winner's curse (CP 3.5): single-seed, top-3 within 0.007 → seeds {1,2,3} de-noise LAUNCHED
+   (accts 1/2/3, one seed each × the 3 tags).
+2. HALP lesson: pred 9.10 fp32 is the surrogate → Nano bench of the finalist ONNX is the
+   latency gate (the finalist .onnx are staged in data/cp33_kaggle_out/dense_nas/).
+
+After both: winner-v2 briefing (the searched point vs prune_base r20, MEASURED axes) → the
+CP 6.3 pick → Phases 7–9. If the gates hold, the deployable comes OUT of the search — the
+strongest possible answer to "the NAS must be part of the network."

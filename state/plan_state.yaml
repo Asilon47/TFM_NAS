@@ -365,3 +365,13 @@ notes: |
   0.8064+-0.0017 / 0.7954+-0.0033. Graft champion = halp_10p4+KD 0.8126 (pred 10.22 fp32);
   dense champion unmoved = prune_base r20 0.8381 (measured 9.52/5.91). BLOCKED ON: one Nano
   session (champion graphs) -> cross-family verdict -> CP 6.3 user pick.
+
+  **STAGE-3 ORACLE IN (2026-07-13; no checkpoint advance, current stays 5.3):** the device-
+  native per-stage-width search WON. Winner s31-40-40-40-13 = 0.8786 mAP50-95 @ 2.90M / pred
+  9.10 fp32 — BEATS the pretrained yolo11n baseline (0.877) FROM SCRATCH and prune_base r20
+  (0.8381) by +4.0 pts at r20-class predicted latency. Proxy top-1 == oracle top-1 (search
+  validated end-to-end). Discovery: wide P3/P4 stages + gutted stage-5 tail (over-provisioned
+  for single-class gate pose) — allocation the 1-knob curve + DepGraph ladder couldn't express.
+  TWO GATES before winner-v2: (1) seeds {1,2,3} de-noise LAUNCHED (winner's curse); (2) Nano
+  MEASURED-latency bench of finalist ONNX (HALP lesson). Then winner-v2 pick vs r20 on measured
+  axes -> Phases 7-9. See procedure.md "STAGE-3 ORACLE ROUND" + models/dense_nas/.
