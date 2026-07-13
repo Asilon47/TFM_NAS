@@ -33,9 +33,10 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "colab"))
 import colab_common as C  # noqa: E402
 
-# onnx is REQUIRED by _export_deploy_onnx (torch.onnx.export's onnxscript hook) — the Kaggle
-# base image bundled it, free-tier Colab/Lightning VMs do not (smoke caught this 2026-07-13).
-STACK = "'ofa==0.1.0.post202307202001' 'ultralytics>=8.3' 'torch-pruning>=1.4,<2' onnx"
+# onnx: torch.onnx.export's onnxscript hook. kaggle: the dataset-staging CLI. Both are bundled
+# in Colab's base image but NOT on a bare Lightning studio (smokes caught each 2026-07-13).
+STACK = ("'ofa==0.1.0.post202307202001' 'ultralytics>=8.3' 'torch-pruning>=1.4,<2' "
+         "onnx kaggle")
 
 
 def compose_recover_cmd(a: argparse.Namespace, *, donor: Path, data_yaml: Path,
