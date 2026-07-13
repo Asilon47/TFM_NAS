@@ -44,3 +44,13 @@ def test_head_dict_distills_protected_streams_and_skips_feats():
     assert float(kd_map_loss(student, teacher)) == pytest.approx(0.0)  # feats ignored
     with pytest.raises(ValueError, match="missing stream"):
         kd_map_loss({"boxes": b}, {"boxes": b})
+
+
+def test_yolo26_teacher_rejected_with_guidance():
+    """A yolo26 Pose26 teacher (one2many/one2one) into a yolo11-head student must fail loudly
+    (Track 2t: DFL-free boxes + kpts_sigma are shape-incompatible)."""
+    x, k = _maps()
+    student = {"boxes": x[0], "scores": x[1], "kpts": k}
+    teacher = {"one2many": {"boxes": x[0]}, "one2one": {"boxes": x[0]}}
+    with pytest.raises(ValueError, match="yolo26|yolo11x|incompatible"):
+        kd_map_loss(student, teacher)
