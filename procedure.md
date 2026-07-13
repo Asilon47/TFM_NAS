@@ -3870,3 +3870,33 @@ question definitively + the physical-fence result, not a guaranteed dominator.
 DN_CEILING=12.0) burns the last quota for ~4 feasible points; `colab/run_dense_nas.py`
 (Drive-persisted, resumable) is the workhorse for the bulk. Artifacts land in
 data/dense_nas_w2/.
+
+## WAVE-2 VERDICT — the feasible search converges to the dense frontier; no dominator (2026-07-13)
+
+The Kaggle canary trained **14 feasible candidates** (physical fence, constrained box, 30-ep
+proxy). Signal (no Colab needed to read it):
+
+- **Best feasible proxy = 0.761 (s18-20-20-20-14), BELOW the yolo11n-shape ctrl_n (0.7684) and
+  w22 (0.7663)** at the same 30-ep proxy. Across 14 diverse feasible allocations, none beats the
+  uniform dense family.
+- **Projected to 100 ep (+0.078 G3 offset) + physical latency: ~0.839 @ 6.94 ms fp16** — which is
+  **Pareto-DOMINATED by the existing dense w22 (0.845 @ 6.95)**. The re-search re-discovers the
+  dense frontier and lands slightly inside it.
+
+**Verdict: the recalibrated per-stage width search, correctly latency-fenced, converges to the
+dense frontier and finds no point that beats it.** The wide-feature "winners" of wave-1 were a
+FENCE ARTIFACT (the miscalibrated surrogate let infeasible-but-accurate nets through); once the
+budget is physical, feasibility forces narrow early stages, and from-scratch accuracy under that
+constraint tops out at ~yolo11n-shape (~0.845 @ 100 ep) — exactly the dense/prune frontier
+pruning already mapped. **Both stage-2 pruning AND stage-3 width search reach the same measured
+Pareto boundary** — strong cross-method confirmation that {r20 … w22 … w25} IS the boundary for
+gate-pose on the Orin Nano. STOP the search (fuller Colab wave has near-zero expected value: the
+feasibility ceiling is fundamental, not sample-limited).
+
+**Thesis contributions from the search program (all measured):** (1) three architecture spaces
+screened by measurement (MBv3 memory-bound, R50 compute-bound, dense-native optimal); (2) the
+physical memory-bound latency law (ms ≈ 2.99 + 0.0176·act_MB, ±3.6 %); (3) the winner's-curse and
+fence-artifact discipline (both caught); (4) the cross-method frontier confirmation. What the
+search did NOT yield: a from-scratch net that Pareto-dominates the COCO-pretrained baseline
+(from-scratch accuracy caps ~0.87 < 0.877). **The remaining lever to actually beat the baseline
+is recipe-parity training + KD (Phases 7–8) on a frontier point — NOT more architecture search.**

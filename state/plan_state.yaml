@@ -383,3 +383,11 @@ notes: |
   (earlier claim was seed-0-biased); +3.3 over prune_base r20. Wide-P3P4/gutted-tail finding
   is seed-independent. LAST GATE: Nano measured-latency bench of s39/s31 ONNX (pred 9.55/9.10
   fp32) -> winner-v2 pick vs r20 -> Phases 7-9. See procedure.md "Stage-3 DE-NOISE CLOSED".
+
+  **WAVE-2 CLOSED (2026-07-13; no checkpoint advance):** recalibrated re-search (physical
+  act_mbytes fence + constrained box) trained 14 feasible candidates; best proxy 0.761 < ctrl_n
+  0.7684, projects to ~0.839 @ 6.94 fp16 = DOMINATED by dense w22 (0.845 @ 6.95). The feasible
+  per-stage search CONVERGES to the dense frontier, no dominator; wave-1's wide-feature winners
+  were a fence artifact. Both pruning + width-search reach the same measured Pareto boundary
+  {r20..w22..w25}. Search program CLOSED. Remaining lever to beat baseline = recipe-parity + KD
+  (Phases 7-8) on a frontier point, NOT more search. See procedure.md "WAVE-2 VERDICT".
