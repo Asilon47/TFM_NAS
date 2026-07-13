@@ -114,8 +114,9 @@ DN_SEED_BASE = 0
 DN_PROXY_EPOCHS = 30
 DN_CEILING = 14.0
 # DN_ORACLE: comma list of finalist tags → 100-ep oracle re-train (striped across the T4s)
-DN_ORACLE = "s31-40-40-40-13,s40-38-39-36-13,s18-34-31-38-14,s10-34-36-35-20,s39-40-38-38-14"
+DN_ORACLE = "s31-40-40-40-13,s39-40-38-38-14,s40-38-39-36-13"   # top-3, de-noise tie band
 DN_ORACLE_EPOCHS = 100
+DN_ORACLE_SEED = 1   # !=0 -> fresh-seed de-noise re-train (CP 3.5 winner's-curse discipline)
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
 PG_KD = 1
 PG_KD_ALPHA = 1.0
@@ -374,8 +375,8 @@ def main() -> None:
             if oracle_tags:
                 subset = ",".join(oracle_tags[g::2])
                 cmd = (f"{sys.executable} -m search.dense_nas --oracle-tags {subset} "
-                       f"--proxy-epochs {DN_ORACLE_EPOCHS} --data dataset/dataset.yaml "
-                       f"--out-dir {out_dir} --device 0")
+                       f"--proxy-epochs {DN_ORACLE_EPOCHS} --seed {DN_ORACLE_SEED} "
+                       f"--data dataset/dataset.yaml --out-dir {out_dir} --device 0")
                 print(f"+ [gpu{g}] dense_nas ORACLE {subset}", flush=True)
             else:
                 cmd = (f"{sys.executable} -m search.dense_nas --budget {DN_BUDGET} "
