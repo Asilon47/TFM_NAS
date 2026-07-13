@@ -1,0 +1,379 @@
+{
+  "tag": "minact_d22433_e33333",
+  "arch": {
+    "ks": [
+      3,
+      7,
+      3,
+      7,
+      3,
+      7,
+      3,
+      3,
+      3,
+      3,
+      5,
+      3,
+      5,
+      5,
+      7,
+      7,
+      3,
+      7,
+      3,
+      3
+    ],
+    "e": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+    ],
+    "d": [
+      2,
+      2,
+      4,
+      3,
+      3
+    ]
+  },
+  "d": [
+    2,
+    2,
+    4,
+    3,
+    3
+  ],
+  "e_stage": [
+    3,
+    3,
+    3,
+    3,
+    3
+  ],
+  "depth_sum": 14,
+  "act_mbytes": 404.22,
+  "pred_fp16_ms": 9.503,
+  "pred_fp32_ms": 13.568,
+  "params": 1901163,
+  "fence": {
+    "fp16_target_ms": 7.2,
+    "act_max_mb": 292.09,
+    "fit": "search/graft_latency_fit.json"
+  },
+  "pick_rule": "pure: act \u2264 fence, max depth_sum (zero-cost signal, CP 2.4 rho=0.843) then max act; paired: max depth_sum then MIN act (lightest prune)",
+  "ks_note": "ks copied from winner-v1 (act-neutral; keeps the probe in the fitted family)",
+  "needs_pair": true,
+  "screen": [
+    {
+      "tag": "minact_d22222_e33333",
+      "depth_sum": 10,
+      "act_mbytes": 340.4,
+      "pred_fp16_ms": 8.192,
+      "pred_fp32_ms": 11.55,
+      "params": 1385147
+    },
+    {
+      "tag": "minact_d22223_e33333",
+      "depth_sum": 11,
+      "act_mbytes": 348.99,
+      "pred_fp16_ms": 8.369,
+      "pred_fp32_ms": 11.822,
+      "params": 1661107
+    },
+    {
+      "tag": "minact_d22222_e33444",
+      "depth_sum": 10,
+      "act_mbytes": 371.46,
+      "pred_fp16_ms": 8.83,
+      "pred_fp32_ms": 12.532,
+      "params": 1735003
+    },
+    {
+      "tag": "minact_d22233_e33333",
+      "depth_sum": 12,
+      "act_mbytes": 372.97,
+      "pred_fp16_ms": 8.861,
+      "pred_fp32_ms": 12.58,
+      "params": 1813963
+    },
+    {
+      "tag": "minact_d22223_e33444",
+      "depth_sum": 11,
+      "act_mbytes": 382.75,
+      "pred_fp16_ms": 9.062,
+      "pred_fp32_ms": 12.889,
+      "params": 2154043
+    },
+    {
+      "tag": "minact_d22333_e33333",
+      "depth_sum": 13,
+      "act_mbytes": 388.6,
+      "pred_fp16_ms": 9.182,
+      "pred_fp32_ms": 13.074,
+      "params": 1859483
+    },
+    {
+      "tag": "minact_d33222_e33333",
+      "depth_sum": 12,
+      "act_mbytes": 389.85,
+      "pred_fp16_ms": 9.208,
+      "pred_fp32_ms": 13.114,
+      "params": 1408659
+    },
+    {
+      "tag": "minact_d22433_e33333",
+      "depth_sum": 14,
+      "act_mbytes": 404.22,
+      "pred_fp16_ms": 9.503,
+      "pred_fp32_ms": 13.568,
+      "params": 1901163
+    },
+    {
+      "tag": "minact_d22222_e44444",
+      "depth_sum": 10,
+      "act_mbytes": 407.81,
+      "pred_fp16_ms": 9.577,
+      "pred_fp32_ms": 13.682,
+      "params": 1751787
+    },
+    {
+      "tag": "minact_d22233_e33444",
+      "depth_sum": 12,
+      "act_mbytes": 414.28,
+      "pred_fp16_ms": 9.71,
+      "pred_fp32_ms": 13.886,
+      "params": 2379275
+    },
+    {
+      "tag": "minact_d22223_e44444",
+      "depth_sum": 11,
+      "act_mbytes": 419.1,
+      "pred_fp16_ms": 9.809,
+      "pred_fp32_ms": 14.039,
+      "params": 2170827
+    },
+    {
+      "tag": "minact_d33222_e33444",
+      "depth_sum": 12,
+      "act_mbytes": 420.91,
+      "pred_fp16_ms": 9.846,
+      "pred_fp32_ms": 14.096,
+      "params": 1758515
+    },
+    {
+      "tag": "minact_d22222_e33666",
+      "depth_sum": 10,
+      "act_mbytes": 433.59,
+      "pred_fp16_ms": 10.107,
+      "pred_fp32_ms": 14.497,
+      "params": 2620595
+    },
+    {
+      "tag": "minact_d22333_e33444",
+      "depth_sum": 13,
+      "act_mbytes": 434.78,
+      "pred_fp16_ms": 10.131,
+      "pred_fp32_ms": 14.535,
+      "params": 2439915
+    },
+    {
+      "tag": "minact_d22222_e66333",
+      "depth_sum": 10,
+      "act_mbytes": 449.44,
+      "pred_fp16_ms": 10.432,
+      "pred_fp32_ms": 14.998,
+      "params": 1447811
+    },
+    {
+      "tag": "minact_d22223_e33666",
+      "depth_sum": 11,
+      "act_mbytes": 450.29,
+      "pred_fp16_ms": 10.45,
+      "pred_fp32_ms": 15.025,
+      "params": 3402595
+    },
+    {
+      "tag": "minact_d22233_e44444",
+      "depth_sum": 12,
+      "act_mbytes": 450.63,
+      "pred_fp16_ms": 10.457,
+      "pred_fp32_ms": 15.035,
+      "params": 2396059
+    },
+    {
+      "tag": "minact_d22433_e33444",
+      "depth_sum": 14,
+      "act_mbytes": 455.29,
+      "pred_fp16_ms": 10.552,
+      "pred_fp32_ms": 15.183,
+      "params": 2495435
+    },
+    {
+      "tag": "minact_d22223_e66333",
+      "depth_sum": 11,
+      "act_mbytes": 458.03,
+      "pred_fp16_ms": 10.609,
+      "pred_fp32_ms": 15.27,
+      "params": 1723771
+    },
+    {
+      "tag": "minact_d22333_e44444",
+      "depth_sum": 13,
+      "act_mbytes": 471.13,
+      "pred_fp16_ms": 10.878,
+      "pred_fp32_ms": 15.684,
+      "params": 2456699
+    },
+    {
+      "tag": "minact_d33222_e44444",
+      "depth_sum": 12,
+      "act_mbytes": 471.53,
+      "pred_fp16_ms": 10.886,
+      "pred_fp32_ms": 15.697,
+      "params": 1785651
+    },
+    {
+      "tag": "minact_d22233_e66333",
+      "depth_sum": 12,
+      "act_mbytes": 482.02,
+      "pred_fp16_ms": 11.101,
+      "pred_fp32_ms": 16.028,
+      "params": 1876627
+    },
+    {
+      "tag": "minact_d33222_e33666",
+      "depth_sum": 12,
+      "act_mbytes": 483.05,
+      "pred_fp16_ms": 11.123,
+      "pred_fp32_ms": 16.06,
+      "params": 2644107
+    },
+    {
+      "tag": "minact_d22433_e44444",
+      "depth_sum": 14,
+      "act_mbytes": 491.64,
+      "pred_fp16_ms": 11.299,
+      "pred_fp32_ms": 16.332,
+      "params": 2512219
+    },
+    {
+      "tag": "minact_d22233_e33666",
+      "depth_sum": 12,
+      "act_mbytes": 496.89,
+      "pred_fp16_ms": 11.407,
+      "pred_fp32_ms": 16.498,
+      "params": 3815595
+    },
+    {
+      "tag": "minact_d22333_e66333",
+      "depth_sum": 13,
+      "act_mbytes": 497.64,
+      "pred_fp16_ms": 11.422,
+      "pred_fp32_ms": 16.522,
+      "params": 1922147
+    },
+    {
+      "tag": "minact_d22433_e66333",
+      "depth_sum": 14,
+      "act_mbytes": 513.27,
+      "pred_fp16_ms": 11.743,
+      "pred_fp32_ms": 17.016,
+      "params": 1963827
+    },
+    {
+      "tag": "minact_d22333_e33666",
+      "depth_sum": 13,
+      "act_mbytes": 527.16,
+      "pred_fp16_ms": 12.029,
+      "pred_fp32_ms": 17.455,
+      "params": 3906475
+    },
+    {
+      "tag": "minact_d33222_e66333",
+      "depth_sum": 12,
+      "act_mbytes": 541.71,
+      "pred_fp16_ms": 12.328,
+      "pred_fp32_ms": 17.915,
+      "params": 1510067
+    },
+    {
+      "tag": "minact_d22222_e66666",
+      "depth_sum": 10,
+      "act_mbytes": 542.64,
+      "pred_fp16_ms": 12.347,
+      "pred_fp32_ms": 17.945,
+      "params": 2683259
+    },
+    {
+      "tag": "minact_d22433_e33666",
+      "depth_sum": 14,
+      "act_mbytes": 557.44,
+      "pred_fp16_ms": 12.651,
+      "pred_fp32_ms": 18.413,
+      "params": 3989675
+    },
+    {
+      "tag": "minact_d22223_e66666",
+      "depth_sum": 11,
+      "act_mbytes": 559.33,
+      "pred_fp16_ms": 12.69,
+      "pred_fp32_ms": 18.473,
+      "params": 3465259
+    },
+    {
+      "tag": "minact_d22233_e66666",
+      "depth_sum": 12,
+      "act_mbytes": 605.94,
+      "pred_fp16_ms": 13.647,
+      "pred_fp32_ms": 19.946,
+      "params": 3878259
+    },
+    {
+      "tag": "minact_d33222_e66666",
+      "depth_sum": 12,
+      "act_mbytes": 634.91,
+      "pred_fp16_ms": 14.242,
+      "pred_fp32_ms": 20.862,
+      "params": 2745515
+    },
+    {
+      "tag": "minact_d22333_e66666",
+      "depth_sum": 13,
+      "act_mbytes": 636.21,
+      "pred_fp16_ms": 14.269,
+      "pred_fp32_ms": 20.903,
+      "params": 3969139
+    },
+    {
+      "tag": "minact_d22433_e66666",
+      "depth_sum": 14,
+      "act_mbytes": 666.48,
+      "pred_fp16_ms": 14.891,
+      "pred_fp32_ms": 21.86,
+      "params": 4052339
+    }
+  ],
+  "timestamp": "2026-07-13T17:18:05Z",
+  "pair_spec_file": "u30.json",
+  "act_after_pair": 288.33506774902344,
+  "params_after_pair": 789451,
+  "pred_fp16_ms_after_pair": 7.123,
+  "pred_fp32_ms_after_pair": 9.904
+}

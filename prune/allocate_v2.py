@@ -179,6 +179,20 @@ def pick_minact(rows: list[dict], act_max: float) -> dict:
     return max(fits, key=lambda r: (sum(r["d"]), r["act_mbytes"]))
 
 
+PAIR_RUNGS = (0.2, 0.3, 0.4, 0.5)   # uniform pair-spec ratios tried lightest-first
+
+
+def pick_probe(rows: list[dict], act_max: float) -> tuple[dict, bool]:
+    """(probe row, needs_pair): pure pick if any topology fits; else the best candidate to
+    PAIR with a light uniform width spec — max depth_sum (zero-cost signal), then MIN act
+    (the lightest required prune). Measured 2026-07-13: the pure floor is 340 MB ≈ 8.2 ms
+    fp16 → pairing is the expected path."""
+    try:
+        return pick_minact(rows, act_max), False
+    except ValueError:
+        return max(rows, key=lambda r: (sum(r["d"]), -r["act_mbytes"])), True
+
+
 # --- impure: honest CPU builds -----------------------------------------------------------------
 
 def honest_spec_features(arch: dict, spec: dict | None, *, supernet: Any = None,
@@ -338,7 +352,28 @@ def topology_screen(winner_arch: dict, *, fence_fp16_ms: float = 7.2, supernet: 
               f"pred fp16={row['pred_fp16_ms']:5.2f} d_sum={row['depth_sum']}", flush=True)
 
     rows.sort(key=lambda r: r["act_mbytes"])
-    probe = pick_minact(rows, act_max)
+    probe, needs_pair = pick_probe(rows, act_max)
+    pair_spec: dict | None = None
+    paired: dict | None = None
+    if needs_pair:
+        print(f"[pair] no pure topology fits ≤ {act_max:.0f} MB (floor "
+              f"{rows[0]['act_mbytes']:.0f}) — pairing {probe['tag']} with the lightest "
+              f"uniform width spec", flush=True)
+        for r in PAIR_RUNGS:
+            spec = {"stage_ratios": [r] * N_STAGES, "rest_ratio": max(r, REST_BASE)}
+            h = honest_spec_features(probe["arch"], spec, supernet=sn, imgsz=imgsz,
+                                     workdir=workdir,
+                                     name=f"{probe['tag']}_pair{int(r * 100)}")
+            fits = h["act_mbytes"] <= act_max
+            print(f"[pair r={r}] act={h['act_mbytes']:.1f} MB "
+                  f"{'OK' if fits else 'OVER'}", flush=True)
+            if fits:
+                pair_spec, paired = spec, h
+                break
+        if pair_spec is None or paired is None:
+            raise ValueError(f"no uniform pair spec ≤ {PAIR_RUNGS[-1]} brings "
+                             f"{probe['tag']} under {act_max:.0f} MB")
+
     payload = {
         "tag": probe["tag"], "arch": probe["arch"], "d": probe["d"],
         "e_stage": probe["e_stage"], "depth_sum": probe["depth_sum"],
@@ -346,18 +381,41 @@ def topology_screen(winner_arch: dict, *, fence_fp16_ms: float = 7.2, supernet: 
         "pred_fp32_ms": probe["pred_fp32_ms"], "params": probe["params"],
         "fence": {"fp16_target_ms": fence_fp16_ms, "act_max_mb": round(act_max, 2),
                   "fit": "search/graft_latency_fit.json"},
-        "pick_rule": "act ≤ fence; max depth_sum (zero-cost accuracy signal, CP 2.4 "
-                     "rho=0.843) then max act (spend the budget)",
+        "pick_rule": "pure: act ≤ fence, max depth_sum (zero-cost signal, CP 2.4 rho=0.843) "
+                     "then max act; paired: max depth_sum then MIN act (lightest prune)",
         "ks_note": "ks copied from winner-v1 (act-neutral; keeps the probe in the fitted "
                    "family)",
+        "needs_pair": needs_pair,
         "screen": [{k: r[k] for k in ("tag", "depth_sum", "act_mbytes", "pred_fp16_ms",
                                       "pred_fp32_ms", "params")} for r in rows],
         "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     out = out_dir / "minact_arch.json"
+    if pair_spec is not None and paired is not None:
+        pair_payload = spec_payload(
+            pair_spec["stage_ratios"], pair_spec["rest_ratio"],
+            act_honest=paired["act_mbytes"], act_predicted=paired["act_mbytes"],
+            params_after=paired["params_after"], fence_fp16_ms=fence_fp16_ms,
+            act_max=act_max,
+            extra={"arch_tag": probe["tag"], "paired_arch_json": "prune/specs/minact_arch.json",
+                   "note": "uniform pair spec for the Track-1b probe: run recover_graft with "
+                           "--arch-json prune/specs/minact_arch.json --ratio-spec THIS file"})
+        pair_out = out_dir / f"u{int(pair_spec['rest_ratio'] * 100)}.json"
+        pair_out.write_text(json.dumps(pair_payload, indent=2) + "\n")
+        payload["pair_spec_file"] = pair_out.name
+        payload["act_after_pair"] = paired["act_mbytes"]
+        payload["params_after_pair"] = paired["params_after"]
+        payload["pred_fp16_ms_after_pair"] = round(act_bytes_to_ms(
+            paired["act_mbytes"], **_fit_args(PHYSICAL_GRAFT_FP16)), 3)
+        payload["pred_fp32_ms_after_pair"] = round(act_bytes_to_ms(
+            paired["act_mbytes"], **_fit_args(PHYSICAL_GRAFT_FP32)), 3)
+        print(f"[emit] {pair_out.name}: uniform r={pair_spec['rest_ratio']} on "
+              f"{probe['tag']} → act={paired['act_mbytes']:.1f} MB "
+              f"pred fp16={payload['pred_fp16_ms_after_pair']}", flush=True)
     out.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"[emit] {out.name}: {probe['tag']} act={probe['act_mbytes']} MB "
-          f"pred fp16={probe['pred_fp16_ms']} (fence {fence_fp16_ms})", flush=True)
+          f"pred fp16={probe['pred_fp16_ms']} needs_pair={needs_pair} "
+          f"(fence {fence_fp16_ms})", flush=True)
     return out
 
 

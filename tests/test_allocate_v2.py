@@ -114,3 +114,21 @@ def test_pick_minact_prefers_depth_then_act():
     assert pick_minact(rows, act_max=292.0)["tag"] == "b"
     with pytest.raises(ValueError, match="no screened topology"):
         pick_minact(rows, act_max=100.0)
+
+
+def test_pick_probe_pairs_when_nothing_fits():
+    from prune.allocate_v2 import pick_probe
+
+    rows = [
+        {"tag": "lean", "d": [2, 2, 2, 2, 2], "act_mbytes": 340.0},
+        {"tag": "deep_lean", "d": [2, 2, 4, 3, 3], "act_mbytes": 404.0},  # max dsum, min act
+        {"tag": "deep_rich", "d": [2, 2, 4, 3, 3], "act_mbytes": 455.0},
+        {"tag": "fits", "d": [2, 2, 2, 2, 3], "act_mbytes": 285.0},
+    ]
+    # something fits → pure pick, no pairing
+    probe, needs_pair = pick_probe(rows, act_max=292.0)
+    assert probe["tag"] == "fits" and needs_pair is False
+    # nothing fits (the measured 2026-07-13 case: floor 340 > 292) → pair the deepest,
+    # lightest-prune candidate
+    probe, needs_pair = pick_probe(rows[:3], act_max=292.0)
+    assert probe["tag"] == "deep_lean" and needs_pair is True

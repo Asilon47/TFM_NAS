@@ -1,0 +1,27 @@
+{
+  "stage_ratios": [
+    0.3,
+    0.3,
+    0.3,
+    0.3,
+    0.3
+  ],
+  "rest_ratio": 0.3,
+  "predicted_fp32_ms": 9.904,
+  "fp16_estimate_ms": 7.123,
+  "target_fp32_ms": 10.023,
+  "act_mbytes_honest": 288.34,
+  "act_mbytes_predicted": 288.34,
+  "params_after": 789451,
+  "fence": {
+    "fp16_target_ms": 7.2,
+    "act_max_mb": 292.09,
+    "fit": "search/graft_latency_fit.json"
+  },
+  "objective": "max act \u2264 fence; ties: min max-stage, min rest, min mean (balance beats concentration \u2014 measured, procedure.md 2026-07-12)",
+  "provenance": "allocate_v2 honest fence: CPU-built pruned graft \u2192 deploy ONNX \u2192 act_mbytes \u2192 physical graft fit (LOO ~2-3 %); linear predictor is screening-only, this spec's act is the honest re-price",
+  "arch_tag": "minact_d22433_e33333",
+  "timestamp": "2026-07-13T17:18:05Z",
+  "paired_arch_json": "prune/specs/minact_arch.json",
+  "note": "uniform pair spec for the Track-1b probe: run recover_graft with --arch-json prune/specs/minact_arch.json --ratio-spec THIS file"
+}

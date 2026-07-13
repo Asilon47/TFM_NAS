@@ -1,0 +1,218 @@
+{
+  "stage_ratios": [
+    0.6,
+    0.0,
+    0.6,
+    0.6,
+    0.6
+  ],
+  "rest_ratio": 0.3,
+  "predicted_fp32_ms": 9.955,
+  "fp16_estimate_ms": 7.156,
+  "target_fp32_ms": 10.023,
+  "act_mbytes_honest": 289.94,
+  "act_mbytes_predicted": 292.02,
+  "params_after": 631851,
+  "fence": {
+    "fp16_target_ms": 7.2,
+    "act_max_mb": 292.09,
+    "fit": "search/graft_latency_fit.json"
+  },
+  "objective": "max act \u2264 fence; ties: min max-stage, min rest, min mean (balance beats concentration \u2014 measured, procedure.md 2026-07-12)",
+  "provenance": "allocate_v2 honest fence: CPU-built pruned graft \u2192 deploy ONNX \u2192 act_mbytes \u2192 physical graft fit (LOO ~2-3 %); linear predictor is screening-only, this spec's act is the honest re-price",
+  "arch_tag": "winner",
+  "timestamp": "2026-07-13T17:13:50Z",
+  "sensitivities": {
+    "base_act": 533.0120697021484,
+    "stage": [
+      125.0,
+      56.24359130859375,
+      118.1640625,
+      105.97702026367188,
+      44.620513916015625
+    ],
+    "rest": 23.683547973632812
+  },
+  "verified": [
+    {
+      "stage_ratios": [
+        0.6,
+        0.2,
+        0.6,
+        0.6,
+        0.4
+      ],
+      "rest_ratio": 0.2,
+      "act_predicted": 292.06,
+      "act_honest": 294.87,
+      "params": 990907,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.0,
+        0.6,
+        0.6,
+        0.6
+      ],
+      "rest_ratio": 0.3,
+      "act_predicted": 292.02,
+      "act_honest": 289.94,
+      "params": 631851,
+      "coverage": 0.771,
+      "fits": true
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.6,
+        0.4,
+        0.6,
+        0.6
+      ],
+      "rest_ratio": 0.4,
+      "act_predicted": 292.04,
+      "act_honest": 305.69,
+      "params": 651043,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.5,
+        0.6,
+        0.5,
+        0.1
+      ],
+      "rest_ratio": 0.5,
+      "act_predicted": 292.07,
+      "act_honest": 299.28,
+      "params": 1461283,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.3,
+        0.6,
+        0.5,
+        0.3
+      ],
+      "rest_ratio": 0.6,
+      "act_predicted": 292.02,
+      "act_honest": 288.73,
+      "params": 972635,
+      "coverage": 0.771,
+      "fits": true
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.4,
+        0.5,
+        0.6,
+        0.2
+      ],
+      "rest_ratio": 0.6,
+      "act_predicted": 292.08,
+      "act_honest": 285.93,
+      "params": 1118051,
+      "coverage": 0.771,
+      "fits": true
+    },
+    {
+      "stage_ratios": [
+        0.7,
+        0.1,
+        0.6,
+        0.6,
+        0.3
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 292.02,
+      "act_honest": 299.93,
+      "params": 1179371,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.7,
+        0.2,
+        0.5,
+        0.7,
+        0.2
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 292.07,
+      "act_honest": 298.69,
+      "params": 1350923,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.3,
+        0.7,
+        0.5,
+        0.3
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 292.05,
+      "act_honest": 294.66,
+      "params": 1203035,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.7,
+        0.7,
+        0.3,
+        0.7,
+        0.1
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 292.05,
+      "act_honest": 304.67,
+      "params": 1588651,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.7,
+        0.0,
+        0.5,
+        0.7,
+        0.4
+      ],
+      "rest_ratio": 0.2,
+      "act_predicted": 292.03,
+      "act_honest": 302.29,
+      "params": 975963,
+      "coverage": 0.771,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.1,
+        0.7,
+        0.5,
+        0.5
+      ],
+      "rest_ratio": 0.2,
+      "act_predicted": 292.01,
+      "act_honest": 295.18,
+      "params": 884043,
+      "coverage": 0.771,
+      "fits": false
+    }
+  ]
+}
