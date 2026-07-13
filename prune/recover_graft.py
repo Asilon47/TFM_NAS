@@ -72,6 +72,16 @@ def spec_ratio_dict(model: Any, depths: list[int], spec: dict) -> tuple[dict, li
     return ratio_dict, ignored
 
 
+def load_arch_json(path: Any) -> tuple[dict, str]:
+    """``--arch-json`` loader: a bare arch dict or an {'arch': ...} wrapper (the Track-1b
+    ``prune/specs/minact_arch.json`` shape); arch_tag = the file stem."""
+    data = json.loads(Path(path).read_text())
+    arch = data.get("arch", data)
+    if not isinstance(arch, dict) or not {"ks", "e", "d"} <= set(arch):
+        raise ValueError(f"{path}: not an arch dict (need ks/e/d keys)")
+    return arch, Path(path).stem
+
+
 def load_candidate_arch(candidates_json: Any, index: int) -> dict:
     """The arch dict of ``denoise_candidates.json[candidates][index]`` (select by INDEX —
     ``d=[2,2,4,3,2]`` appears twice in the top-12, so depth lists are not unique keys)."""
@@ -180,9 +190,13 @@ def graft_prune_train_ladder(
 
         if ratio_spec is not None:
             prd, spec_ignored = spec_ratio_dict(model, arch["d"], ratio_spec)
+            # importance IS passed (pre-2026-07-13 spec runs silently pruned with l2);
+            # global_pruning is NOT — per-stage counts stay pinned to the spec, so shapes
+            # (and latency) are importance-invariant while taylor picks better channels.
             report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
                                  ratio=ratio, pruning_ratio_dict=prd,
-                                 extra_ignored=spec_ignored)
+                                 extra_ignored=spec_ignored,
+                                 importance=tech["importance"])
         else:
             report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
                                  ratio=ratio, iterative_steps=iterative_steps,
@@ -215,7 +229,7 @@ def graft_prune_train_ladder(
                                                     "alpha": kd_alpha}), **metrics,
                "weights": str(weights), "onnx": str(onnx)}
         if ratio_spec is not None:
-            row["spec"] = {k: ratio_spec[k] for k in
+            row["spec"] = {k: ratio_spec.get(k) for k in
                            ("stage_ratios", "rest_ratio", "predicted_fp32_ms",
                             "fp16_estimate_ms", "target_fp32_ms")}
         (out_dir / f"recover_graft_{tag}.meta.json").write_text(
@@ -257,6 +271,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--index", type=int, default=None,
                    help="prune candidates[index] from --candidates-json instead of the winner "
                         "(G1 probe; select by index — d lists repeat)")
+    p.add_argument("--arch-json", type=Path, default=None,
+                   help="explicit arch dict (or {'arch': ...} wrapper, e.g. "
+                        "prune/specs/minact_arch.json) instead of the winner — the Track-1b "
+                        "min-act probe; arch_tag = the file stem")
     p.add_argument("--ratio-spec", type=Path, default=None,
                    help="HALP-lite allocation spec (prune/specs/halp_*.json from "
                         "prune.allocate) — overrides --ratios/--technique with per-stage ratios")
@@ -276,9 +294,13 @@ def main(argv: list[str] | None = None) -> int:
 
     arch = None
     arch_tag = "winner"
+    if a.index is not None and a.arch_json is not None:
+        raise SystemExit("--index and --arch-json are mutually exclusive")
     if a.index is not None:
         arch = load_candidate_arch(a.candidates_json, a.index)
         arch_tag = f"idx{a.index}"
+    elif a.arch_json is not None:
+        arch, arch_tag = load_arch_json(a.arch_json)
     ratio_spec = None
     spec_tag = "halp"
     if a.ratio_spec is not None:
