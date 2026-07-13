@@ -47,13 +47,14 @@ def test_compose_ratio_run_and_probe_and_no_kd():
     m = _entry()
     cmd = m.compose_recover_cmd(_ns(), donor=Path("/d/gate_best.pt"),
                                 data_yaml=Path("/d/dataset.yaml"), python="python")
-    assert "--ratios 0.50 --technique global_taylor" in cmd
+    assert "--technique global_taylor" in cmd and "--ratios 0.50" in cmd
 
     probe = m.compose_recover_cmd(
         _ns(spec="prune/specs/u30.json", arch_json="prune/specs/minact_arch.json"),
         donor=Path("/d/gate_best.pt"), data_yaml=Path("/d/dataset.yaml"), python="python")
     assert "--arch-json prune/specs/minact_arch.json" in probe
     assert "--ratio-spec prune/specs/u30.json" in probe
+    assert "--technique global_taylor" in probe   # spec runs still carry the importance
 
     nokd = m.compose_recover_cmd(_ns(kd=False), donor=Path("/d/gate_best.pt"),
                                  data_yaml=Path("/d/dataset.yaml"), python="python")
