@@ -39,7 +39,8 @@ def main() -> None:
     ap.add_argument("--data-root", type=Path, default=None)
     ap.add_argument("--epochs", type=int, default=120)
     ap.add_argument("--patience", type=int, default=25)
-    ap.add_argument("--batch", type=int, default=8, help="x is ~57M params — T4 wants a small batch")
+    ap.add_argument("--batch", type=int, default=8,
+                    help="x is ~57M params — a T4 wants a small batch")
     a = ap.parse_args()
 
     data_root = a.data_root or (Path("/content/kagdata") if Path("/content").exists()
