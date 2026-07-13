@@ -110,7 +110,7 @@ PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
 # MODE="dense_nas" — Stage-3 NAS over the device-native family (search/dense_nas.py): one
 #   independent TPE study per T4 (seeds DN_SEED_BASE / +1), shared row files → dedup + resume.
 DN_BUDGET = 10
-DN_SEED_BASE = 10
+DN_SEED_BASE = 12
 DN_PROXY_EPOCHS = 30
 DN_CEILING = 12.0
 # DN_ORACLE: comma list of finalist tags → 100-ep oracle re-train (striped across the T4s)
