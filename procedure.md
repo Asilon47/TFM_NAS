@@ -3765,3 +3765,35 @@ search into the device-native space.
 After both: winner-v2 briefing (the searched point vs prune_base r20, MEASURED axes) → the
 CP 6.3 pick → Phases 7–9. If the gates hold, the deployable comes OUT of the search — the
 strongest possible answer to "the NAS must be part of the network."
+
+## Stage-3 DE-NOISE CLOSED — winner's curse caught, s39-40-38-38-14 is the robust winner (2026-07-13)
+
+Top-3 finalists re-trained at seeds {1,2,3} (accts: seed1→asilarnous47 after owaismalekarnous
+hit its weekly quota mid-run — relocated, seed0-oracle+{1,2,3}=4 seeds total; seed2/seed3
+→asilarnous). De-noised means (fresh seeds {1,2,3}):
+
+| candidate | s0 | s1 | s2 | s3 | mean{1,2,3} | sd | params |
+|---|---|---|---|---|---|---|---|
+| **s39-40-38-38-14** | 0.8762 | 0.8702 | 0.8699 | 0.8725 | **0.8709** | **0.0012** | 2.77M |
+| s31-40-40-40-13 | 0.8786 | 0.8661 | 0.8651 | 0.8792 | 0.8702 | 0.0064 | 2.90M |
+| s40-38-39-36-13 | 0.8718 | 0.8639 | 0.8677 | 0.8716 | 0.8677 | 0.0032 | 2.65M |
+
+**Winner's curse confirmed and corrected (CP 3.5, third occurrence in this project):** the
+single-seed oracle leader s31 (0.8786) was **+0.0085 upward-biased** AND the noisiest arch in
+the band (seed range 0.865–0.879, sd 0.0064). The de-noise reorders the top: **s39-40-38-38-14
+= 0.8709 ± 0.0012** is the robust winner — statistically tied with s31 on the mean but 5× more
+stable, fewer params (2.77M), and map50 0.9438. s31's seed3 (0.8792) drawing high again is the
+curse's signature: an arch that occasionally spikes, unreliable to deploy.
+
+**Honest accuracy verdict (correcting the seed-0-driven "beats the baseline" claim):** the
+searched winner's robust mAP is **0.871, which MATCHES the pretrained yolo11n-pose baseline
+(0.877) from scratch** (−0.006, within 2σ) — it does not clearly beat it. Against the buildable
+competition it is the decisive leader: **+3.3 pts over prune_base r20 (0.8381)**, +1.7 over
+ctrl_n-from-scratch (0.854). The architectural finding (wide P3/P4 stages + gutted stage-5 tail)
+is seed-independent and stands.
+
+**ONE gate remains → winner-v2:** the Nano MEASURED-latency bench (HALP lesson — s39 pred 9.55,
+s31 pred 9.10 fp32, both unverified). Latency is weight-independent, so the seed-0 oracle ONNX
+serve (staged in data/cp33_kaggle_out/dense_nas/). The bench also breaks the s39/s31 accuracy
+tie on the Pareto axis. Then: winner-v2 pick (s39 recommended — robust) vs prune_base r20 on
+measured axes → Phases 7–9.

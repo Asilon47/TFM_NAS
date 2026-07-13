@@ -375,3 +375,11 @@ notes: |
   TWO GATES before winner-v2: (1) seeds {1,2,3} de-noise LAUNCHED (winner's curse); (2) Nano
   MEASURED-latency bench of finalist ONNX (HALP lesson). Then winner-v2 pick vs r20 on measured
   axes -> Phases 7-9. See procedure.md "STAGE-3 ORACLE ROUND" + models/dense_nas/.
+
+  **Stage-3 DE-NOISE CLOSED (2026-07-13; no checkpoint advance):** top-3 at seeds {1,2,3}.
+  Winner's curse caught (3rd time): seed-0 leader s31 (0.8786) was +0.0085 biased AND noisiest
+  (sd 0.0064). Robust winner = s39-40-38-38-14 @ 0.8709 +-0.0012 (2.77M, map50 0.9438).
+  Honest verdict: MATCHES pretrained baseline 0.877 from scratch (-0.006), does NOT beat it
+  (earlier claim was seed-0-biased); +3.3 over prune_base r20. Wide-P3P4/gutted-tail finding
+  is seed-independent. LAST GATE: Nano measured-latency bench of s39/s31 ONNX (pred 9.55/9.10
+  fp32) -> winner-v2 pick vs r20 -> Phases 7-9. See procedure.md "Stage-3 DE-NOISE CLOSED".
