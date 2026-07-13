@@ -16,11 +16,20 @@ def _entry():
 
 def _ns(**over):
     base = dict(out_dir=Path("/content/tfm_out"), device="cuda", batch=16, epochs=100,
-                seed=0, ckpt_every=10, spec=None, ratios="0.50",
+                seed=0, ckpt_every=10, max_steps=None, spec=None, ratios="0.50",
                 technique="global_taylor", arch_json=None, kd=True, teacher_pt=None,
                 kd_alpha=1.0)
     base.update(over)
     return argparse.Namespace(**base)
+
+
+def test_compose_max_steps_only_when_set():
+    m = _entry()
+    donor, yaml = Path("/d/gate_best.pt"), Path("/d/dataset.yaml")
+    assert "--max-steps" not in m.compose_recover_cmd(_ns(), donor=donor, data_yaml=yaml,
+                                                      python="python")
+    assert "--max-steps 8" in m.compose_recover_cmd(_ns(max_steps=8), donor=donor,
+                                                     data_yaml=yaml, python="python")
 
 
 def test_compose_spec_run_with_default_kd_teacher():

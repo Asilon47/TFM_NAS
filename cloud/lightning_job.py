@@ -64,7 +64,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="winner-v2-OFA graft run on a Lightning studio.")
     ap.add_argument("--name", default="tfm-w1")
     ap.add_argument("--machine", default="T4")
-    ap.add_argument("--teamspace", default=None)
+    ap.add_argument("--teamspace", default="asilarnous/data-optimization-project",
+                    help="'user/teamspace' (default: the account's data-optimization-project)")
     ap.add_argument("--kacct", type=int, default=1, choices=(1, 2, 3),
                     help="which secrets/access_token* pair stages the Kaggle dataset")
     ap.add_argument("--keep", action="store_true", help="leave the studio running")
@@ -74,9 +75,14 @@ def main() -> None:
     a = ap.parse_args()
 
     _env_from_secrets()
-    from lightning_sdk import Machine, Studio  # .venv-cloud
+    from lightning_sdk import Machine, Studio, Teamspace  # .venv-cloud
 
-    studio = Studio(a.name, teamspace=a.teamspace, create_ok=True)
+    # The SDK won't parse "user/teamspace" from a bare string — split and pass user= .
+    ts: object = a.teamspace
+    if isinstance(a.teamspace, str) and "/" in a.teamspace:
+        owner, ts_name = a.teamspace.split("/", 1)
+        ts = Teamspace(name=ts_name, user=owner)
+    studio = Studio(a.name, teamspace=ts, create_ok=True)
     print(f"[lightning] studio {studio.name} status={studio.status}", flush=True)
 
     dest = ROOT / "data" / "lightning_out" / a.name

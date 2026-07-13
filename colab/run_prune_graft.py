@@ -43,6 +43,8 @@ def compose_recover_cmd(a: argparse.Namespace, *, donor: Path, data_yaml: Path,
            f"--data-yaml {data_yaml} --out-dir {a.out_dir} --device {a.device} "
            f"--imgsz 640 --batch {a.batch} --epochs {a.epochs} --seed {a.seed} "
            f"--ckpt-every {a.ckpt_every}")
+    if a.max_steps is not None:
+        cmd += f" --max-steps {a.max_steps}"
     if a.spec:
         cmd += f" --ratio-spec {a.spec}"
     else:
@@ -83,6 +85,8 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--ckpt-every", type=int, default=10)
+    ap.add_argument("--max-steps", type=int, default=None,
+                    help="cap optimizer steps (smoke tests — the S0 2-epoch dry run)")
     ap.add_argument("--device", type=str, default="cuda")
     a = ap.parse_args()
 
