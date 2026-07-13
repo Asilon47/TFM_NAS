@@ -36,6 +36,18 @@ def remote_command(entry_args: list[str]) -> str:
             f"--out-dir ~/tfm_out {entry}")
 
 
+def _env_from_secrets() -> None:
+    """LIGHTNING_USER_ID / LIGHTNING_API_KEY from gitignored secrets/ files when unset
+    (lightning.ai → profile → Keys; same secrets-dir contract as the Kaggle creds)."""
+    import os
+
+    for env, fname in (("LIGHTNING_USER_ID", "lightning_user_id"),
+                       ("LIGHTNING_API_KEY", "lightning_api_key")):
+        f = ROOT / "secrets" / fname
+        if not os.environ.get(env) and f.exists():
+            os.environ[env] = f.read_text().strip()
+
+
 def tripwire(root: Path) -> None:
     """The studio clones GitHub — refuse to launch with an unpushed HEAD."""
     try:
@@ -61,6 +73,7 @@ def main() -> None:
     ap.add_argument("entry", nargs="*", help="run_prune_graft.py args (after --)")
     a = ap.parse_args()
 
+    _env_from_secrets()
     from lightning_sdk import Machine, Studio  # .venv-cloud
 
     studio = Studio(a.name, teamspace=a.teamspace, create_ok=True)
