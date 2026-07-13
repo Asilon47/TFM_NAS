@@ -44,6 +44,14 @@ HEAD_STAGE = {2: 4, 5: 3, 6: 3, 8: 4, 9: 4, 11: 5}
 SCALE_LO, SCALE_HI = 0.10, 0.40
 STAGE5_LO = 0.13
 N_STAGES = 5
+
+# Wave-2 constrained box (the recalibrated re-search, 2026-07-13). Physical cost ∝ Σ channels ×
+# spatial²: the STEM/early stages dominate (stage1 64×320², stage2 256×160² ≫ P3 512×80² > P4 >
+# P5) — NOT the feature stages. Wave-1's finalists were expensive because they ran wide EARLY
+# stages (s1≈s2≈0.40). So cap the high-spatial early stages hard (they're cheap on accuracy —
+# low-level features), keep the accuracy-bearing feature stages P3/P4 open, gut the P5 tail. The
+# physical act_mbytes fence (--ceiling-fp32-ms 12.0 → act ≤ ~512 MB) does the real gating.
+STAGE_HI_FEASIBLE = [0.20, 0.22, 0.40, 0.40, 0.25]
 DEPTH_MULT = 0.50          # depth is a dead knob below n (CP 3c.1) — pinned at yolo11n's own
 MAX_CHANNELS = 4096        # never cap: per-stage scales own the widths
 DIVISOR = 16               # tensor-core alignment, same knob as the prune ladder's round_to
@@ -96,7 +104,7 @@ def build_check(model_yaml_dict: dict, out_dir: Path, tag: str) -> dict | None:
     import torch
     from ultralytics import YOLO
 
-    from search.latency_model import extract_onnx_features, predict_ms
+    from search.latency_model import extract_onnx_features
 
     path = Path(out_dir) / f"probe_{tag}.yaml"
     path.write_text(yaml.safe_dump(model_yaml_dict, sort_keys=False))
@@ -109,12 +117,12 @@ def build_check(model_yaml_dict: dict, out_dir: Path, tag: str) -> dict | None:
         return None
     finally:
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
-    fit_path = ROOT / "search" / "latency_model_fit.json"     # tracked copy (Kaggle clones
-    if not fit_path.exists():                                  #  the repo; data/ is gitignored)
-        fit_path = ROOT / "data" / "latency_model.json"
-    fit = json.loads(fit_path.read_text())["fits"]["fp32"]
+    # Fence on the PHYSICAL memory-bound model (act_mbytes → ms, ±3.6 %), not the collinear
+    # ridge (which over-predicts small nets — the wave-1 miscalibration). See latency_model.
+    from search.latency_model import act_bytes_to_ms
+
     feats = extract_onnx_features(onnx)
-    pred = predict_ms(fit, feats)
+    pred = act_bytes_to_ms(feats["act_mbytes"])
     onnx.unlink(missing_ok=True)  # probe only; the trainer exports the real deploy ONNX
     return {"params": params, "pred_fp32_ms": round(pred, 3), **{k: round(float(v), 4)
             for k, v in feats.items()}}
@@ -131,12 +139,20 @@ def run_tpe(
     imgsz: int = 640,
     batch: int = 16,
     device: Any = 0,
+    stage_hi: list[float] | None = None,
 ) -> list[dict]:
-    """One independent TPE study: propose scales → build-check + ceiling → proxy-train → row."""
+    """One independent TPE study: propose scales → build-check + ceiling → proxy-train → row.
+
+    ``stage_hi`` (len N_STAGES) overrides the per-stage upper bounds — pass STAGE_HI_FEASIBLE
+    for the wave-2 constrained re-search; None keeps the uniform SCALE_HI box.
+    """
     import optuna
 
     from search.dense_family import _base_pose_yaml, train_from_yaml
 
+    hi = [SCALE_HI] * N_STAGES if stage_hi is None else list(stage_hi)
+    if len(hi) != N_STAGES:
+        raise ValueError(f"stage_hi needs {N_STAGES} entries, got {len(hi)}")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     base = _base_pose_yaml()
@@ -146,7 +162,7 @@ def run_tpe(
 
     def objective(trial: Any) -> float:
         scales = [trial.suggest_float(f"s{i + 1}",
-                                      STAGE5_LO if i == N_STAGES - 1 else SCALE_LO, SCALE_HI)
+                                      STAGE5_LO if i == N_STAGES - 1 else SCALE_LO, hi[i])
                   for i in range(N_STAGES)]
         tag = candidate_tag(scales) + f"_p{proxy_epochs}"
         row_file = out_dir / f"dense_{tag}.row.json"
@@ -217,8 +233,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--proxy-epochs", type=int, default=30)
     p.add_argument("--ceiling-fp32-ms", type=float, default=14.0,
-                   help="coarse fence only (the family surrogate over-predicts the near-n "
-                        "band ~+20%%); finalists gate on MEASURED ms")
+                   help="surrogate fence (finalists gate on MEASURED ms); wave-2 uses 12.0")
+    p.add_argument("--stage-hi", type=str, default=None,
+                   help="comma list of N_STAGES per-stage upper bounds (wave-2 constrained box; "
+                        "'feasible' → STAGE_HI_FEASIBLE)")
     p.add_argument("--data", type=Path, default=ROOT / "dataset" / "dataset.yaml")
     p.add_argument("--out-dir", type=Path, default=ROOT / "data" / "dense_nas")
     p.add_argument("--imgsz", type=int, default=640)
@@ -232,9 +250,14 @@ def main(argv: list[str] | None = None) -> int:
                       device=a.device, seed=a.seed)
         return 0
 
+    stage_hi = None
+    if a.stage_hi == "feasible":
+        stage_hi = STAGE_HI_FEASIBLE
+    elif a.stage_hi:
+        stage_hi = [float(x) for x in a.stage_hi.split(",")]
     rows = run_tpe(budget=a.budget, seed=a.seed, out_dir=a.out_dir, data_yaml=a.data,
                    proxy_epochs=a.proxy_epochs, ceiling_fp32_ms=a.ceiling_fp32_ms,
-                   imgsz=a.imgsz, batch=a.batch, device=a.device)
+                   imgsz=a.imgsz, batch=a.batch, device=a.device, stage_hi=stage_hi)
     for r in sorted(rows, key=lambda r: -r["map"])[:5]:
         print(f"  {r['tag']:28s} map={r['map']:.4f} pred={r.get('pred_fp32_ms')}ms "
               f"params={r['params']:,}")

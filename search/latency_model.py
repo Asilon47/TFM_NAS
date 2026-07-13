@@ -34,6 +34,23 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Physical memory-bound latency model (2026-07-13): for this family latency is DRAM-traffic-bound,
+# so a single feature — total activation bytes — predicts fp32 e2e ms within ±3.6 % across the 6
+# measured dense/search points (353–695 MB / 9.56–15.27 ms; R²≈0.99). Far more robust than the
+# multi-feature ridge (which is collinear and over-predicts small nets), so THIS is the search
+# fence. ms ≈ intercept + slope · act_mbytes. Refit via `fit_physical_fp32()`.
+PHYSICAL_FP32_SLOPE = 0.017627      # ms per MB of activation traffic (6-point fit)
+PHYSICAL_FP32_INTERCEPT = 2.994     # ms (fixed overhead: stem launch, IO, non-modeled)
+PHYSICAL_FP32 = {"slope": PHYSICAL_FP32_SLOPE, "intercept": PHYSICAL_FP32_INTERCEPT,
+                 "unit": "act_mbytes", "n": 6, "max_err_pct": 3.6}
+
+
+def act_bytes_to_ms(act_mbytes: float,
+                    slope: float = PHYSICAL_FP32_SLOPE,
+                    intercept: float = PHYSICAL_FP32_INTERCEPT) -> float:
+    """Physical fp32-latency estimate from activation traffic (the memory-bound fence)."""
+    return intercept + slope * act_mbytes
+
 FEATURES = ("act_mbytes", "param_mbytes", "n_convs", "conv_gflops")
 
 # bench-json name → ONNX basename, where they differ (bench names are session-scoped).
