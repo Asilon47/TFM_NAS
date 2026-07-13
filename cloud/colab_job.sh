@@ -25,8 +25,8 @@ SECRETS_DIR="$ROOT/secrets"
 TMP="${TMPDIR:-/tmp}"
 [ -x "$COLAB" ] || { echo "missing $COLAB — python3 -m venv .venv-cloud && .venv-cloud/bin/pip install google-colab-cli"; exit 1; }
 
-ACTION="${1:?usage: colab_job.sh {launch|poll|pull|stop} <session> ...}"; shift
-SESSION="${1:?need <session>}"; shift || true
+ACTION="${1:?usage: colab_job.sh launch|poll|pull|stop <session> ...}"; shift
+SESSION="${1:?need a session name}"; shift || true
 
 vlog() { "$COLAB" exec -s "$SESSION" -f "$1" 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
 
