@@ -20,22 +20,36 @@ Reference: pretrained **yolo11n-pose baseline 0.877** (COCO-pretrained + full re
 
 ## What it means (pending two gates)
 
-- **The searched winner 0.8786 beats the pretrained baseline 0.877 — trained from scratch**, and
-  beats the pruning champion prune_base r20 by **+4.0 pts**, at r20-class *predicted* latency.
-- **The discovery**: every top candidate is **wide P3/P4/P5-feeder stages (0.34–0.40), gutted
-  final stage (0.13–0.20)**. yolo11's 1024-ch SPPF/C2PSA tail is over-provisioned for gate pose
-  (one large-object class, P3/P4-scale targets); reallocating that budget into the feature
-  stages is worth +2–4 pts at fixed size — a per-stage allocation the global-width curve and the
-  DepGraph saliency ladder could not express (the AutoSlim argument, realized).
-- **The proxy's top-1 == the oracle top-1** (s31 led both): the G3-gated search is validated
-  end-to-end.
+## De-noised (seeds {1,2,3}) — winner's curse caught, robust winner is s39
 
-## Two gates before this becomes winner-v2 (both from this project's own lessons)
+| candidate | mean {1,2,3} | sd | seed-0 bias | params |
+|---|---|---|---|---|
+| **s39-40-38-38-14** | **0.8709** | 0.0012 | +0.0053 | 2.77M |
+| s31-40-40-40-13 | 0.8702 | 0.0064 | +0.0085 | 2.90M |
+| s40-38-39-36-13 | 0.8677 | 0.0032 | +0.0040 | 2.65M |
 
-1. **Winner's curse (CP 3.5)**: single-seed argmax over a 0.007 tie band → top-3 re-trained at
-   seeds {1,2,3} (in flight).
-2. **The HALP lesson**: `pred_fp32` is the surrogate, not the board → Nano bench of the
-   finalist ONNX (mode 0, locked clocks) is the latency gate; no Pareto claim until measured.
+The single-seed leader **s31 (0.8786) was upward-biased +0.0085 and the noisiest arch**
+(seed range 0.865–0.879). On fresh seeds **s39-40-38-38-14 = 0.8709 ± 0.0012 is the robust
+winner** — tied with s31 on the mean but 5× more stable and fewer params. CP 3.5 discipline
+did exactly its job (third winner's-curse catch in the project).
+
+- **Honest accuracy: the searched winner (0.871) MATCHES the pretrained baseline (0.877) from
+  scratch** (−0.006, within 2σ) — it does not clearly beat it (the seed-0 "beats" reading was
+  biased). Against the buildable competition it is the decisive leader: **+3.3 pts over
+  prune_base r20 (0.8381)**, +1.7 over ctrl_n-from-scratch (0.854).
+- **The discovery** (seed-independent): every top candidate is **wide P3/P4 feature stages
+  (0.34–0.40), gutted final stage (0.13–0.20)**. yolo11's 1024-ch SPPF/C2PSA tail is
+  over-provisioned for single-class large-object gate pose; reallocating that budget forward is
+  worth +2–4 pts at fixed size — a per-stage allocation the global-width curve and the DepGraph
+  saliency ladder could not express (the AutoSlim argument, realized).
+- **The proxy's top-1 == the oracle top-1** (s31 led both 30-ep proxy and 100-ep oracle): the
+  G3-gated search is validated end-to-end.
+
+## Last gate before winner-v2
+
+**The HALP lesson**: `pred_fp32` is the surrogate, not the board → Nano bench of the finalist
+ONNX (mode 0, locked clocks) is the latency gate; no Pareto claim until measured. Also breaks
+the s39/s31 accuracy tie on the Pareto axis (s39 pred 9.55, s31 pred 9.10 fp32).
 
 Binaries (`dense_s*_o100*.pt/.onnx`) are gitignored, in `data/cp33_kaggle_out/dense_nas/`
 (regenerable from the tag via `search.dense_nas --oracle-tags`). This manifest + the row JSONs
