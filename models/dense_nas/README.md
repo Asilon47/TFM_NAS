@@ -54,3 +54,20 @@ the s39/s31 accuracy tie on the Pareto axis (s39 pred 9.55, s31 pred 9.10 fp32).
 Binaries (`dense_s*_o100*.pt/.onnx`) are gitignored, in `data/cp33_kaggle_out/dense_nas/`
 (regenerable from the tag via `search.dense_nas --oracle-tags`). This manifest + the row JSONs
 are the tracked record.
+
+## Nano gate (2026-07-13) — MEASURED, and the finalists are latency-dominated
+
+| finalist | mAP (de-noised) | fp32 ms | fp16 ms | pred fp32 | miss |
+|---|---|---|---|---|---|
+| s39-40-38-38-14 | 0.8709 | 15.27 | 8.84 | 9.47 | −38 % |
+| s31-40-40-40-13 | 0.8702 | 15.14 | 8.94 | 9.04 | −40 % |
+| s40-38-39-36-13 | 0.8677 | 14.98 | 8.67 | 9.07 | −39 % |
+
+Reference: baseline 0.877 @ 12.74/7.75 · prune_base r20 0.8381 @ 9.52/5.91.
+
+**All three are Pareto-DOMINATED by the baseline** (slower AND ≤ accuracy). The surrogate
+under-predicted by ~40 %: the wide LOW-STRIDE feature stages that win on accuracy-per-param are
+the memory-bound cost center (the project's recurring lesson, now at the search level). The
+accuracy finding stands; "the deployable comes from the search" does not — at measured latency
+r20 remains the buildable Pareto standout. See procedure.md "STAGE-3 NANO GATE". winner-v2 is a
+user decision (accept r20 / recalibrated re-search / prune s39 to ≤ baseline latency).
