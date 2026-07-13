@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # so a single feature — total activation bytes — predicts fp32 e2e ms within ±3.6 % across the 6
 # measured dense/search points (353–695 MB / 9.56–15.27 ms; R²≈0.99). Far more robust than the
 # multi-feature ridge (which is collinear and over-predicts small nets), so THIS is the search
-# fence. ms ≈ intercept + slope · act_mbytes. Refit via `fit_physical_fp32()`.
+# fence. ms ≈ intercept + slope · act_mbytes. Refit via `fit_physical()`.
 PHYSICAL_FP32_SLOPE = 0.017627      # ms per MB of activation traffic (6-point fit)
 PHYSICAL_FP32_INTERCEPT = 2.994     # ms (fixed overhead: stem launch, IO, non-modeled)
 PHYSICAL_FP32 = {"slope": PHYSICAL_FP32_SLOPE, "intercept": PHYSICAL_FP32_INTERCEPT,
@@ -50,6 +50,96 @@ def act_bytes_to_ms(act_mbytes: float,
                     intercept: float = PHYSICAL_FP32_INTERCEPT) -> float:
     """Physical fp32-latency estimate from activation traffic (the memory-bound fence)."""
     return intercept + slope * act_mbytes
+
+
+# --- graft-family physical fit (winner-v2-OFA program, 2026-07-13) ---------------------------
+# Same single-feature law, fit ONLY on the measured OFA-graft e2e points (winner-v1 variants +
+# every pruned-graft descendant); the dense-family PHYSICAL_FP32 above does NOT transfer (the
+# graft's depthwise op mix has a different bytes→ms slope). fp16 is fit DIRECTLY, not via the
+# 0.700 ratio: measured family ratios span 0.69–0.73 and a pure ratio misses the intercept.
+# Pinned from search/graft_latency_fit.json (regenerate: python -m search.latency_model
+# --fit-graft); tests assert constants == tracked JSON.
+
+# Pinned from search/graft_latency_fit.json (2026-07-13). fp32 includes the two Stage-0
+# fallback topologies (different depth vectors, resid −2.6/−5.9 %) — the law generalizes
+# across (e,d) graft topologies, which the min-act probe relies on. No fallback fp16 rows.
+PHYSICAL_GRAFT_FP32 = {"slope": 0.031617914, "intercept": 0.787579279,
+                       "unit": "act_mbytes", "n": 12, "loo_mape": 0.027325}
+PHYSICAL_GRAFT_FP16 = {"slope": 0.020541899, "intercept": 1.199872874,
+                       "unit": "act_mbytes", "n": 10, "loo_mape": 0.019797}
+
+# Bench-row names of the graft e2e family. "fallback_" = the Stage-0 fallback graft topologies
+# (different depth vectors) — they anchor the fit's topology generalization.
+GRAFT_POINT_PREFIXES = ("graft_", "winner_v1", "fallback_")
+GRAFT_EXCLUDE_SUBSTR = ("backbone",)             # partial nets (bare backbone) are not e2e
+
+
+def is_graft_e2e_point(name: str) -> bool:
+    """True for whole-net OFA-graft bench rows (partial nets like the bare backbone excluded)."""
+    return name.startswith(GRAFT_POINT_PREFIXES) and not any(
+        s in name for s in GRAFT_EXCLUDE_SUBSTR)
+
+
+def fit_physical(points: list[dict], feature: str = "act_mbytes") -> dict:
+    """Single-feature least-squares law ``ms = intercept + slope·feature`` + brute LOO.
+
+    The physical counterpart of ``fit_ridge`` for memory-bound families (closes the
+    ``fit_physical()`` promise in the PHYSICAL_FP32 comment). Points need ``ms`` + feature.
+    """
+    usable = [p for p in points if "ms" in p and feature in p]
+    if len(usable) < 3:
+        raise ValueError(f"need >=3 points with 'ms' and '{feature}' (got {len(usable)})")
+    x = np.array([p[feature] for p in usable], dtype=float)
+    y = np.array([p["ms"] for p in usable], dtype=float)
+
+    def _line(xs: np.ndarray, ys: np.ndarray) -> tuple[float, float]:
+        a = np.stack([xs, np.ones_like(xs)], axis=1)
+        (s, b), *_ = np.linalg.lstsq(a, ys, rcond=None)
+        return float(s), float(b)
+
+    slope, intercept = _line(x, y)
+    preds = intercept + slope * x
+    resid_pct = 100.0 * (preds - y) / y
+    loo_errs = []
+    for i in range(len(y)):
+        keep = np.arange(len(y)) != i
+        s_i, b_i = _line(x[keep], y[keep])
+        loo_errs.append(abs(b_i + s_i * x[i] - y[i]) / y[i])
+    return {
+        "feature": feature, "slope": slope, "intercept": intercept, "n": len(usable),
+        "loo_mape": float(np.mean(loo_errs)),
+        "max_err_pct": float(np.max(np.abs(resid_pct))),
+        "points": [{"name": p["name"], "ms": float(ms), feature: float(xx),
+                    "pred": round(float(pr), 3), "resid_pct": round(float(rp), 1)}
+                   for p, xx, ms, pr, rp in zip(usable, x, y, preds, resid_pct, strict=True)],
+    }
+
+
+def act_limit_for_ms(target_ms: float, model: dict) -> float:
+    """Invert the physical law: the max feature value whose prediction stays ≤ target_ms."""
+    return (float(target_ms) - float(model["intercept"])) / float(model["slope"])
+
+
+def graft_fit_report(e2e_dir: Any, root: Any = None) -> dict:
+    """Per-precision physical fits over the measured OFA-graft e2e family only."""
+    points = collect_points(e2e_dir, root=root)
+    graft = [p for p in points if "ms" in p and is_graft_e2e_point(p["name"])]
+    out: dict = {
+        "family": "ofa_graft_e2e",
+        "n_points": len(graft),
+        "excluded": sorted({p["name"] for p in points
+                            if "ms" in p and not is_graft_e2e_point(p["name"])}),
+        "doctrine": "physical single-feature law (memory-bound: ms = b + a*act_mbytes); "
+                    "fit per precision on graft e2e points only — whole nets, never marginal; "
+                    "claimed latencies are still verified on-device",
+        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "fits": {},
+    }
+    for prec in sorted({p["precision"] for p in graft}):
+        pts = [p for p in graft if p["precision"] == prec]
+        out["fits"][prec] = (fit_physical(pts) if len(pts) >= 3
+                             else {"skipped": f"only {len(pts)} points"})
+    return out
 
 FEATURES = ("act_mbytes", "param_mbytes", "n_convs", "conv_gflops")
 
@@ -268,23 +358,34 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--e2e-dir", type=Path, default=ROOT / "data" / "e2e")
     p.add_argument("--lam", type=float, default=1e-2)
-    p.add_argument("--out", type=Path, default=ROOT / "data" / "latency_model.json")
+    p.add_argument("--fit-graft", action="store_true",
+                   help="physical single-feature fit on the OFA-graft e2e family only "
+                        "(default out: the tracked search/graft_latency_fit.json)")
+    p.add_argument("--out", type=Path, default=None)
     a = p.parse_args(argv)
 
-    points = collect_points(a.e2e_dir)
-    report = fit_report(points, lam=a.lam)
-    a.out.write_text(json.dumps(report, indent=2) + "\n")
+    if a.fit_graft:
+        report = graft_fit_report(a.e2e_dir)
+        out = a.out or ROOT / "search" / "graft_latency_fit.json"
+    else:
+        report = fit_report(collect_points(a.e2e_dir), lam=a.lam)
+        out = a.out or ROOT / "data" / "latency_model.json"
+    out.write_text(json.dumps(report, indent=2) + "\n")
     for prec, fit in report["fits"].items():
         if "skipped" in fit:
             print(f"{prec}: {fit['skipped']}")
             continue
-        print(f"{prec}: n={fit['n']}  LOO-MAPE={fit['loo_mape'] * 100:.1f}%")
+        head = f"{prec}: n={fit['n']}  LOO-MAPE={fit['loo_mape'] * 100:.1f}%"
+        if "slope" in fit:
+            head += (f"  ms = {fit['intercept']:.3f} + {fit['slope']:.6f}·act_MB"
+                     f"  (max |err| {fit['max_err_pct']:.1f}%)")
+        print(head)
         for row in fit["points"]:
             print(f"  {row['name']:42s} {row['ms']:7.2f} → {row['pred']:7.2f}  "
                   f"({row['resid_pct']:+.1f}%)")
-    if report["skipped"]:
+    if report.get("skipped"):
         print(f"skipped (no ONNX): {report['skipped']}")
-    print(f"wrote {a.out}")
+    print(f"wrote {out}")
     return 0
 
 

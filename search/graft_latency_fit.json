@@ -1,0 +1,230 @@
+{
+  "family": "ofa_graft_e2e",
+  "n_points": 22,
+  "excluded": [
+    "addv_idx0_backbone_640",
+    "addv_idx11_backbone_640",
+    "addv_idx1_backbone_640",
+    "addv_idx2_backbone_640",
+    "addv_idx3_backbone_640",
+    "addv_idx4_backbone_640",
+    "addv_max_corner_backbone_640",
+    "addv_min_corner_backbone_640",
+    "baseline_recheck_640",
+    "baseline_recheck_640_fp16",
+    "dense_ctrl_n_640",
+    "dense_ctrl_n_640_fp16",
+    "dense_d33_w20_640",
+    "dense_d33_w20_640_fp16",
+    "dense_d50_w15_640",
+    "dense_d50_w15_640_fp16",
+    "dense_w13_640",
+    "dense_w13_640_fp16",
+    "dense_w18_640",
+    "dense_w18_640_fp16",
+    "dense_w22_640",
+    "dense_w22_640_fp16",
+    "dense_w30_640",
+    "densenas_s31_640",
+    "densenas_s31_640_fp16",
+    "densenas_s39_640",
+    "densenas_s39_640_fp16",
+    "densenas_s40_640",
+    "densenas_s40_640_fp16",
+    "prune_base_r10_640",
+    "prune_base_r10_640_fp16",
+    "prune_base_r15_640",
+    "prune_base_r15_640_fp16",
+    "prune_base_r20_640",
+    "prune_base_r20_640_fp16",
+    "prune_base_r30_640",
+    "prune_base_r30_640_fp16",
+    "prune_base_r35_640",
+    "prune_base_r35_640_fp16",
+    "prune_base_r45_640",
+    "prune_base_r45_640_fp16",
+    "prune_base_r55_640",
+    "prune_base_r55_640_fp16",
+    "winner_v1_backbone_640",
+    "yolo11s_pose_640",
+    "yolo11s_pose_640_fp16"
+  ],
+  "doctrine": "physical single-feature law (memory-bound: ms = b + a*act_mbytes); fit per precision on graft e2e points only \u2014 whole nets, never marginal; claimed latencies are still verified on-device",
+  "timestamp": "2026-07-13T17:01:13Z",
+  "fits": {
+    "fp16": {
+      "feature": "act_mbytes",
+      "slope": 0.020541899305920475,
+      "intercept": 1.199872874413807,
+      "n": 10,
+      "loo_mape": 0.01979718799575874,
+      "max_err_pct": 4.9924085834625584,
+      "points": [
+        {
+          "name": "graft_halp_10p4_640_fp16",
+          "ms": 8.913136992454529,
+          "act_mbytes": 397.1514129638672,
+          "pred": 9.358,
+          "resid_pct": 5.0
+        },
+        {
+          "name": "graft_halp_9p0_640_fp16",
+          "ms": 8.136131706237792,
+          "act_mbytes": 345.9581756591797,
+          "pred": 8.307,
+          "resid_pct": 2.1
+        },
+        {
+          "name": "graft_prune_r20_e2e_640",
+          "ms": 10.153318276405335,
+          "act_mbytes": 433.77708435058594,
+          "pred": 10.11,
+          "resid_pct": -0.4
+        },
+        {
+          "name": "graft_prune_r40_e2e_640",
+          "ms": 8.409682407379151,
+          "act_mbytes": 343.63145446777344,
+          "pred": 8.259,
+          "resid_pct": -1.8
+        },
+        {
+          "name": "graft_prune_r60_e2e_640",
+          "ms": 6.575110402107239,
+          "act_mbytes": 250.2412567138672,
+          "pred": 6.34,
+          "resid_pct": -3.6
+        },
+        {
+          "name": "graft_r50_gtay_640_fp16",
+          "ms": 7.4824488067626955,
+          "act_mbytes": 302.73155212402344,
+          "pred": 7.419,
+          "resid_pct": -0.9
+        },
+        {
+          "name": "graft_r60_gtay_640_fp16",
+          "ms": 6.355128152370453,
+          "act_mbytes": 254.02684020996094,
+          "pred": 6.418,
+          "resid_pct": 1.0
+        },
+        {
+          "name": "winner_v1_e2e_640_fp16",
+          "ms": 12.381500821113587,
+          "act_mbytes": 544.3900909423828,
+          "pred": 12.383,
+          "resid_pct": 0.0
+        },
+        {
+          "name": "winner_v1_v2topdown_e2e_640_fp16",
+          "ms": 12.575561089515686,
+          "act_mbytes": 552.0073089599609,
+          "pred": 12.539,
+          "resid_pct": -0.3
+        },
+        {
+          "name": "winner_v1_v3pan_e2e_640_fp16",
+          "ms": 12.761927046775817,
+          "act_mbytes": 555.5229339599609,
+          "pred": 12.611,
+          "resid_pct": -1.2
+        }
+      ]
+    },
+    "fp32": {
+      "feature": "act_mbytes",
+      "slope": 0.03161791428914838,
+      "intercept": 0.7875792785150899,
+      "n": 12,
+      "loo_mape": 0.02732479605294762,
+      "max_err_pct": 6.042892027551156,
+      "points": [
+        {
+          "name": "fallback_idx11_e2e_640",
+          "ms": 16.6525057888031,
+          "act_mbytes": 487.98667907714844,
+          "pred": 16.217,
+          "resid_pct": -2.6
+        },
+        {
+          "name": "fallback_idx3_e2e_640",
+          "ms": 16.11182872772217,
+          "act_mbytes": 454.45375061035156,
+          "pred": 15.156,
+          "resid_pct": -5.9
+        },
+        {
+          "name": "graft_halp_10p4_640",
+          "ms": 12.58422734260559,
+          "act_mbytes": 397.1514129638672,
+          "pred": 13.345,
+          "resid_pct": 6.0
+        },
+        {
+          "name": "graft_halp_9p0_640",
+          "ms": 11.365983362197875,
+          "act_mbytes": 345.9581756591797,
+          "pred": 11.726,
+          "resid_pct": 3.2
+        },
+        {
+          "name": "graft_prune_r20_e2e_640",
+          "ms": 14.27422179698944,
+          "act_mbytes": 433.77708435058594,
+          "pred": 14.503,
+          "resid_pct": 1.6
+        },
+        {
+          "name": "graft_prune_r40_e2e_640",
+          "ms": 11.811259994506836,
+          "act_mbytes": 343.63145446777344,
+          "pred": 11.652,
+          "resid_pct": -1.3
+        },
+        {
+          "name": "graft_prune_r60_e2e_640",
+          "ms": 9.005082397460937,
+          "act_mbytes": 250.2412567138672,
+          "pred": 8.7,
+          "resid_pct": -3.4
+        },
+        {
+          "name": "graft_r50_gtay_640",
+          "ms": 10.228130702972413,
+          "act_mbytes": 302.73155212402344,
+          "pred": 10.359,
+          "resid_pct": 1.3
+        },
+        {
+          "name": "graft_r60_gtay_640",
+          "ms": 8.845916771888733,
+          "act_mbytes": 254.02684020996094,
+          "pred": 8.819,
+          "resid_pct": -0.3
+        },
+        {
+          "name": "winner_v1_e2e_640",
+          "ms": 17.670958862304687,
+          "act_mbytes": 544.3900909423828,
+          "pred": 18.0,
+          "resid_pct": 1.9
+        },
+        {
+          "name": "winner_v1_v2topdown_e2e_640",
+          "ms": 18.14699457168579,
+          "act_mbytes": 552.0073089599609,
+          "pred": 18.241,
+          "resid_pct": 0.5
+        },
+        {
+          "name": "winner_v1_v3pan_e2e_640",
+          "ms": 18.37337484359741,
+          "act_mbytes": 555.5229339599609,
+          "pred": 18.352,
+          "resid_pct": -0.1
+        }
+      ]
+    }
+  }
+}
