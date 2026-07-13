@@ -109,13 +109,14 @@ PG_INDEX = ""
 PG_SPECS = "prune/specs/halp_fp32_10p4.json,prune/specs/halp_fp32_9p0.json"
 # MODE="dense_nas" — Stage-3 NAS over the device-native family (search/dense_nas.py): one
 #   independent TPE study per T4 (seeds DN_SEED_BASE / +1), shared row files → dedup + resume.
-DN_BUDGET = 16
-DN_SEED_BASE = 0
+DN_BUDGET = 10
+DN_SEED_BASE = 10
 DN_PROXY_EPOCHS = 30
-DN_CEILING = 14.0
+DN_CEILING = 12.0
 # DN_ORACLE: comma list of finalist tags → 100-ep oracle re-train (striped across the T4s)
-DN_ORACLE = "s31-40-40-40-13,s39-40-38-38-14,s40-38-39-36-13"   # top-3, de-noise tie band
+DN_ORACLE = ""   # empty -> TPE search mode; set tags for the oracle round
 DN_ORACLE_EPOCHS = 100
+DN_STAGE_HI = "feasible"   # wave-2 constrained box ("" = wave-1 uniform)
 DN_ORACLE_SEED = 3   # !=0 -> fresh-seed de-noise re-train (CP 3.5 winner's-curse discipline)
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
 PG_KD = 1
@@ -363,8 +364,9 @@ def main() -> None:
 
     # 4.79 Stage-3 dense-space NAS: TPE over per-stage widths of the yolo11-pose family.
     if MODE == "dense_nas":
-        out_dir = work / "dense_nas"
+        out_dir = work / ("dense_nas_w2" if DN_STAGE_HI else "dense_nas")
         out_dir.mkdir(exist_ok=True)
+        stage_hi_arg = f" --stage-hi {DN_STAGE_HI}" if DN_STAGE_HI else ""
         ngpu = int(subprocess.check_output(
             [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
         ).decode().strip() or "0")
@@ -381,7 +383,7 @@ def main() -> None:
             else:
                 cmd = (f"{sys.executable} -m search.dense_nas --budget {DN_BUDGET} "
                        f"--seed {DN_SEED_BASE + g} --proxy-epochs {DN_PROXY_EPOCHS} "
-                       f"--ceiling-fp32-ms {DN_CEILING} --data dataset/dataset.yaml "
+                       f"--ceiling-fp32-ms {DN_CEILING}{stage_hi_arg} --data dataset/dataset.yaml "
                        f"--out-dir {out_dir} --device 0")
                 print(f"+ [gpu{g}] dense_nas seed {DN_SEED_BASE + g}", flush=True)
             procs.append(subprocess.Popen(cmd, shell=True, env=env))
