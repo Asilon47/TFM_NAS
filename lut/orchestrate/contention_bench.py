@@ -41,6 +41,41 @@ ROOT = Path(__file__).resolve().parents[2]
 GPU_STRESS_NAME = "tfm_gpu_stress"      # detached docker container name (idempotent teardown)
 
 
+def make_bandwidth_onnx(out: Path, *, channels: int = 256, hw: int = 320,
+                        n_ops: int = 12) -> Path:
+    """A near-zero-FLOP, all-memory-traffic ONNX — the GPU-DRAM-bandwidth stressor.
+
+    A big fp16 tensor (default 1×256×320² = 105 MB) pushed through a chain of element-wise
+    Mul/Add ops: each op is one read + one write of the whole tensor and ~no arithmetic, so
+    looping trtexec on it saturates DRAM bandwidth while barely touching the compute units —
+    the clean roofline axis the CPU-side stress-ng --vm could not reach. Alternating Mul/Add
+    with distinct scalars discourages TRT from fusing the whole chain into a single pass.
+    """
+    import numpy as np
+    import onnx
+    from onnx import TensorProto, helper
+
+    nodes, inits = [], []
+    cur = "x"
+    for i in range(n_ops):
+        op = "Mul" if i % 2 == 0 else "Add"
+        s = helper.make_tensor(f"s{i}", TensorProto.FLOAT16, [1],
+                               np.array([1.0009 if op == "Mul" else 0.5], dtype=np.float16))
+        inits.append(s)
+        nxt = f"t{i}"
+        nodes.append(helper.make_node(op, [cur, f"s{i}"], [nxt]))
+        cur = nxt
+    graph = helper.make_graph(
+        nodes, "bandwidth_hog",
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT16, [1, channels, hw, hw])],
+        [helper.make_tensor_value_info(cur, TensorProto.FLOAT16, [1, channels, hw, hw])],
+        initializer=inits)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    onnx.save(model, str(out))
+    return out
+
+
 def ensure_stress_ng(conn) -> bool:
     """True if stress-ng is available (install once via passwordless sudo if missing)."""
     if conn.run("command -v stress-ng", warn=True, hide=True).ok:
@@ -62,16 +97,19 @@ def start_stressor(conn, cfg, kind: str, *, gpu_onnx_remote: str | None,
         conn.run(f"nohup stress-ng --vm 4 --vm-bytes 80% --vm-method all "
                  f"--timeout {duration_s}s >/tmp/tfm_dram_stress.log 2>&1 & echo started",
                  hide=True, warn=True)
-    elif kind == "gpu":
-        if gpu_onnx_remote is None:
+    elif kind in ("gpu", "gpubw"):
+        if kind == "gpu" and gpu_onnx_remote is None:
             raise ValueError("gpu stressor needs --gpu-stressor <onnx>")
         conn.run(f"docker rm -f {GPU_STRESS_NAME}", hide=True, warn=True)
-        # one build, then continuous inference for duration_s → a steady GPU hog.
+        # one build, then continuous inference for duration_s → a steady GPU hog. gpu = a
+        # compute-heavy model (yolo11s), gpubw = the element-wise bandwidth ONNX. trtexec
+        # writes progress to STDOUT so `docker logs` can confirm the run phase (see readiness).
+        onnx = gpu_onnx_remote if kind == "gpu" else f"{cfg.remote_workdir}/gpu_stress/bw.onnx"
         conn.run(
             f"docker run -d --rm --runtime nvidia --name {GPU_STRESS_NAME} "
             f"-v {cfg.remote_workdir}/gpu_stress:/job {cfg.docker_image} "
-            f"bash -c 'trtexec --onnx=/job/stressor.onnx --fp16 --duration={duration_s} "
-            "--iterations=0 >/tmp/tfm_gpu_stress.log 2>&1'", hide=True, warn=True)
+            f"trtexec --onnx={onnx} --fp16 --duration={duration_s} --iterations=0",
+            hide=True, warn=True)
     else:
         raise ValueError(f"unknown stressor {kind!r}")
 
@@ -97,12 +135,14 @@ def stop_stressors(conn) -> None:
 def run_condition(conn, cfg, sweep_cfg, *, condition: str, models: dict[str, Path],
                   precision: str, gpu_onnx_remote: str | None, warmup_s: int) -> dict:
     """Bench every model under one stressor condition; returns {model: latency_ms}."""
+    # "all" = CPU pressure + GPU DRAM-bandwidth (the two GPU stressors collide on the single
+    # Orin GPU, so the realistic combo pairs CPU load with the roofline-relevant bandwidth hog).
     kinds = [] if condition == "none" else (
-        ["cpu", "dram", "gpu"] if condition == "all" else [condition])
+        ["cpu", "gpubw"] if condition == "all" else [condition])
     try:
         for k in kinds:
             start_stressor(conn, cfg, k, gpu_onnx_remote=gpu_onnx_remote)
-        if "gpu" in kinds and not gpu_stressor_ready(conn):
+        if any(k in ("gpu", "gpubw") for k in kinds) and not gpu_stressor_ready(conn):
             print(f"[{condition}] WARN gpu stressor not confirmed running", flush=True)
         if kinds:
             time.sleep(warmup_s)   # let the load ramp before timing
@@ -189,13 +229,18 @@ def main(argv: list[str] | None = None) -> int:
         device_info = {}
 
     gpu_remote = None
-    need_gpu = any(c in ("gpu", "all") for c in conditions)
-    if need_gpu:
+    stress_dir = f"{cfg.remote_workdir}/gpu_stress"
+    if any(c in ("gpu", "gpubw", "all") for c in conditions):
+        conn.run(f"mkdir -p {stress_dir}", hide=True)
+    if any(c == "gpu" for c in conditions):
         if a.gpu_stressor is None or not a.gpu_stressor.exists():
-            raise SystemExit("--gpu-stressor <onnx> required for the gpu/all conditions")
-        conn.run(f"mkdir -p {cfg.remote_workdir}/gpu_stress", hide=True)
-        conn.put(str(a.gpu_stressor), remote=f"{cfg.remote_workdir}/gpu_stress/stressor.onnx")
-        gpu_remote = f"{cfg.remote_workdir}/gpu_stress/stressor.onnx"
+            raise SystemExit("--gpu-stressor <onnx> required for the 'gpu' condition")
+        conn.put(str(a.gpu_stressor), remote=f"{stress_dir}/stressor.onnx")
+        gpu_remote = f"{stress_dir}/stressor.onnx"
+    if any(c in ("gpubw", "all") for c in conditions):
+        bw = make_bandwidth_onnx(ROOT / "data" / "contention" / "bandwidth_hog.onnx")
+        conn.put(str(bw), remote=f"{stress_dir}/bw.onnx")
+        gpu_remote = gpu_remote or f"{stress_dir}/stressor.onnx"   # sentinel; gpubw uses bw.onnx
 
     rows: dict[str, dict] = {}
     try:
