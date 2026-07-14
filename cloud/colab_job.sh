@@ -65,6 +65,17 @@ case "$ACTION" in
       "$COLAB" new -s "$SESSION" --gpu "$GPU"
     fi
 
+    # Colab CLI /content is EPHEMERAL — a VM recycle loses the resume ckpt. If a prior
+    # `poll --pull` snapshotted ckpts to the laptop, re-push them so recover_graft resumes
+    # (durability parity with Lightning's persistent disk).
+    printf "import os\nos.makedirs('/content/tfm_out', exist_ok=True)\n" > "$TMP/mkout.py"
+    vlog "$TMP/mkout.py" >/dev/null || true
+    for ck in "$ROOT/data/colab_out/$SESSION"/ckpt_*.pt; do
+      [ -e "$ck" ] || continue
+      echo "[colab_job] re-pushing $(basename "$ck") for resume"
+      "$COLAB" upload -s "$SESSION" "$ck" "/content/tfm_out/$(basename "$ck")"
+    done
+
     # secrets → VM as files (never argv)
     printf "import os\nos.makedirs('/content/tfm_secrets/secrets', exist_ok=True)\n" \
       > "$TMP/mkdir_sec.py"; vlog "$TMP/mkdir_sec.py" >/dev/null
