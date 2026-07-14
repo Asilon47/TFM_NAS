@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from lut.orchestrate.cpu_ort import (
+    ALLOW_SPINNING,
     BenchConfig,
     LatencyStats,
     all_cpus,
@@ -111,6 +112,18 @@ def test_latency_stats_as_dict_matches_e2e_schema() -> None:
     d = LatencyStats(mean=1.0, std=0.1, p50=0.9, p95=1.2, n=60).as_dict()
     assert set(d) == {"mean", "std", "p50", "p95", "n"}
     assert d["n"] == 60
+
+
+def test_spinning_stays_disabled() -> None:
+    """Guards the 18.6x artifact.
+
+    ORT's intra-op workers spin-wait after run() returns. With ~29 sessions rotating, each
+    model's run collides with the previous pools still burning the pinned cores. Measured at
+    t6, interleaved: 564.5 ms spinning vs 30.4 ms not -- and it scales with thread count, so it
+    mimics the bandwidth effect this bench exists to measure. If this test fails, someone is
+    about to publish contention as a memory-boundness result.
+    """
+    assert ALLOW_SPINNING == "0"
 
 
 def test_bench_config_is_hashable_and_frozen() -> None:

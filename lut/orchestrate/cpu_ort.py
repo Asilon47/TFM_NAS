@@ -26,6 +26,15 @@ import onnxruntime as ort
 
 SYSFS = Path("/sys")
 
+#: ORT's intra-op workers spin-wait after ``run`` returns instead of sleeping, which shaves
+#: wake-up latency when ONE session is called in a loop -- the server case it was tuned for.
+#: The rank check violates that assumption: it rotates ~29 live sessions, so every model's run
+#: collides with the previous models' pools still burning the same pinned cores. Measured on the
+#: 185H at t6 with 29 sessions held and interleaved access: **564.5 ms spinning vs 30.4 ms not**
+#: -- an 18.6x artifact that grows with thread count, i.e. shaped exactly like the bandwidth
+#: effect under test. Never re-enable this for an interleaved bench.
+ALLOW_SPINNING = "0"
+
 
 def parse_cpu_list(spec: str) -> list[int]:
     """Parse a Linux cpulist ("0-11", "0,5", "12-19,20-21") into sorted CPU ids."""
@@ -129,11 +138,16 @@ def apply_affinity(cfg: BenchConfig, sysfs: Path = SYSFS) -> None:
 
 
 def make_session(onnx_path: Path, cfg: BenchConfig) -> ort.InferenceSession:
-    """Build a CPU-EP session for one config. Call ``apply_affinity(cfg)`` first."""
+    """Build a CPU-EP session for one config. Call ``apply_affinity(cfg)`` first.
+
+    Spinning is disabled (see ``ALLOW_SPINNING``): it is the difference between a valid
+    interleaved measurement and an 18.6x thread-contention artifact.
+    """
     so = ort.SessionOptions()
     so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     so.inter_op_num_threads = 1
+    so.add_session_config_entry("session.intra_op.allow_spinning", ALLOW_SPINNING)
     if cfg.threads:
         so.intra_op_num_threads = cfg.threads
     return ort.InferenceSession(
