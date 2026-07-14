@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -112,9 +113,12 @@ def main() -> None:
     donor = wired["donor"]
     if donor is None:
         raise SystemExit("FATAL: gate_best.pt missing from the staged dataset")
+    # Reduce CUDA fragmentation headroom for the larger-batch recipes (global_taylor's
+    # accumulate_pose_grads is the peak — full-supernet forward+backward at batch×640²).
+    env = {**os.environ, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
     cmd = compose_recover_cmd(a, donor=donor, data_yaml=wired["yaml"])
     print("+", cmd, flush=True)
-    rc = subprocess.run(cmd, shell=True, cwd=REPO).returncode
+    rc = subprocess.run(cmd, shell=True, cwd=REPO, env=env).returncode
 
     report = a.out_dir / "recover_graft.json"
     if report.exists():
