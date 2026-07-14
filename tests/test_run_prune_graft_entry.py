@@ -15,12 +15,19 @@ def _entry():
 
 
 def _ns(**over):
-    base = dict(out_dir=Path("/content/tfm_out"), device="cuda", batch=16, epochs=100,
+    base = dict(out_dir=Path("/content/tfm_out"), device="cuda", batch=16, lr=1e-3, epochs=100,
                 seed=0, ckpt_every=10, max_steps=None, spec=None, ratios="0.50",
                 technique="global_taylor", arch_json=None, kd=True, teacher_pt=None,
                 kd_alpha=1.0)
     base.update(over)
     return argparse.Namespace(**base)
+
+
+def test_compose_passes_batch_and_lr():
+    m = _entry()
+    cmd = m.compose_recover_cmd(_ns(batch=48, lr=0.003), donor=Path("/d/g.pt"),
+                                data_yaml=Path("/d/d.yaml"), python="python")
+    assert "--batch 48" in cmd and "--lr 0.003" in cmd
 
 
 def test_compose_max_steps_only_when_set():

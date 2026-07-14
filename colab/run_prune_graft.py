@@ -44,7 +44,7 @@ def compose_recover_cmd(a: argparse.Namespace, *, donor: Path, data_yaml: Path,
     """The exact ``prune.recover_graft`` invocation for this config (pure — tested)."""
     cmd = (f"{python} -m prune.recover_graft --head-weights {donor} "
            f"--data-yaml {data_yaml} --out-dir {a.out_dir} --device {a.device} "
-           f"--imgsz 640 --batch {a.batch} --epochs {a.epochs} --seed {a.seed} "
+           f"--imgsz 640 --batch {a.batch} --lr {a.lr} --epochs {a.epochs} --seed {a.seed} "
            f"--ckpt-every {a.ckpt_every}")
     if a.max_steps is not None:
         cmd += f" --max-steps {a.max_steps}"
@@ -91,6 +91,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--batch", type=int, default=16)
+    ap.add_argument("--lr", type=float, default=1e-3,
+                    help="recovery lr; scale linearly with batch (batch 48 -> 3e-3)")
     ap.add_argument("--ckpt-every", type=int, default=10)
     ap.add_argument("--max-steps", type=int, default=None,
                     help="cap optimizer steps (smoke tests — the S0 2-epoch dry run)")
