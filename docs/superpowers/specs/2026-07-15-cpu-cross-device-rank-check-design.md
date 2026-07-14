@@ -45,10 +45,16 @@ Intel Core Ultra 9 185H, 31 GiB RAM, on AC.
 
 ## 3. Architecture
 
-Three units, mirroring the existing `run_bench` / `run_sweep` / `measure_additivity` split. The
-measured device happens to be this laptop, so the "device-side timing" role lands locally.
+Three units, mirroring the existing `run_bench` / `run_sweep` / `measure_additivity` split of
+timing core / driver / analysis.
 
-### 3.1 `lut/bench/cpu_ort.py` — timing core
+**All three live in `lut/orchestrate/`, not `lut/bench/`.** `pyproject.toml` excludes
+`lut/bench` from both ruff and mypy because that directory is deployed to the Jetson and runs
+under JetPack's Python 3.10. The boundary is *where code is deployed*, not *what it measures* —
+this bench runs locally under the repo's own tooling, so it must be linted and typed like the
+rest of `lut/orchestrate/`.
+
+### 3.1 `lut/orchestrate/cpu_ort.py` — timing core
 
 ```
 time_model(onnx_path, threads, affinity, iters, warmup) -> LatencyStats
@@ -296,7 +302,7 @@ Timing core tested against a synthetic 2-layer ONNX, not the real frontier.
 
 ## 10. Deliverables
 
-- `lut/bench/cpu_ort.py`, `lut/orchestrate/cpu_bench.py`, `lut/orchestrate/cpu_rank_report.py`
+- `lut/orchestrate/cpu_ort.py`, `lut/orchestrate/cpu_bench.py`, `lut/orchestrate/cpu_rank_report.py`
 - `tests/test_cpu_bench.py`
 - `data/cpu/*.json` (gitignored, like all of `data/`) + `data/cpu/rank_report.json`
 - A `procedure.md` entry recording the result and its threats
