@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Measure whether the Jetson Orin Nano's latency ranking of 28 pose architectures survives on an x86 CPU, and whether the OFA graft's memory-bound penalty grows with bandwidth pressure.
+**Goal:** Measure whether the Jetson Orin Nano's latency ranking of 29 pose architectures survives on an x86 CPU, and whether the OFA graft's memory-bound penalty grows with bandwidth pressure.
 
-**Architecture:** Three modules in `lut/orchestrate/`, mirroring the existing timing-core / driver / analysis split. `cpu_ort.py` is a dumb, testable timing core (ONNX + thread config → latency stats). `cpu_bench.py` owns methodology: a round-robin interleaved schedule over a 28×5 model/config matrix, writing resumable JSON rows to `data/cpu/`. `cpu_rank_report.py` joins those against the measured Jetson rows in `data/e2e/` and emits Spearman/Kendall per thread count plus the graft-penalty-vs-threads curve.
+**Architecture:** Three modules in `lut/orchestrate/`, mirroring the existing timing-core / driver / analysis split. `cpu_ort.py` is a dumb, testable timing core (ONNX + thread config → latency stats). `cpu_bench.py` owns methodology: a round-robin interleaved schedule over a 29×5 model/config matrix, writing resumable JSON rows to `data/cpu/`. `cpu_rank_report.py` joins those against the measured Jetson rows in `data/e2e/` and emits Spearman/Kendall per thread count plus the graft-penalty-vs-threads curve.
 
 **Tech Stack:** Python 3.12, onnxruntime 1.27.0 (CPUExecutionProvider), numpy 2.5.0, scipy 1.18.0 (`spearmanr`/`kendalltau`), onnx 1.22.0 (param counting), pytest 9.1.1.
 
@@ -387,7 +387,7 @@ rather than the 0-5 range that would land on three HT-contended cores."
 - Consumes: nothing
 - Produces:
   - `Pair(jetson_name: str, onnx: str, family: str)` — frozen dataclass; `onnx` is a repo-relative path
-  - `PAIRS: tuple[Pair, ...]` — the 28 declared pairs
+  - `PAIRS: tuple[Pair, ...]` — the 29 declared pairs
   - `REFERENCE_FAMILIES: frozenset[str]` — `{"dense", "prune", "baseline"}`
   - `GRAFT_FAMILIES: frozenset[str]` — `{"graft", "graft_pruned"}`
   - `CANARY: str` — `"baseline_recheck_640"`
@@ -423,7 +423,7 @@ E2E = Path(__file__).resolve().parents[1] / "data" / "e2e"
 
 
 def test_pair_count() -> None:
-    assert len(PAIRS) == 28
+    assert len(PAIRS) == 29
 
 
 def test_jetson_names_unique() -> None:
@@ -468,7 +468,7 @@ def test_graft_families() -> None:
 @pytest.mark.skipif(not MODELS.exists(), reason="models/ is gitignored; absent in CI")
 def test_every_onnx_exists() -> None:
     resolved = resolve_pairs(MODELS.parent)
-    assert len(resolved) == 28
+    assert len(resolved) == 29
     for _, path in resolved:
         assert path.is_file(), path
 
@@ -483,7 +483,7 @@ def test_resolve_pairs_raises_listing_all_misses(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError) as exc:
         resolve_pairs(tmp_path)
     # Must list misses, not fail on the first -- a short pair list weakens rho silently.
-    assert "28" in str(exc.value)
+    assert "29 of 29" in str(exc.value)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -627,7 +627,7 @@ Expected: PASS — 11 passed. If `test_every_onnx_exists` or `test_every_jetson_
 ```bash
 bash scripts/check.sh -m "not slow"
 git add lut/orchestrate/cpu_pairs.py tests/test_cpu_pairs.py
-git commit -m "cpu-bench: declared Jetson<->ONNX pair map (28 e2e models)
+git commit -m "cpu-bench: declared Jetson<->ONNX pair map (29 e2e models)
 
 Names are not derivable (baseline_recheck_640 -> yolo11n_pose_640.onnx),
 so the pairing is reviewed data, not a heuristic that could mis-pair
@@ -821,7 +821,7 @@ Create `lut/orchestrate/cpu_bench.py`:
 
 Every latency in this repo is a Jetson/TensorRT number, so the CP 6.2-G verdict ("grafts are
 memory-bound and strictly dominated") has never been tested against a second memory system.
-This driver measures the same 28 e2e models on x86 across a thread sweep; ``cpu_rank_report``
+This driver measures the same 29 e2e models on x86 across a thread sweep; ``cpu_rank_report``
 then asks whether the Orin's ordering survives and whether the graft penalty grows with
 bandwidth pressure.
 
@@ -1110,13 +1110,13 @@ Run:
   --out /tmp/claude-1000/-home-asil-Desktop-TFM-NAS/3a93b1ab-5075-4ada-8aff-8c44208dc67e/scratchpad/cpu_smoke \
   --configs t1 --rounds 2 --iters 1
 ```
-Expected: prints `28 models x 1 configs`, builds sessions, writes 28 rows. Inspect one:
+Expected: prints `29 models x 1 configs`, builds sessions, writes 29 rows. Inspect one:
 ```bash
 cat /tmp/claude-1000/-home-asil-Desktop-TFM-NAS/3a93b1ab-5075-4ada-8aff-8c44208dc67e/scratchpad/cpu_smoke/baseline_recheck_640__t1.json
 ```
 Expected: valid JSON with `"source": "x86_ort"`, `"config": "t1"`, `"threads": 1`, `"affinity": [0]`, `"n": 2`, and a plausible `latency_ms.p50` (tens to low hundreds of ms at 1 thread).
 
-**If session build for all 28 models exhausts RAM**, reduce scope: add `--max-sessions` that builds/destroys per round instead of holding. Record the observed RSS in the commit message either way.
+**If session build for all 29 models exhausts RAM**, reduce scope: add `--max-sessions` that builds/destroys per round instead of holding. Record the observed RSS in the commit message either way.
 
 - [ ] **Step 6: Lint, type-check, commit**
 
@@ -1502,7 +1502,7 @@ Then run (~20–40 min, resumable — safe to Ctrl-C):
 ```bash
 .venv/bin/python -m lut.orchestrate.cpu_bench 2>&1 | tee /tmp/claude-1000/-home-asil-Desktop-TFM-NAS/3a93b1ab-5075-4ada-8aff-8c44208dc67e/scratchpad/cpu_bench.log
 ```
-Expected: `28 models x 5 configs, 10 rounds x 6 iters -> n=60/cell`, then per-config progress and `wrote 28 rows` five times.
+Expected: `29 models x 5 configs, 10 rounds x 6 iters -> n=60/cell`, then per-config progress and `wrote 29 rows` five times.
 
 - [ ] **Step 3: Check for thermal drift before trusting anything**
 
@@ -1520,13 +1520,13 @@ Expected: `rows: 140 | drifted configs: none`. **If any config drifted**, re-run
 - [ ] **Step 4: Generate the report**
 
 Run: `.venv/bin/python -m lut.orchestrate.cpu_rank_report`
-Expected: a 5-row table (`t1 t2 t4 t6 all22`) with Spearman, Kendall, n=28, and the mean graft penalty per config, plus `-> data/cpu/rank_report.json`.
+Expected: a 5-row table (`t1 t2 t4 t6 all22`) with Spearman, Kendall, n=29, and the mean graft penalty per config, plus `-> data/cpu/rank_report.json`.
 
 - [ ] **Step 5: Record the result in `procedure.md`**
 
 Append a section headed `## CPU cross-device rank check (2026-07-15)` covering, in prose:
 - The question: is the Orin's ordering — and the CP 6.2-G memory-bound graft rejection — a property of the architectures or of the Orin?
-- The machine and method: Core Ultra 9 185H, 6 physical P-cores `{0,1,3,6,8,10}`, ORT 1.27 CPU EP fp32 @640, 28 e2e models × 5 configs, n=60/cell, round-robin interleaved with a canary.
+- The machine and method: Core Ultra 9 185H, 6 physical P-cores `{0,1,3,6,8,10}`, ORT 1.27 CPU EP fp32 @640, 29 e2e models × 5 configs, n=60/cell, round-robin interleaved with a canary.
 - **The measured numbers**: the ρ/τ per config and the graft-penalty curve `t1 → t2 → t4 → t6`, quoted from `rank_report.json`.
 - **The verdict**, stated as whichever the data supports: penalty grows with thread count → memory-boundness generalises, CP 6.2-G hardens; penalty ~zero at t1 → the effect is about the memory system; penalty flat and positive → suspect runtime, not bandwidth.
 - The threats verbatim from spec §9 — especially **ORT ≠ TensorRT**, which caps how hard the conclusion can be pushed.

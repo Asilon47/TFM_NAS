@@ -151,7 +151,7 @@ reviewed:
 | `graft_halp_9p0_640` | `graft_pruned/recover_graft_halp_fp32_9p0_640.onnx` | graft_pruned |
 | `graft_halp_10p4_640` | `graft_pruned/recover_graft_halp_fp32_10p4_640.onnx` | graft_pruned |
 
-**28 pairs.** Validated at load: every ONNX must exist and every Jetson row must parse, else
+**29 pairs.** Validated at load: every ONNX must exist and every Jetson row must parse, else
 hard fail — a silently short pair list would weaken ρ without announcing itself.
 
 **Deliberate exclusions.**
@@ -208,7 +208,7 @@ row's stats. **Defaults `R = 10` rounds × `k = 6` iterations → `n = 60` per c
 is accepted deliberately: CPU per-iteration cost is ~10–50× the Jetson's, and a rank check needs
 a stable p50 rather than a tight absolute CI.
 
-**Budget:** 28 models × 5 configs = **140 cells**. At an assumed 30–150 ms/iteration (fp32 @640,
+**Budget:** 29 models × 5 configs = **145 cells**. At an assumed 30–150 ms/iteration (fp32 @640,
 1–6 threads) and 65 iterations/cell, the run is ~20–40 minutes. The driver prints a measured ETA
 after round 1 and the run is resumable, so a bad estimate costs nothing.
 
