@@ -104,7 +104,9 @@ def start_stressor(conn, cfg, kind: str, *, gpu_onnx_remote: str | None,
         # one build, then continuous inference for duration_s → a steady GPU hog. gpu = a
         # compute-heavy model (yolo11s), gpubw = the element-wise bandwidth ONNX. trtexec
         # writes progress to STDOUT so `docker logs` can confirm the run phase (see readiness).
-        onnx = gpu_onnx_remote if kind == "gpu" else f"{cfg.remote_workdir}/gpu_stress/bw.onnx"
+        # CONTAINER path (gpu_stress is mounted at /job), not the host path — trtexec runs
+        # inside the container. Passing the host path makes it exit instantly (measured).
+        onnx = "/job/stressor.onnx" if kind == "gpu" else "/job/bw.onnx"
         # the bash -c wrapper is REQUIRED: a bare `trtexec` docker command gets swallowed by
         # the image entrypoint and never launches (measured 2026-07-14). Output to stdout (no
         # file redirect) so `docker logs` can confirm the run phase.
