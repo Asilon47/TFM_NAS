@@ -105,10 +105,13 @@ def start_stressor(conn, cfg, kind: str, *, gpu_onnx_remote: str | None,
         # compute-heavy model (yolo11s), gpubw = the element-wise bandwidth ONNX. trtexec
         # writes progress to STDOUT so `docker logs` can confirm the run phase (see readiness).
         onnx = gpu_onnx_remote if kind == "gpu" else f"{cfg.remote_workdir}/gpu_stress/bw.onnx"
+        # the bash -c wrapper is REQUIRED: a bare `trtexec` docker command gets swallowed by
+        # the image entrypoint and never launches (measured 2026-07-14). Output to stdout (no
+        # file redirect) so `docker logs` can confirm the run phase.
         conn.run(
             f"docker run -d --rm --runtime nvidia --name {GPU_STRESS_NAME} "
             f"-v {cfg.remote_workdir}/gpu_stress:/job {cfg.docker_image} "
-            f"trtexec --onnx={onnx} --fp16 --duration={duration_s} --iterations=0",
+            f"bash -c 'trtexec --onnx={onnx} --fp16 --duration={duration_s} --iterations=0'",
             hide=True, warn=True)
     else:
         raise ValueError(f"unknown stressor {kind!r}")
