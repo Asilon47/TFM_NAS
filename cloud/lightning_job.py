@@ -82,6 +82,9 @@ def main() -> None:
     ap.add_argument("--teamspace", default="asilarnous/data-optimization-project")
     ap.add_argument("--kacct", type=int, default=1, choices=(1, 2, 3))
     ap.add_argument("--dest", type=Path, default=None)
+    ap.add_argument("--resume-ckpt", type=Path, default=None,
+                    help="local ckpt_<tag>.pt to upload into the studio's ~/tfm_out before "
+                         "launch (cross-platform resume, e.g. a Colab-snapshotted ckpt)")
     ap.add_argument("--entry-args", default="",
                     help="run_prune_graft.py args as ONE quoted string (avoids argparse '--' "
                          "ambiguity), e.g. \"--ratios 0.50 --technique global_taylor --seed 0\"")
@@ -103,6 +106,13 @@ def main() -> None:
         print(f"[lightning] {session} status={studio.status}", flush=True)
         studio.upload_file(str(token), remote_path="tfm_secrets/secrets/access_token")
         studio.upload_file(str(user), remote_path="tfm_secrets/secrets/kaggle_username")
+        if a.resume_ckpt:
+            if not a.resume_ckpt.exists():
+                raise SystemExit(f"--resume-ckpt {a.resume_ckpt} not found")
+            studio.run("mkdir -p ~/tfm_out")
+            studio.upload_file(str(a.resume_ckpt),
+                               remote_path=f"tfm_out/{a.resume_ckpt.name}")
+            print(f"[lightning] uploaded resume ckpt {a.resume_ckpt.name}", flush=True)
         import shlex
         entry = shlex.split(a.entry_args)
         if not entry:
