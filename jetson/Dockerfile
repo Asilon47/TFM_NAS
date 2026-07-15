@@ -20,10 +20,12 @@ RUN python3 -c "import sys,torch; v=tuple(int(x) for x in torch.__version__.spli
 
 # Add the NAS + BO stack under a torch constraint so botorch / gpytorch / ofa never upgrade
 # the Jetson's torch (the same pin discipline kaggle/run.py uses). scipy / pyyaml / numpy /
-# Pillow / cv2 already come from the ultralytics base.
+# Pillow / cv2 already come from the ultralytics base. `onnx` is explicit: MODE=prune_recover
+# exports a deploy ONNX per point AFTER the multi-hour train, and a missing exporter there
+# costs the whole ledger row (colab/run_prune_graft.py pins it for the same reason).
 RUN python3 -c "import torch,pathlib; pathlib.Path('/tmp/constraints.txt').write_text('torch=='+torch.__version__+'\n')" \
  && pip install --no-cache-dir --break-system-packages -c /tmp/constraints.txt \
-      ofa==0.1.0.post202307202001 botorch gpytorch gdown optuna 'torch-pruning>=1.4,<2'
+      ofa==0.1.0.post202307202001 botorch gpytorch gdown optuna 'torch-pruning>=1.4,<2' onnx
 
 WORKDIR /workspace/TFM_NAS
 COPY . /workspace/TFM_NAS
