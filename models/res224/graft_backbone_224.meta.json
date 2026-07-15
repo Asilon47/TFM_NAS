@@ -1,0 +1,73 @@
+{
+  "arch": {
+    "ks": [
+      3,
+      7,
+      3,
+      7,
+      3,
+      7,
+      3,
+      3,
+      3,
+      3,
+      5,
+      3,
+      5,
+      5,
+      7,
+      7,
+      3,
+      7,
+      3,
+      3
+    ],
+    "e": [
+      4,
+      4,
+      6,
+      4,
+      4,
+      4,
+      3,
+      4,
+      6,
+      6,
+      6,
+      4,
+      6,
+      6,
+      3,
+      4,
+      4,
+      3,
+      6,
+      4
+    ],
+    "d": [
+      2,
+      2,
+      4,
+      3,
+      3
+    ]
+  },
+  "provenance": {
+    "source": "/home/asil/Desktop/TFM_NAS/state/winner_v1/winner.json",
+    "d": [
+      2,
+      2,
+      4,
+      3,
+      3
+    ]
+  },
+  "backbone_only": true,
+  "neck": null,
+  "imgsz": 224,
+  "opset": 12,
+  "params": 2400256,
+  "flops": 503605952,
+  "onnx": "graft_backbone_224.onnx",
+  "timestamp": "2026-07-15T19:16:20Z"
+}
