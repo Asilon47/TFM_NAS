@@ -1,0 +1,20 @@
+Do not fuse expression kernels into convolutions as custom activations.
+
+The CHW SQ8 depthwise-conv kernel set has no KOP_CUSTOM variant, so any
+MBv3-style graph (h-swish on a DW conv) dies in GenTile with "Can't find a
+matching Convolution basic kernel" (CP 10.1, S75). Standalone expression
+kernels always generate; convs keep their standard activation fusions.
+Uniform standalone expressions are also the fairer latency-oracle shape:
+every candidate arch pays activation cost through the same kernel path.
+
+--- a/tools/nntool/nntool/graph/matches/matchers/fuse_gap_convs.py
++++ b/tools/nntool/nntool/graph/matches/matchers/fuse_gap_convs.py
+@@ -43,8 +43,7 @@ VALID_ACTIVATIONS_SQ8 = (
+     SigmoidNode,
+     TanHNode,
+-    HTanHNode,
+-    ExpressionFusionNode
++    HTanHNode
+ )
+ 
+ VALID_FUSIONS_SQ8 = (

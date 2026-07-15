@@ -75,7 +75,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-dev \
 RUN pip3 install --no-cache-dir "numpy==1.23.5" "Cython>=0.29.21" "kmeans1d==0.4.0" \
     && pip3 install --no-cache-dir --no-build-isolation -r tools/nntool/requirements.txt
 
-RUN printf 'gap_sdk=%s\ntoolchain=%s\ntiler=libtile.4.3.5.a sha256=541f4978f3e55c6650207b3f8eebcfe0d311acd3320f81eb0a59890ec928c728\n' \
-        "${GAP_SDK_SHA}" "${TOOLCHAIN_SHA}" > /IMAGE_PROVENANCE
+# Local nntool patches (pure python — nothing rebuilds, so this layer is
+# deliberately last). 0001: stop fusing expression kernels into convs; the
+# CHW SQ8 DW-conv set has no KOP_CUSTOM kernel (see the patch header).
+COPY patches/ /opt/gap_sdk/mcu-patches/
+RUN cd /opt/gap_sdk && for p in mcu-patches/*.patch; do patch -p1 --forward < "$p"; done
+
+RUN printf 'gap_sdk=%s\ntoolchain=%s\ntiler=libtile.4.3.5.a sha256=541f4978f3e55c6650207b3f8eebcfe0d311acd3320f81eb0a59890ec928c728\npatches=%s\n' \
+        "${GAP_SDK_SHA}" "${TOOLCHAIN_SHA}" "$(ls /opt/gap_sdk/mcu-patches/)" > /IMAGE_PROVENANCE
 
 CMD ["/bin/bash"]
