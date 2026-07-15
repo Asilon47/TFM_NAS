@@ -84,4 +84,9 @@ runs/
 wandb/
 *.tfevents.*
 
-dataset.zip.venv-cloud/
+dataset.zip
+.venv-cloud/
+
+# Recovered proprietary AutoTiler blob (GAP8 toolchain) — fetched +
+# SHA-verified on demand by mcu/fetch_tiler.sh, never tracked (EULA).
+mcu/vendor/
