@@ -46,6 +46,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WINNER = ROOT / "state" / "winner_v1" / "winner.json"
 
+# The raw head (``head.training = True``) returns a dict — the same one distill/kd_loss.py
+# consumes (KD_KEYS = boxes/scores/kpts; feats carried but not distilled). ONNX flattens it in
+# insertion order, so these names must track that order exactly or they mislabel the tensors.
+RAW_HEAD_OUTPUTS = ["boxes", "scores", "feats_p3", "feats_p4", "feats_p5", "kpts"]
+
 
 def load_arch(
     winner: Path | None = None,
@@ -80,13 +85,24 @@ def load_arch(
 
 
 def _legacy_export(module: Any, dummy: Any, out: Path, *, opset: int,
-                   output_names: list[str]) -> None:
-    """torch.onnx.export forced onto the legacy TorchScript path where the knob exists."""
+                   output_names: list[str], preserve_training: bool = False) -> None:
+    """torch.onnx.export forced onto the legacy TorchScript path where the knob exists.
+
+    ``preserve_training``: export with ``TrainingMode.PRESERVE``. The default
+    (``TrainingMode.EVAL``) re-applies ``.eval()`` to every submodule at trace time, which
+    silently wipes a per-module ``head.training = True`` — the raw-head export then traces
+    Ultralytics' *non-export eval* branch instead, whose ``kpts_decode`` does an in-place
+    strided assign (``y[:, 2::3] = ...``) that becomes a ScatterND nntool cannot execute.
+    PRESERVE keeps each module's flag as set: the head emits raw maps, BN (never flipped —
+    ``.training =`` does not recurse) still exports in eval.
+    """
     import torch
 
     kwargs: dict[str, Any] = {}
     if "dynamo" in inspect.signature(torch.onnx.export).parameters:
         kwargs["dynamo"] = False
+    if preserve_training:
+        kwargs["training"] = torch.onnx.TrainingMode.PRESERVE
     torch.onnx.export(
         module, dummy, str(out), opset_version=opset, do_constant_folding=True,
         input_names=["images"], output_names=output_names, dynamic_axes=None, **kwargs)
@@ -134,6 +150,7 @@ def export_grafted_onnx(
     provenance: dict | None = None,
     prebuilt: Any = None,
     mcu_act: bool = False,
+    raw_head: bool = False,
 ) -> tuple[Path, dict]:
     """Build the model for ``arch`` and export it (static ``1×3×imgsz×imgsz``, batch 1).
 
@@ -187,6 +204,16 @@ def export_grafted_onnx(
 
     if backbone_only:
         output_names = ["p3", "p4", "p5"]
+    elif raw_head:
+        # Raw per-stride head maps, no decode. `training = True` on the head module alone
+        # selects its raw-map branch while every BN stays in eval — the same per-module flag
+        # trick distill/kd_loss.load_frozen_teacher uses. The decode postprocess (DFL softmax,
+        # anchor concat, strided reshapes) is what breaks nntool's adjust_order for BOTH
+        # families (CP 10.1) and does not belong in a tiled MCU graph anyway: on GAP8 it runs
+        # in C on the fabric controller, not through AutoTiler.
+        head = module.model[-1]
+        head.training = True
+        output_names = RAW_HEAD_OUTPUTS
     else:
         head = module.model[-1]
         head.export = True        # deploy graph: the single decoded (1, 4+nc+3*nkpt, 8400)
@@ -197,7 +224,8 @@ def export_grafted_onnx(
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with torch.no_grad():
-        _legacy_export(module, dummy, out, opset=opset, output_names=output_names)
+        _legacy_export(module, dummy, out, opset=opset, output_names=output_names,
+                       preserve_training=raw_head)
 
     try:
         flops, _ = count_flops_forward(module, (1, 3, imgsz, imgsz))
@@ -210,6 +238,7 @@ def export_grafted_onnx(
         "backbone_only": backbone_only,
         "neck": neck,
         "mcu_act": swapped_acts if mcu_act else None,
+        "raw_head": raw_head,
         "imgsz": imgsz,
         "opset": opset,
         "params": sum(p.numel() for p in module.parameters()),
@@ -241,6 +270,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--mcu-act", action="store_true",
                     help="CP 10.1: swap OFA Hswish/Hsigmoid for HardSigmoid-based forms "
                          "(same function; ops the GAP8 nntool importer supports)")
+    ap.add_argument("--raw-head", action="store_true",
+                    help="CP 10.1: emit raw per-stride head maps instead of the decoded "
+                         "tensor (the decode runs in C on an MCU; it breaks nntool)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
 
@@ -249,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"arch: d={arch['d']}  provenance={prov}")
     path, meta = export_grafted_onnx(
         arch, args.out, backbone_only=args.backbone_only, neck=args.neck, imgsz=args.imgsz,
-        opset=args.opset, provenance=prov, mcu_act=args.mcu_act)
+        opset=args.opset, provenance=prov, mcu_act=args.mcu_act, raw_head=args.raw_head)
     kind = ("backbone-only (P3/P4/P5)" if args.backbone_only
             else f"end-to-end graft (neck={args.neck})" if args.neck else "end-to-end graft")
     print(f"exported {kind} -> {path}  (params {meta['params']:,}, flops {meta['flops']}, "

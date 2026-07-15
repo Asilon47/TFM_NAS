@@ -22,16 +22,18 @@ for m in "${MODELS[@]}"; do
     mkdir -p "${build_host}"
     # model_rules.mk runs `nntool -s SCRIPT model.onnx`: the model arrives via
     # argv (no `open` line) and save_state must match MODEL_STATE.
-    # Order matters: --scale8 first fuses convs with their STANDARD
-    # activations; expression_matcher then sweeps the leftover Mul/HSigmoid
-    # chains (x*hardsigmoid(x), x*sigmoid(x)) into standalone expression
-    # kernels. Run the other way, fuse_gap_convs attaches expressions to
-    # convs as KOP_CUSTOM, and the CHW DW-conv kernel set has no custom-act
-    # variant ("Can't find a matching Convolution basic kernel", S75).
+    # ONE fusions call listing both groups: `fusions` re-runs adjust_order on
+    # every invocation, and a second adjust_order over a detection head's
+    # reshape/transpose set raises "axes don't match array" (it killed the
+    # full graft AND yolo11n identically). -a takes nargs='+' and builds a
+    # single match group, so adjust_order runs once.
+    # expression_matcher is required: --scale8 alone leaves the h-swish
+    # Mul/HSigmoid chains without an AT kernel ("Don't know how to generate
+    # kernel for parameter type ... mul"). Image patch 0001 keeps those
+    # expressions OUT of the convs (no KOP_CUSTOM DW kernel exists).
     cat > "${build_host}/nntool_script" <<EOF
 adjust
-fusions --scale8
-fusions -a expression_matcher
+fusions -a scaled_match_group expression_matcher
 aquant /workspace/TFM_NAS/data/mcu/probes/aq_sample/*.jpg -H 224 -W 224 -T
 save_state ${build_ctr}/${m}
 EOF

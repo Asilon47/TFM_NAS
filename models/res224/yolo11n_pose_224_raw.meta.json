@@ -1,0 +1,14 @@
+{
+  "donor": "/home/asil/Desktop/TFM_NAS/runs/pose/experiments/gate_baseline/weights/best.pt",
+  "nc": 1,
+  "kpt_shape": [
+    8,
+    3
+  ],
+  "raw_head": true,
+  "imgsz": 224,
+  "opset": 12,
+  "params": 2704443,
+  "onnx": "yolo11n_pose_224_raw.onnx",
+  "timestamp": "2026-07-15T20:03:01Z"
+}
