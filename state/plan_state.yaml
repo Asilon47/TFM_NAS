@@ -1,5 +1,8 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
+# 2026-07-15 PIVOT ACTIVE — WS1 = winner-v2-OFA close (AGX, jetson/ MODE=prune_recover) +
+# WS2 = Phase 10 MCU retarget (D5). The numbered checkpoint path is paused at 5.3; read the
+# notes tail + procedure.md "PIVOT 2026-07-15" before resuming anything.
 current_checkpoint: "5.3"   # CP 5.2 CLOSED 2026-07-07 (V3 PAN nano-neck wins the ablation: 0.6287±0.0078 vs control 0.6027, +0.026 — fusion is the lever, the adapter-init prior is an honest null; see procedure.md "CP 5.2 CLOSED"). STAGE 0 COMPLETE same day — THE HONEST E2E TRUTH (procedure.md "STAGE 0 COMPLETE"): baseline re-check 12.75ms fp32 (matches the anchor exactly); winner-v1 e2e 17.69ms fp32 (+38.7% SLOWER — the "12% faster" headline is RETIRED); backbone alone 13.85 vs 11.208 sum -> the @224 calibration INVERTS at 640 (x1.236, DRAM-bound); pose adapter+head offset 3.84ms (data/pose_stem_head_offset.json); fp16 deploy precision WIDENS the gap (baseline 7.58 = 1.68x, winner 12.37 = only 1.43x, +63% — depthwise vs tensor cores; cost.py's R4.3 note predicted this). No LUT-frontier arch can beat the baseline e2e (fastest sum 10.15 -> 16.11 measured; fallbacks benched + stamped in winner.json's additive e2e block, winner_beats_baseline_e2e=false). THE GOOD NUMBER: V3 fp16 = 12.75ms = 78 FPS, MEETS the 60-FPS (16.7ms) deployment bar with 24% headroom. NEXT = user decision on the thesis framing (accuracy-first at 60-FPS-deployable latency + transfer-gap findings chapter vs alternatives), then CP 5.3 AGX full-FTs of V3/V2 (jetson deploy.sh MODE=full_finetune, FT_* selectors ready). LUT-summed latencies are RANKING-ONLY forever.
 last_completed: "5.2"       # CP 5.2 graft-interface ablation — V3 (PAN nano-neck) wins: 0.6287±0.0078 proxy, +0.026 over the neck-less control
 completed:
@@ -391,3 +394,18 @@ notes: |
   were a fence artifact. Both pruning + width-search reach the same measured Pareto boundary
   {r20..w22..w25}. Search program CLOSED. Remaining lever to beat baseline = recipe-parity + KD
   (Phases 7-8) on a frontier point, NOT more search. See procedure.md "WAVE-2 VERDICT".
+
+  **PIVOT 2026-07-15 (no checkpoint advance; current stays 5.3):** user constraint — the
+  deployable model must be NAS-born (not YOLO / pruned YOLO). "Beat 0.877 at n's latency" and
+  "n<->s Pareto band" are CLOSED by the existing record (memory-bound law: pure-OFA fp16 floor
+  8.19 ms > 7.75 baseline; band height 0.0045 < 0.010 validator-config noise on the 140-img
+  val). Direction (AskUserQuestion): (WS1) close winner-v2-OFA on the Orin — fresh v2_act292
+  (the l4_ Lightning result 0.7637 is the POISONED cross-platform resume, discarded; the Colab
+  w1a restart died preempted) + minact_arch+u30 probe + champion de-noise seeds {1,2}, ALL on
+  the AGX (jetson/ MODE=prune_recover + PG_* selectors, commit d3dbd52), then ONE Nano session
+  (fp32 + median-of-3 fresh-timing-cache fp16), stamp state/winner_v2_ofa/winner.json;
+  (WS2) NEW Phase 10 — MCU retarget at a GAP8-class nano-drone target (D5 ACTIVATED;
+  sim-first NNTool/AutoTiler/GVSOC oracle; bar = on-device downscaled int8 yolo11n +
+  published nano-gate nets; new module dir mcu/). ALL training on the AGX for now (cloud
+  pull-only; Nano measurement-only). Incumbent champion = r50_gtay no-KD 0.7947 @ measured
+  10.23/7.48. See procedure.md "PIVOT 2026-07-15" + PROJECT_PLAN.md Phase 10.

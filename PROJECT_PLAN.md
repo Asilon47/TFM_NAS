@@ -647,6 +647,54 @@ winner on a Jetson.
 
 ---
 
+## Phase 10 — MCU retarget of the NAS (added 2026-07-15; resolves D5)
+
+**Why.** The Orin record closed "beat yolo11n with a NAS-born model" (the deliverable
+constraint of the 2026-07-15 pivot): the OFA family is memory-bound on the Nano (pure-OFA
+fp16 floor 8.19 ms > baseline 7.75 ms) and every alternative supernet was screened out by
+measurement. On a GAP8-class nano-drone target (Crazyflie AI-deck 1.1: 8+1 RISC-V cores,
+512 KB L2, 8 MB HyperRAM, 320×320 gray HM01B0, int8) the physics invert — depthwise MBv3 is
+the native efficient family and dense YOLO is out of budget — so the NAS deliverable is
+expected to dominate outright. Prior art (arXiv 2312.08991, 2503.05251) proves gate-task
+feasibility on this exact deck (~27 Hz onboard); the novelty is the hardware-aware search.
+**Latency oracle:** GAP8 toolchain simulation (NNTool/AutoTiler per-layer cycles, GVSOC) —
+ranking-only, the LUT discipline verbatim; ST Edge AI Developer Cloud's board farm is the
+measured, no-purchase fallback. **All training on the AGX** (2026-07-15 compute decision).
+New module dir: `mcu/`.
+
+- **CP 10.1 — Toolchain bring-up + feasibility probe.** GAP SDK via Docker (pinned); one
+  OFA-MBv3 subnet ONNX @ low res AND a downscaled yolo11n-pose (imgsz ≈ 160–192) through
+  NNTool int8 → AutoTiler cycle report → GVSOC run.
+  - **DoD:** reproducible cycle numbers (or a documented infeasibility — itself the
+    baseline result) for both, scripted under `mcu/`.
+- **CP 10.2 — Task re-scope + dataset conversion + reference trains.** 640-RGB →
+  grayscale 320²/160² with rescaled keypoints + nearest-gate selection; head =
+  Frontnet-style single-gate 8-kpt regression (+ visibility); metrics pinned BEFORE any
+  comparison: mean corner error (px) + PCK@t primary (head-agnostic), OKS-mAP secondary.
+  References trained on the AGX: downscaled yolo11n-pose + one OFA subnet + tiny head.
+  - **DoD:** both references trained + evaluated on the converted val, numbers recorded.
+- **CP 10.3 — GAP8 latency LUT.** Append-only rows keyed per block at the new resolution
+  (`source=gap8_nntool|gap8_gvsoc`, `precision=int8`; device fields documented in
+  `lut/docs/schema.md`; golden row_key hashes untouched); depth-binned additivity check vs
+  whole-subnet GVSOC (the CP 2.2 mirror).
+  - **DoD:** reachable-block coverage + ranking fidelity ρ ≥ 0.9 vs whole-net sim on ~20
+    subnets (fallback on additivity failure: whole-net cycle model,
+    `search/latency_model.py` pattern).
+- **CP 10.4 — The search.** BO/TPE over the OFA space: maximize accuracy s.t. cycles/frame
+  ≤ the racing budget (15–30 FPS at 175 MHz) + AutoTiler L2/HyperRAM feasibility as hard
+  constraints; candidates full-train on the AGX (cheap at this scale — no short-FT proxy);
+  de-noise top-k at seeds {1,2,3} before any pick (standing discipline).
+  - **DoD:** the de-noised winner Pareto-dominates the on-device YOLO baseline (lower
+    latency at ≥ its accuracy) + honest literature placement (matched-task caveats stated).
+- **CP 10.5 — Verification + the cross-device chapter.** GVSOC full-run verification
+  (cycles, memory) of winner + baseline; energy = datasheet-power × time (labeled
+  estimate); the Orin-TRT / x86-ORT / GAP8-sim ranking table (joins `models/README.md`,
+  `data/cpu/rank_report.json`, and the new sim numbers).
+  - **DoD:** verification reproduces CP 10.4's verdict; D5 marked
+    resolved-by-demonstration (sim-first). Hardware-in-the-loop = explicit future work.
+
+---
+
 ## Cross-cutting practices
 
 - **Per-session resume note.** At the end of each session, append to
@@ -716,9 +764,12 @@ winner on a Jetson.
   sensitivity sweep. Formula in `search/objective.py`; λ/μ *numbers* land at CP 3.3 (need the @640
   latency scale). See procedure.md "D4 RESOLVED".
 
-- **D5 — Multi-device extension** (v3, out of scope for v1/v2).
-  Current LUT is Jetson-only. Future: per-device LUTs + a
-  device-conditioned GP.
+- **D5 — Multi-device extension** — **ACTIVATED 2026-07-15 → Phase 10** (user decision;
+  see `procedure.md` "PIVOT 2026-07-15"). Evidence that motivated it: the 2026-07-15 CPU
+  cross-device rank check (ranks transfer, ρ 0.888–0.939; the graft penalty halves on x86 —
+  a memory-system effect). Phase 10 retargets the search at a GAP8-class MCU with a NEW
+  sim-sourced LUT (measured rows are never transferred across devices). Marked
+  resolved-by-demonstration (sim-first) when CP 10.5 lands.
 
 ## Timeline estimate
 
@@ -735,12 +786,14 @@ Rough, ~4 hours per session:
 | 7 | 1–2 | Parity long-train (AGX wall-clock) |
 | 8 | 2–3 | Distillation: teacher setup + full train |
 | 9 | 1–2 | TRT export, bundle |
-| **Total** | **17–26 sessions** | |
+| 10 | 4–6 | GAP SDK bring-up + MCU search (sim) |
+| **Total** | **21–32 sessions** | |
 
 ## Non-goals (whole project)
 
 - Training an OFA supernet from scratch.
-- Cross-device LUT transfer (until v3).
+- Cross-device LUT transfer — measured rows never cross devices; Phase 10 builds a NEW
+  sim-sourced LUT for the MCU target instead (2026-07-15).
 - Beating SOTA absolute accuracy — target Pareto dominance over
   MobileNetV3 / EfficientNet-B0 at Jetson latency.
 - Online / real-time NAS. Offline: search, commit, deploy.

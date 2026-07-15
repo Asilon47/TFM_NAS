@@ -3900,3 +3900,82 @@ fence-artifact discipline (both caught); (4) the cross-method frontier confirmat
 search did NOT yield: a from-scratch net that Pareto-dominates the COCO-pretrained baseline
 (from-scratch accuracy caps ~0.87 < 0.877). **The remaining lever to actually beat the baseline
 is recipe-parity training + KD (Phases 7–8) on a frontier point — NOT more architecture search.**
+
+## Record backfill — winner-v2-OFA wave-1 tail + CPU cross-device rank check (2026-07-13 → 15)
+
+procedure.md went silent after the WAVE-2 VERDICT; this entry restores continuity (full detail
+lives in the named artifacts).
+
+- **Winner-v2-OFA program (2026-07-13/14).** User decision 2026-07-13: the OFA-graft family
+  must produce the deliverable — beat the baseline on BOTH latency axes (12.74 fp32 / 7.75 fp16
+  @640), accuracy maximized; dense/prune-baseline families out of the deliverable path. Cloud
+  infra built + committed (`cloud/colab_job.sh`, `cloud/lightning_job.py`,
+  `colab/run_prune_graft.py`, `.venv-cloud`; detached nohup launches, 10-ep resume ckpts).
+  Wave-1 (100 ep, global_taylor, KD teacher = gate donor, seed 0): **r50_gtay no-KD 0.7947**
+  (incumbent champion; measured 10.23 fp32 / 7.48 fp16 — under both bars), r50_gtay+KD 0.7917,
+  **v2_act273+KD 0.7827** (act 269 MB verified; pred 9.30/6.73). **v2_act292+KD:** a
+  cross-platform-resumed run (Colab ckpt → Lightning; torch 2.11 vs 2.8 pick different taylor
+  channels) gave a POISONED 0.7637 — discarded (`data/lightning_out/l4_v2_act292/` is that
+  run); the fresh Colab restart (session `w1a`) died to the ~20-min free-tier preemptions,
+  leaving only a mid-run ckpt (`data/colab_out/w1a/ckpt_v2_act292_kd.pt` — unusable off its
+  platform). KD measured NULL on these small taylor cuts. Owed at that point: fresh v2_act292,
+  the minact_arch+u30 probe, champion de-noise seeds {1,2}, one Nano stamp session.
+- **CPU cross-device rank check (2026-07-14/15; commits cd679af…309e55f).** 29 models × 5
+  thread configs on the laptop (Ultra 9 185H, onnxruntime CPU EP, fp32 @640, interleaved,
+  spinning off after d88d440's 18.6× spin-wait artifact): **ranks transfer across devices**
+  (Spearman ρ 0.888 @ t1 → 0.939 @ t6); the **graft penalty halves on x86** (+39 % Jetson →
+  +13–21 %) and its params-residual RISES with thread count (5.9 % → 14.4 %) ⇒ a
+  memory-system effect, not intrinsic to the architecture; the dense_nas family is the
+  compute-bound mirror (48.9 % → 37.5 %). Report:
+  `docs/cpu_cross_device_rank_check_2026-07-15.md` (committed 984718a). Same-day
+  `models/res224/` exports (graft_noneck / dense_ctrl_n / yolo11n_pose @224, untracked) are a
+  first low-res probe. Worktree note: the contention-bench harness
+  (`lut/bench/e2e_run.py`, `lut/orchestrate/{contention_bench,e2e_bench}.py`,
+  `tests/test_contention_bench.py`) and the CPU report doc sit deleted-unstaged — read as
+  superseded by the CPU check; commit pending user confirmation.
+
+## PIVOT 2026-07-15 — NAS-only deliverable; options A/B closed by the record; AGX close + Phase 10 MCU retarget
+
+User asked for a pivot after the search program's close ("making a model better than yolo11n
+failed"): (A) beat yolo11n accuracy at its latency, (B) a Pareto front between yolo11n and
+yolo11s, or (C, added mid-briefing) "search for something like the Crazyflie AI-deck".
+**Binding constraint (user): the deployable model must come from the NAS — not YOLO, not a
+pruned YOLO.** The OFA-graft family (incl. its pruning-as-search stage) qualifies;
+dense-scaled yolo11, pruned yolo11n, and the per-stage-width yolo NAS do not.
+
+Verdicts, all from the existing measured record — no new runs needed to close them:
+
+- **A is closed on the Orin.** The physical law (fp16 ms ≈ 1.200 + 0.0205·act_MB) puts the
+  pure-OFA floor at 340 MB ≈ 8.19 ms > the 7.75 ms baseline ⇒ width pruning mandatory; the
+  best measured graft under the bar is r50_gtay **0.795 @ 7.48 fp16** ⇒ +8 pts needed where
+  the un-pulled levers (donor-grade long recipe, feature-KD, necks) plausibly buy +2–3.
+  Unpruned grafts cap at 0.846 @ ~18 ms.
+- **B is closed harder.** The n↔s band is **+0.0045 mAP50-95 tall** (yolo11s 0.8819 @ 21.69;
+  at mAP50 yolo11s is BELOW yolo11n, 0.9389 vs 0.9398) while the 140-img val moves **+0.010 on
+  a validator-config change alone** (0.8774 CPU vs 0.8869 CUDA, same weights); the graft
+  ceiling ~0.86 < the band floor 0.877. Any claim inside that band is statistically empty.
+- **C is where the NAS family's physics flip.** The CPU rank check just measured the graft
+  deficit as memory-system-dependent; on a GAP8-class MCU (AI-deck 1.1: 8+1 RISC-V, 512 KB L2,
+  8 MB HyperRAM, 320×320 gray HM01B0, int8, ~GOPS) depthwise MBv3 is the native efficient
+  family and yolo11n at any useful resolution is an order of magnitude out of budget ⇒ the
+  NAS deliverable is *expected* to Pareto-dominate. Task feasibility on this exact deck is
+  published (sim-to-real nano-drone racing; ~27 Hz map-free gate-to-gate CNN onboard —
+  arXiv 2312.08991, 2503.05251); the novelty is the hardware-aware search.
+
+**Decisions (AskUserQuestion, 2026-07-15):** direction = **close winner-v2-OFA on the Orin**
+(days; owed tail) **+ NEW Phase 10 — MCU retarget of the NAS** (activates D5); timeline = no
+hard deadline (WS1 → WS2 at natural depth); MCU latency oracle = **sim-first
+NNTool/AutoTiler/GVSOC** (ranking-only, the LUT discipline; ST Edge AI Developer Cloud's free
+measured board farm = fallback); MCU bar = **on-device downscaled int8 yolo11n + published
+nano-gate nets as external anchors**; **all training for now on the AGX** (`jetson/` kit) —
+cloud platforms are pull-only for finished runs, the Orin Nano stays measurement-only. The
+Orin accuracy-lift ablation and any new Orin search space were briefed and NOT selected.
+
+**Built with this entry (d3dbd52):** `jetson/run_search.py` MODE=**prune_recover** +
+`jetson/deploy.sh` PG_* passthrough, `prune/` added to the sync allowlist, `--status` prints
+the recovery ledger; 6 contract tests (`tests/test_run_search_prune_recover.py`), check.sh
+green (577). **AGX queue for the close:** (1) fresh v2_act292
+(`MODE=prune_recover PG_SPEC=prune/specs/v2_act292.json`), (2) minact_arch+u30 probe,
+(3) champion de-noise seeds {1,2}, (4) ONE Nano session (fp32 + median-of-3
+fresh-timing-cache fp16), (5) stamp `state/winner_v2_ofa/winner.json` + models/README.md.
+Phase 10 checkpoints CP 10.1–10.5 in PROJECT_PLAN.md.
