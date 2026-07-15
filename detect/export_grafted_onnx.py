@@ -92,6 +92,36 @@ def _legacy_export(module: Any, dummy: Any, out: Path, *, opset: int,
         input_names=["images"], output_names=output_names, dynamic_axes=None, **kwargs)
 
 
+def _swap_ofa_hard_activations(module: Any) -> int:
+    """Replace OFA's ``Hswish``/``Hsigmoid`` with export-native equivalents (returns count).
+
+    OFA writes h-swish as explicit ``x * relu6(x + 3) / 6``, which ONNX-exports as an
+    Add/Clip/Div/Mul chain that crashes the GAP8 nntool's ``fuse_op_activation`` matcher
+    (CP 10.1 probe, 2026-07-15). ``x * F.hardsigmoid(x)`` is the same piecewise-linear
+    function but exports as ``Mul(x, HardSigmoid(x))`` — HardSigmoid is a v6 ONNX op with
+    a dedicated nntool importer handler (the ONNX importer has no HardSwish handler, so
+    ``nn.Hardswish`` is not an option). Opt-in via ``mcu_act=``: the default TRT-bound
+    graphs keep the decomposed form every Nano latency was measured on.
+    """
+    import torch
+    from ofa.utils.pytorch_modules import Hsigmoid, Hswish
+
+    class _HSwishAsHSigMul(torch.nn.Module):
+        def forward(self, x: Any) -> Any:
+            return x * torch.nn.functional.hardsigmoid(x)
+
+    swapped = 0
+    for parent in module.modules():
+        for name, child in parent._modules.items():
+            if isinstance(child, Hswish):
+                parent._modules[name] = _HSwishAsHSigMul()
+                swapped += 1
+            elif isinstance(child, Hsigmoid):
+                parent._modules[name] = torch.nn.Hardsigmoid()
+                swapped += 1
+    return swapped
+
+
 def export_grafted_onnx(
     arch: dict,
     out: Path,
@@ -103,6 +133,7 @@ def export_grafted_onnx(
     supernet: Any = None,
     provenance: dict | None = None,
     prebuilt: Any = None,
+    mcu_act: bool = False,
 ) -> tuple[Path, dict]:
     """Build the model for ``arch`` and export it (static ``1×3×imgsz×imgsz``, batch 1).
 
@@ -150,6 +181,10 @@ def export_grafted_onnx(
                 for pname, param in neck_module.named_parameters():
                     if pname.startswith("g"):
                         param.fill_(1.0)  # live fusion paths — see the docstring
+    swapped_acts = _swap_ofa_hard_activations(module) if mcu_act else 0
+    if mcu_act:
+        print(f"[mcu-act] swapped {swapped_acts} OFA hard activations -> HardSigmoid forms")
+
     if backbone_only:
         output_names = ["p3", "p4", "p5"]
     else:
@@ -174,6 +209,7 @@ def export_grafted_onnx(
         "provenance": provenance or {},
         "backbone_only": backbone_only,
         "neck": neck,
+        "mcu_act": swapped_acts if mcu_act else None,
         "imgsz": imgsz,
         "opset": opset,
         "params": sum(p.numel() for p in module.parameters()),
@@ -202,6 +238,9 @@ def main(argv: list[str] | None = None) -> int:
                          "constant folding cannot elide the fusion paths)")
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--opset", type=int, default=17)
+    ap.add_argument("--mcu-act", action="store_true",
+                    help="CP 10.1: swap OFA Hswish/Hsigmoid for HardSigmoid-based forms "
+                         "(same function; ops the GAP8 nntool importer supports)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
 
@@ -210,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"arch: d={arch['d']}  provenance={prov}")
     path, meta = export_grafted_onnx(
         arch, args.out, backbone_only=args.backbone_only, neck=args.neck, imgsz=args.imgsz,
-        opset=args.opset, provenance=prov)
+        opset=args.opset, provenance=prov, mcu_act=args.mcu_act)
     kind = ("backbone-only (P3/P4/P5)" if args.backbone_only
             else f"end-to-end graft (neck={args.neck})" if args.neck else "end-to-end graft")
     print(f"exported {kind} -> {path}  (params {meta['params']:,}, flops {meta['flops']}, "

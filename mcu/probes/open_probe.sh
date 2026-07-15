@@ -13,9 +13,10 @@ OUT_DIR="${MCU_DIR}/../data/mcu/probes"
 mkdir -p "${OUT_DIR}"
 
 # Probe-A ladder first (full graft op17 -> op12 -> backbone-only), then the
-# yolo baselines (probe B).
+# yolo baselines (probe B). Positional args override the model list.
 MODELS=(graft_noneck_224 graft_noneck_224_op12 graft_backbone_224
         yolo11n_pose_224 dense_ctrl_n_224)
+[[ $# -gt 0 ]] && MODELS=("$@")
 
 for m in "${MODELS[@]}"; do
     log="${OUT_DIR}/${m}.open.log"
