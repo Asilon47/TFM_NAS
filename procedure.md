@@ -3979,3 +3979,94 @@ green (577). **AGX queue for the close:** (1) fresh v2_act292
 (3) champion de-noise seeds {1,2}, (4) ONE Nano session (fp32 + median-of-3
 fresh-timing-cache fp16), (5) stamp `state/winner_v2_ofa/winner.json` + models/README.md.
 Phase 10 checkpoints CP 10.1–10.5 in PROJECT_PLAN.md.
+
+## CP 10.1 in progress — GAP8 toolchain recovered; both families compile (2026-07-15)
+
+Ran on the laptop CPU, in parallel with the (user-run) Colab teacher train and while the AGX
+queue waits on `XAVIER_HOST`. Everything here is sim/host-side — no GPU, no Nano.
+
+**The toolchain had to be recovered before any of it could run.** GreenWaves Technologies is
+defunct: both `greenwaves-technologies.com` domains fail DNS (checked 2026-07-15), and the
+AutoTiler core was only ever distributed via `tools/autotiler_v3/get_tiler.py` — registration
+→ a personal download URL emailed from their now-dead server. The public guidance today is
+that deploying NNs via gap_sdk "is not possible unless you already have the file". Everything
+else survives on GitHub (gap_sdk frozen at `a230265`, 2024-01-16; `gap_riscv_toolchain_ubuntu`
+frozen 2024-03; nntool + gvsoc in-tree). The single closed piece is `LibTile.a`, an x86-64
+*host* library (the chip-side CNN kernels/generators are open).
+
+Recovery: a sweep of all 85 gap_sdk forks found **two independent forks carrying a
+byte-identical `libtile.4.3.5.a`** — exactly the `TILER_VER` gap_sdk master pins:
+`edoardobonura/gap_sdk` and `boomer319/gap_sdk`, both sha256 `541f4978…`, verified a real
+unstripped x86-64 ar archive. (`cbezaitis/gap_sdk` has an older 976 KB variant needing a
+debug stub — not used; but its 2026-03 Dockerfile + published image `cbezaitis/gap:latest`
+independently validated the build recipe and is kept as the documented fallback.)
+`mcu/fetch_tiler.sh` fetches + SHA-pins it into gitignored `mcu/vendor/` — never committed
+(proprietary EULA; use restricted to compiling for GAP targets, which is our exact use).
+Same discipline as the OFA checkpoint.
+
+**Image** (`mcu/Dockerfile` → `tfm-gap8:cp10.1`, 3.42 GB): ubuntu 20.04 + pinned toolchain +
+pinned gap_sdk + the recovered tiler + GVSOC baked at build + nntool deps. Build order is
+deliberate: `python3-dev` and the pip layer sit *after* the ~20-min GVSOC bake so a dep
+failure never invalidates it (bfloat16 1.1 needs Python.h + preinstalled numpy with build
+isolation off; kmeans1d pinned 0.4.0 — 0.5.0's only linux wheel wants glibc≥2.34 vs 20.04's
+2.31, and its sdist passes clang-only flags to gcc). `mcu/smoke.sh` PASSES: helloworld
+compiled for GAP8 and run on GVSOC → "Test success !", 8 cluster cores reporting.
+
+**Four toolchain facts learned the hard way** (each one the difference between "impossible"
+and "works" — all encoded in scripts/patches, none of them documented upstream):
+1. **OFA's h-swish is unimportable as written.** OFA emits `x*relu6(x+3)/6` → an
+   Add/Clip/Div/Mul chain that crashes nntool's `fuse_op_activation`. `x*hardsigmoid(x)` is
+   the *same piecewise-linear function* but exports as `Mul(x, HardSigmoid(x))` — and the
+   ONNX importer has a HardSigmoid handler and **no HardSwish handler**. Opt-in
+   `--mcu-act` (29 swaps); the default TRT graphs stay bit-identical to every measured Nano
+   latency.
+2. **`fuse_gap_convs` must not fuse expression kernels into convs.** It emits `KOP_CUSTOM`,
+   and the CHW SQ8 depthwise-conv kernel set has no custom-activation variant → GenTile dies
+   with "Can't find a matching Convolution basic kernel" on *any* MBv3-style graph. Image
+   patch `mcu/patches/0001`. Standalone expressions are also the fairer oracle shape: every
+   candidate pays activation cost through the same kernel path.
+3. **`Expression_Kernels.c` is target-side** (PULP builtins) — feeding it to the host GenTile
+   compile fails inside the SDK's own `GapSystem.h`.
+4. **One `fusions` call, not two.** Every `fusions` invocation re-runs `adjust_order`; a
+   second pass over a detection head raises "axes don't match array". `-a` takes `nargs='+'`
+   → `fusions -a scaled_match_group expression_matcher` builds one match group.
+
+**The decode postprocess — not either backbone — is what blocks the full networks.** With the
+decoded deploy tensor, the graft and yolo11n fail *identically* (concat-axis mismatch in the
+head). It does not belong in a tiled MCU graph anyway: on GAP8 the decode runs in C on the
+fabric controller while AutoTiler owns the conv work. New `--raw-head`
+(+ `mcu/export_baseline.py`, the baseline's matched twin off the gate donor) emits the head's
+raw dict. Two traps found while building it: `torch.onnx.export` defaults to
+`TrainingMode.EVAL`, which re-applies `.eval()` at trace time and **silently wipes**
+`head.training = True` — the export then traced ultralytics' non-export eval branch, whose
+`kpts_decode` does `y[:, 2::3] = …` → a ScatterND nntool cannot execute
+(`preserve_training=True` fixes it; BN still exports eval because `.training =` does not
+recurse); and the raw head returns a **dict** (boxes/scores/feats/kpts — the contract
+`distill/kd_loss.py` already consumes), so ONNX has 6 outputs and a 4-name list silently
+mislabels tensors (`RAW_HEAD_OUTPUTS`).
+
+**Result — all three probes compile to GAP8 kernels + a memory plan** (`mcu/probes/gen_probe.sh`
+→ nntool state → AT model → GenTile links the recovered LibTile.a → kernels). @224 int8,
+matched raw-head shape (both nc=1/8-kpt, identical 6 outputs, so the comparison isolates the
+backbone):
+
+| graph | params | L1 | L2 | HyperRAM | flash | **L3 BW/run** | **L2 BW/run** |
+|---|---|---|---|---|---|---|---|
+| graft raw-head (winner-v1 arch) | 3.00 M | 52720/52736 | 400000/400000 | 3.87 MB | 3.09 MB | **9.06 MB** | 27.4 MB |
+| yolo11n-pose raw-head (baseline) | 2.70 M | 52720/52736 | 400000/400000 | 2.94 MB | 2.74 MB | **4.30 MB** | 15.2 MB |
+| graft backbone only | 2.40 M | 52720/52736 | 399992/400000 | 3.24 MB | 2.47 MB | 7.80 MB | 24.0 MB |
+
+**Both fit the AI-deck memory system** (8 MB HyperRAM) at 224² int8 — the feasibility question
+is answered YES for both. **But the early signal contradicts the pivot's hypothesis:** the
+graft moves **2.1× the L3 bytes and 1.8× the L2 bytes** of yolo11n at matched shape — the same
+memory-bound deficit that sank it on the Orin, not the expected native-family win. Caveats
+that keep this preliminary, not a verdict: these are AutoTiler *bandwidth* numbers, not
+cycles (the DoD wants cycles — a GVSOC app harness is the next step and GAP8's 8-core cluster
+may weight compute/memory differently); the graft is **unpruned w1.0** (3.00 M vs 2.70 M) and
+pruning-as-search is precisely the lever that closed the Orin gap; and 224² is a probe
+resolution, not the CP 10.2 task shape (grayscale, 160–320, Frontnet-style head). If the
+deficit survives cycles + pruning + the real task shape, the hardware-conditional-NAS thesis
+needs the honest negative recorded, not the pivot re-litigated.
+
+**Owed for CP 10.1 DoD:** GVSOC cycle numbers for the pair (app harness around the generated
+`*Kernels.c` — the mnist example is the pattern), then the CP 10.2 task re-scope.
