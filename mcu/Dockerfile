@@ -59,9 +59,21 @@ RUN pip3 install --no-cache-dir --upgrade pip \
 # immediately runnable; `--board gapuino` selects GAP8 non-interactively.
 RUN bash -lc "source sourceme.sh --board gapuino && make -f gap8/gap8.mk gvsoc"
 
+# python3-dev arrives this late deliberately: bfloat16 needs Python.h, but
+# putting it in the base apt layer would invalidate the ~20-min GVSOC bake
+# above — and GVSOC provably runs without python bindings (the community
+# fallback image shares this exact apt set and passes its smoke).
+RUN apt-get update && apt-get install -y --no-install-recommends python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # NNTool deps last: the flakiest layer (old pins, C extensions) must not cost
-# the GVSOC layer cache on failure.
-RUN pip3 install --no-cache-dir -r tools/nntool/requirements.txt
+# the GVSOC layer cache on failure. bfloat16 1.1's setup.py imports numpy at
+# egg_info time, so numpy/Cython pre-exist and build isolation (which would
+# hide them) is off. kmeans1d is pinned to 0.4.0: 0.5.0's only linux wheel
+# wants glibc>=2.34 (20.04 has 2.31) and its sdist passes clang-only flags
+# to gcc; 0.4.0's abi3 manylinux2014 wheel installs cleanly.
+RUN pip3 install --no-cache-dir "numpy==1.23.5" "Cython>=0.29.21" "kmeans1d==0.4.0" \
+    && pip3 install --no-cache-dir --no-build-isolation -r tools/nntool/requirements.txt
 
 RUN printf 'gap_sdk=%s\ntoolchain=%s\ntiler=libtile.4.3.5.a sha256=541f4978f3e55c6650207b3f8eebcfe0d311acd3320f81eb0a59890ec928c728\n' \
         "${GAP_SDK_SHA}" "${TOOLCHAIN_SHA}" > /IMAGE_PROVENANCE
