@@ -40,14 +40,34 @@ BUDGET = int(os.environ.get("BUDGET", "50"))       # BO budget per seed (decisio
 CALIBRATE = int(os.environ.get("CALIBRATE", "1"))  # time N real evals first (warms ultralytics)
 # MODE="full_finetune" (CP 5.3): a long fine-tune of one graft-interface variant on winner-v1's
 # backbone — deploy.sh passes the FT_* selectors through docker -e (see procedure.md
-# "CP 5.2 CLOSED" for the variant table). Everything else = the CP 3.3 search (default).
-MODE = os.environ.get("MODE", "search")            # search | full_finetune
+# "CP 5.2 CLOSED" for the variant table).
+# MODE="prune_recover" (winner-v2-OFA close, 2026-07-15 pivot): one prune-then-train recovery
+# run per container — the AGX replaces the preempting free-tier VMs (all training on the AGX
+# is a user decision; procedure.md "Pivot 2026-07-15"). The PG_* selectors mirror
+# colab/run_prune_graft.py's compose_recover_cmd contract; that entry is NOT imported here —
+# it pip-installs a stack and stages the dataset off Kaggle, both wrong for this baked image.
+# Resume is same-VM only: the ckpt in /data/out/prune_recover is safe to reuse HERE because
+# the re-prune is deterministic on one platform — never seed it with a Colab/Lightning ckpt.
+# Everything else = the CP 3.3 search (default).
+MODE = os.environ.get("MODE", "search")            # search | full_finetune | prune_recover
 FT_EPOCHS = int(os.environ.get("FT_EPOCHS", "100"))
 FT_SEEDS = os.environ.get("FT_SEEDS", "0")
 FT_NECK = os.environ.get("FT_NECK", "")            # "" | topdown | pan
 FT_ADAPTER_INIT = os.environ.get("FT_ADAPTER_INIT", "")  # "" | net2wider
 FT_TAG = os.environ.get("FT_TAG", "")              # output suffix, e.g. v3pan
 FT_FREEZE_HEAD = os.environ.get("FT_FREEZE_HEAD", "0") == "1"
+PG_SPEC = os.environ.get("PG_SPEC", "")            # repo-relative spec (prune/specs/*.json)
+PG_RATIOS = os.environ.get("PG_RATIOS", "0.50")    # uniform-ladder fallback when no PG_SPEC
+PG_TECH = os.environ.get("PG_TECH", "global_taylor")
+PG_ARCH_JSON = os.environ.get("PG_ARCH_JSON", "")  # probe topology (prune/specs/minact_arch.json)
+PG_KD = os.environ.get("PG_KD", "1") == "1"        # KD default ON (teacher = the gate donor)
+PG_KD_ALPHA = os.environ.get("PG_KD_ALPHA", "1.0")
+PG_TEACHER = os.environ.get("PG_TEACHER", "")      # teacher .pt override (Track 2t ladder)
+PG_SEED = os.environ.get("PG_SEED", "0")
+PG_EPOCHS = os.environ.get("PG_EPOCHS", "100")
+PG_BATCH = os.environ.get("PG_BATCH", "16")
+PG_LR = os.environ.get("PG_LR", "1e-3")
+PG_CKPT_EVERY = os.environ.get("PG_CKPT_EVERY", "10")
 # ------------------------------------------------------------------------------------
 
 
@@ -59,6 +79,26 @@ def sh(cmd: str) -> None:
 def find(name: str):
     hits = sorted(DATA.rglob(name)) if DATA.exists() else []
     return hits[0] if hits else None
+
+
+def prune_recover_cmd(donor: Path, data_yaml: Path, out_dir: Path) -> str:
+    """The ``prune.recover_graft`` invocation for the PG_* config.
+
+    Mirrors ``colab/run_prune_graft.compose_recover_cmd`` (the tested free-tier contract):
+    --technique is ALWAYS passed (with a spec it selects the importance metric; the per-stage
+    counts stay spec-pinned, so shapes are importance-invariant), PG_SPEC wins over PG_RATIOS,
+    and the KD teacher defaults to the gate donor.
+    """
+    cmd = (f"python3 -m prune.recover_graft --head-weights {donor} --data-yaml {data_yaml} "
+           f"--out-dir {out_dir} --device cuda --imgsz 640 --batch {PG_BATCH} --lr {PG_LR} "
+           f"--epochs {PG_EPOCHS} --seed {PG_SEED} --ckpt-every {PG_CKPT_EVERY} "
+           f"--technique {PG_TECH}")
+    cmd += f" --ratio-spec {PG_SPEC}" if PG_SPEC else f" --ratios {PG_RATIOS}"
+    if PG_ARCH_JSON:
+        cmd += f" --arch-json {PG_ARCH_JSON}"
+    if PG_KD:
+        cmd += f" --teacher {PG_TEACHER or donor} --kd-alpha {PG_KD_ALPHA}"
+    return cmd
 
 
 def main() -> None:
@@ -122,6 +162,27 @@ def main() -> None:
         print(f"[done] {out_json.name}: mean={payload.get('mean')} "
               f"delta_vs_proxy={payload.get('delta_vs_proxy')} "
               f"graft_kwargs={payload.get('graft_kwargs')}", flush=True)
+        return
+
+    if MODE == "prune_recover":
+        # winner-v2-OFA runs: ledger + tagged artifacts + the same-VM resume ckpt all land in
+        # /data/out/prune_recover (deploy.sh --pull → data/cp33_kaggle_out/prune_recover/).
+        pg_out = OUT / "prune_recover"
+        pg_out.mkdir(parents=True, exist_ok=True)
+        cmd = prune_recover_cmd(head, yaml_src, pg_out)
+        print("+", cmd, flush=True)
+        # taylor importance forwards+backwards the full graft at batch×640² — same
+        # fragmentation headroom the free-tier entry needed.
+        env = {**os.environ, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
+        rc = subprocess.run(cmd, shell=True, cwd=REPO, env=env).returncode
+        report = pg_out / "recover_graft.json"
+        if not report.exists():
+            raise SystemExit(f"prune.recover_graft produced no {report.name} (rc={rc})")
+        for row in json.loads(report.read_text()).get("rows", []):
+            print(f"[done] {row.get('technique')}/{row.get('arch_tag')}/ratio={row.get('ratio')} "
+                  f"seed={row.get('seed')} params={row.get('params'):,} "
+                  f"map={row.get('map'):.4f} map50={row.get('map50'):.4f} "
+                  f"kd={'on' if row.get('kd') else 'off'}", flush=True)
         return
 
     common = (f"--device cuda --imgsz 640 --res {RES} --lut {lut} "

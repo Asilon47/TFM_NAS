@@ -15,6 +15,16 @@
 #
 # Override the auto-detected base image with L4T_BASE=dustynv/ultralytics:<tag>.
 # Tune the run with BUDGET=50 CALIBRATE=1 (env, passed into the container).
+#
+# MODE=prune_recover (winner-v2-OFA close — all training on the AGX, 2026-07-15 pivot):
+#   MODE=prune_recover PG_SPEC=prune/specs/v2_act292.json PG_SEED=0 bash jetson/deploy.sh --run
+#   MODE=prune_recover PG_RATIOS=0.50 PG_SEED=1 bash jetson/deploy.sh --run       # r50_gtay de-noise
+#   MODE=prune_recover PG_ARCH_JSON=prune/specs/minact_arch.json PG_SPEC=prune/specs/u30.json \
+#     bash jetson/deploy.sh --run                                                  # min-act probe
+# PG_* mirror colab/run_prune_graft.py (PG_TECH=global_taylor PG_KD=1 PG_EPOCHS=100 defaults).
+# Re-running with the same PG_* config resumes from the ckpt in $DATA/out/prune_recover
+# (same-VM resume is safe; never seed it with a Colab/Lightning ckpt — cross-platform re-prune
+# diverges). Results: bash jetson/deploy.sh --pull → data/cp33_kaggle_out/prune_recover/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -41,7 +51,7 @@ do_sync() {
   echo "rsync code -> $HOST:$CODE (source dirs only)"
   ssh "$HOST" "rm -rf '$CODE'; mkdir -p '$CODE' '$DATA/out'"
   local srcs=() d f
-  for d in catalog detect distill eval expand lut net2net search state supernet jetson scripts; do
+  for d in catalog detect distill eval expand lut net2net prune search state supernet jetson scripts; do
     [ -d "$ROOT/$d" ] && srcs+=("$ROOT/./$d")
   done
   for f in "$ROOT"/*.py "$ROOT"/*.toml; do
@@ -96,7 +106,13 @@ do_run() {
       -e BUDGET='${BUDGET:-50}' -e CALIBRATE='${CALIBRATE:-1}' \
       -e MODE='${MODE:-search}' -e FT_EPOCHS='${FT_EPOCHS:-100}' -e FT_SEEDS='${FT_SEEDS:-0}' \
       -e FT_NECK='${FT_NECK:-}' -e FT_ADAPTER_INIT='${FT_ADAPTER_INIT:-}' \
-      -e FT_TAG='${FT_TAG:-}' -e FT_FREEZE_HEAD='${FT_FREEZE_HEAD:-0}' '$IMG'"
+      -e FT_TAG='${FT_TAG:-}' -e FT_FREEZE_HEAD='${FT_FREEZE_HEAD:-0}' \
+      -e PG_SPEC='${PG_SPEC:-}' -e PG_RATIOS='${PG_RATIOS:-0.50}' \
+      -e PG_TECH='${PG_TECH:-global_taylor}' -e PG_ARCH_JSON='${PG_ARCH_JSON:-}' \
+      -e PG_KD='${PG_KD:-1}' -e PG_KD_ALPHA='${PG_KD_ALPHA:-1.0}' \
+      -e PG_TEACHER='${PG_TEACHER:-}' -e PG_SEED='${PG_SEED:-0}' \
+      -e PG_EPOCHS='${PG_EPOCHS:-100}' -e PG_BATCH='${PG_BATCH:-16}' \
+      -e PG_LR='${PG_LR:-1e-3}' -e PG_CKPT_EVERY='${PG_CKPT_EVERY:-10}' '$IMG'"
   echo "started '$NAME' detached. Follow: bash jetson/deploy.sh --logs"
 }
 
@@ -110,7 +126,9 @@ case "${1:-all}" in
   --resume|resume) : "${CALIBRATE:=0}"; do_run ;;   # same as --run, but skip the redundant calibrate
   --logs|logs)     ssh -t "$HOST" "docker logs -f '$NAME'" ;;
   --status|status) ssh "$HOST" "docker ps -a --filter name='$NAME'; echo '--- verdict ---'; \
-                     cat '$DATA/out/cp33_bo.json' 2>/dev/null || echo '(no cp33_bo.json yet)'" ;;
+                     cat '$DATA/out/cp33_bo.json' 2>/dev/null || echo '(no cp33_bo.json yet)'; \
+                     echo '--- prune_recover ---'; \
+                     cat '$DATA/out/prune_recover/recover_graft.json' 2>/dev/null || echo '(no prune_recover ledger yet)'" ;;
   --pull|pull)     mkdir -p "$LOCAL_OUT"; rsync -a "$HOST:$DATA/out/" "$LOCAL_OUT/"; \
                    echo "results -> $LOCAL_OUT" ;;
   all)             do_sync; do_build; do_run ;;
