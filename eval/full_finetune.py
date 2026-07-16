@@ -127,7 +127,7 @@ def full_finetune(
         "batch": batch,
         "device": device,
         "note": PROTOCOL_CAVEAT,
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     (wdir / f"full_finetune{suffix}.json").write_text(json.dumps(payload, indent=2) + "\n")
     return payload

@@ -63,7 +63,7 @@ def export_baseline(donor: Path, out: Path, *, imgsz: int = 224, opset: int = 12
         "opset": opset,
         "params": sum(p.numel() for p in model.parameters()),
         "onnx": out.name,
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     out.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     return out, meta

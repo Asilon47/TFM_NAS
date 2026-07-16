@@ -176,7 +176,7 @@ def assemble_report(arch: dict, results: Mapping[str, dict], *, seeds: Sequence[
         "arch": arch,
         "variants": {name: {**summary[name], "maps": r["maps"], "gates": r["gates"]}
                      for name, r in results.items()},
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     if {"v0_control", "v1_net2wider"} <= set(summary):
         report["v1_vs_v0_delta"] = summary["v1_net2wider"]["mean"] - summary["v0_control"]["mean"]

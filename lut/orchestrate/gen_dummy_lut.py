@@ -140,7 +140,7 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    timestamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     total = sweep_size(args.blocks)

@@ -173,7 +173,7 @@ def build_row(
         "affinity": list(cfg.affinity),
         "thermal_drift_detected": drift,
         "source": "x86_ort",
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     row.update(env)
     return row

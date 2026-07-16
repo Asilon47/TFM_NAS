@@ -269,7 +269,7 @@ def main():
                 # old device_info.json that predates the clocks_locked probe.
                 "clocks_locked": device_info.get("clocks_locked"),
                 "source": "jetson_trt",
-                "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
             out_f.write(json.dumps(row) + "\n")
             out_f.flush()

@@ -99,7 +99,7 @@ def winner_v2_record(
                                      "same-session baseline"),
         "rank_rule": "max de-noised mAP s.t. median fp16 < baseline AND fp32 < baseline",
         "certified": v["beats_both_axes"],
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 
@@ -109,7 +109,7 @@ def link_v1(winner_v1: dict, *, path: str, summary: str, force: bool = False) ->
     if key in winner_v1 and not force:
         raise ValueError(f"winner_v1 already has {key!r} — pass --force to replace")
     out = {**winner_v1, key: {"path": path, "summary": summary,
-                              "timestamp": dt.datetime.now(dt.UTC).strftime(
+                              "timestamp": dt.datetime.now(dt.timezone.utc).strftime(
                                   "%Y-%m-%dT%H:%M:%SZ")}}
     for k, val in winner_v1.items():
         if k != key and out[k] != val:

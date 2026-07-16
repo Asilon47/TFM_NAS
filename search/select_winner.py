@@ -230,7 +230,7 @@ def winner_record(
         "note": ("acc is the 5-epoch warm-head PROXY mAP (CP 2.4 ranking signal), NOT a "
                  "full-train deployable number; the CP 3.5 DoD reproduces it in a clean "
                  "session and Phase 8 distills the deployable weights."),
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 

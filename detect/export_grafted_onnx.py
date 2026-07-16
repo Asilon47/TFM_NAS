@@ -244,7 +244,7 @@ def export_grafted_onnx(
         "params": sum(p.numel() for p in module.parameters()),
         "flops": flops,
         "onnx": out.name,
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     meta_path = out.with_suffix(".meta.json")
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")

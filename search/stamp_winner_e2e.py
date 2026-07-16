@@ -72,7 +72,7 @@ def e2e_block(
                  "headline vs_yolo11n.latency_speedup_pct, which compared the backbone-blocks-"
                  "only LUT sum against the full-network baseline (see procedure.md 'Plan "
                  "pivot'). Existing keys are untouched by design."),
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     if backbone_row is not None:
         block["backbone_measured_ms"] = _mean(backbone_row)

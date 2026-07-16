@@ -89,7 +89,7 @@ def main() -> None:
         "teacher": name, "weights": str(best), "seed_model": a.model, "imgsz": 640,
         "map": mp, "map50": mp50, "epochs_cap": a.epochs, "batch": a.batch,
         "metric": "pose OKS mAP50-95 (ultralytics .val)",
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }, indent=2) + "\n")
     print(f"TEACHER_MAP_WRITTEN {out} map={mp:.4f} map50={mp50:.4f}  best={best}", flush=True)
 

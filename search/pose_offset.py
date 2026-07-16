@@ -87,7 +87,7 @@ def pose_offset_record(
             "backbone": {"name": backbone_row.get("name"), "latency_ms": backbone_ms,
                          "peak_mem_mib": backbone_row.get("peak_mem_mib")},
         },
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     if lut_summed_ms is not None:
         # The first @640 additivity point: measured whole-backbone vs the raw LUT block sum.

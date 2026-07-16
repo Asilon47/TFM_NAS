@@ -118,7 +118,7 @@ def analyze(pairs: Sequence[dict]) -> dict:
         "spearman_measured_vs_sum": rank,
         "rel_err_vs_depth_sum_pearson": _corr(depth_sum),
         "rel_err_vs_early_depth_pearson": _corr(early_depth),
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 

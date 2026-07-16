@@ -113,7 +113,7 @@ def assemble_wave_report(rows: list[dict], *, anchors: dict | None = None) -> di
         "control_tag": "ctrl_n",
         "anchors": anchors or {},
         "note": WAVE_CAVEAT,
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 

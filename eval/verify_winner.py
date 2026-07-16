@@ -165,7 +165,7 @@ def verify_winner(
             "fresh = warm-head 5-epoch PROXY mAP re-derived in a clean session; passes iff the "
             "3-seed mean is within band of the cached proxy acc. Deployable accuracy is Phase 8."
         ),
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     (wdir / "repro.json").write_text(json.dumps(payload, indent=2) + "\n")
     return payload

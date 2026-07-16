@@ -58,7 +58,7 @@ def baseline_row(bench_result: dict, *, name: str, precision: str, imgsz: int,
         "jetpack": device_info.get("jetpack"),
         "clocks_locked": device_info.get("clocks_locked"),
         "source": "jetson_trt",
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 

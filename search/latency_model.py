@@ -132,7 +132,7 @@ def graft_fit_report(e2e_dir: Any, root: Any = None) -> dict:
         "doctrine": "physical single-feature law (memory-bound: ms = b + a*act_mbytes); "
                     "fit per precision on graft e2e points only — whole nets, never marginal; "
                     "claimed latencies are still verified on-device",
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fits": {},
     }
     for prec in sorted({p["precision"] for p in graft}):
@@ -330,7 +330,7 @@ def fit_report(points: list[dict], lam: float = 1e-2) -> dict:
                              "(collinear features -> unphysical per-feature signs); any "
                              "claimed latency is verified on-device (Stage-0 lesson: the "
                              "@224 additivity inverted at 640)",
-                 "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                 "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                  "fits": {}}
     for prec in sorted({p["precision"] for p in usable}):
         pts = [p for p in usable if p["precision"] == prec]

@@ -129,7 +129,7 @@ def assemble_ladder_report(donor: dict, rows: Sequence[dict]) -> dict:
         "rows": out_rows,
         "best_row_ratio": (max(out_rows, key=lambda r: r["map"])["ratio"] if out_rows else None),
         "note": RECOVERY_CAVEAT,
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 

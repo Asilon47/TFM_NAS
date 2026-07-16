@@ -120,7 +120,7 @@ def spec_payload(stage_ratios: Any, rest_ratio: float, *, act_honest: float,
                       "act_mbytes → physical graft fit (LOO ~2-3 %); linear predictor is "
                       "screening-only, this spec's act is the honest re-price",
         "arch_tag": "winner",
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         **(extra or {}),
     }
 
@@ -388,7 +388,7 @@ def topology_screen(winner_arch: dict, *, fence_fp16_ms: float = 7.2, supernet: 
         "needs_pair": needs_pair,
         "screen": [{k: r[k] for k in ("tag", "depth_sum", "act_mbytes", "pred_fp16_ms",
                                       "pred_fp32_ms", "params")} for r in rows],
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     out = out_dir / "minact_arch.json"
     if pair_spec is not None and paired is not None:

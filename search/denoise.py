@@ -256,7 +256,7 @@ def denoised_winner_record(
         "note": ("acc is the mean of 3 fresh-seed 5-epoch warm-head PROXY mAPs (CP 2.4 "
                  "ranking signal), NOT a full-train deployable number; Phase 8 distills the "
                  "deployable weights."),
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 

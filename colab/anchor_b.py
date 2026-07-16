@@ -91,7 +91,7 @@ def main() -> None:
         "map": mp, "map50": mp50, "metric": "pose OKS mAP50-95 (ultralytics .val)",
         "trained_from": "yolo11s-pose.pt (COCO)", "epochs_cap": args.epochs,
         "patience": args.patience, "batch": args.batch, "backend": "colab-t4",
-        "timestamp": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }, indent=2) + "\n")
     print(f"ANCHOR_MAP_WRITTEN {out} map={mp:.4f} map50={mp50:.4f}", flush=True)
 
