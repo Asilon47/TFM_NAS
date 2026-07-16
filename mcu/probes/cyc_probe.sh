@@ -32,6 +32,15 @@ mkdir -p "${OUT_DIR}"
 # pushed to HyperRAM (see net_cyc.c) to leave the heap to AutoTiler alone.
 CYC_L2="${CYC_L2:-160000}"
 
+# Cluster master stack. The SDK default resolves to 2048 B, and the generated
+# <prefix>CNN() frame alone is ~2 KB (one HyperRAM event struct per DMA channel)
+# -> PE0 overran it and GVSOC aborted ("SP-based access outside stack"). This
+# must be raised AND passed to both make calls: model_decl.mk derives
+# MODEL_L1_MEMORY = TARGET_L1_SIZE - (CLUSTER_STACK_SIZE + slave*7), so the
+# stack comes straight out of AutoTiler's L1 share and codegen must see the same
+# value the app does. Identical for every model, so the comparison stays fair.
+CYC_MASTER_STACK="${CYC_MASTER_STACK:-8192}"
+
 MODELS=(graft_raw_224_mcu yolo11n_pose_224_raw)
 [[ $# -gt 0 ]] && MODELS=("$@")
 
@@ -84,6 +93,7 @@ EOF
             MODEL_PREFIX=${m} \
             MODEL_BUILD=${build_ctr} \
             MODEL_L2_MEMORY=${CYC_L2} \
+            CLUSTER_STACK_SIZE=${CYC_MASTER_STACK} \
             NNTOOL_SCRIPT=${build_ctr}/nntool_script" \
         >"${genlog}" 2>&1
     if [[ ! -f "${build_host}/${m}Kernels.c" ]]; then
@@ -102,11 +112,18 @@ EOF
     fi
     echo "    L3 arena ${arena} B; building app + running GVSOC (slow: full int8 CNN)"
 
+    # net_cyc.o bakes in -DAT_MODEL_PREFIX, but make only tracks timestamps, so
+    # switching models would relink the PREVIOUS model's object against these
+    # kernels -- undefined refs if the names differ, the wrong graph silently
+    # measured if they ever did not. Force the recompile. (Per-model kernel .o
+    # live under their own MODEL_BUILD path and do not collide.)
     "${MCU_DIR}/run.sh" \
-        "make -C /workspace/TFM_NAS/mcu/probes/cyc all run platform=gvsoc \
+        "find /workspace/TFM_NAS/mcu/probes/cyc/BUILD -name 'net_cyc.o' -delete 2>/dev/null; \
+         make -C /workspace/TFM_NAS/mcu/probes/cyc all run platform=gvsoc \
             MODEL_PREFIX=${m} \
             MODEL_BUILD=${build_ctr} \
             MODEL_L2_MEMORY=${CYC_L2} \
+            CLUSTER_STACK_SIZE=${CYC_MASTER_STACK} \
             AT_L3_ARENA=${arena} \
             NNTOOL_SCRIPT=${build_ctr}/nntool_script" \
         >"${runlog}" 2>&1

@@ -75,8 +75,21 @@ static const unsigned int OutBytes[6] = {AT_OUT1_BYTES, AT_OUT2_BYTES,
 
 static int cnn_err;
 
-static void run_cnn(void)
+#if CYC_SMOKE == 5
+/* Same cluster entry/exit path as run_cnn, minus the graph: isolates cluster
+ * dispatch + the perf timers from the CNN itself. */
+static void run_noop(void *arg)
 {
+    (void)arg;
+    gap_cl_starttimer();
+    gap_cl_resethwtimer();
+    cnn_err = 0;
+}
+#endif
+
+static void run_cnn(void *arg)
+{
+    (void)arg;
     gap_cl_starttimer();
     gap_cl_resethwtimer();
     cnn_err = CNN_RUN((signed char *)In_L3, (signed char *)Out_L3[0],
@@ -98,7 +111,9 @@ static int cyc_probe(void)
      * buffered and lost on SIGABRT, so a crash reports as silence -- staging is
      * the only way to see how far the run actually got.
      *   1 = binary boots + printf reaches host   2 = cluster opens
-     *   3 = graph constructs (opens HyperFlash/HyperRAM, allocs L3/L2/L1) */
+     *   3 = graph constructs (opens HyperFlash/HyperRAM, allocs L3/L2/L1)
+     *   4 = IO addresses placed under the arena
+     *   5 = a no-op cluster task dispatches (isolates dispatch from the graph) */
 #if CYC_SMOKE == 1
     printf("CYC_SMOKE 1 boot ok\n");
     pmsis_exit(0);
@@ -167,9 +182,38 @@ static int cyc_probe(void)
            (unsigned int)AT_L3_ARENA, (unsigned int)In_L3, AT_INPUT_BYTES,
            (unsigned int)Out_L3[0], out_span);
 
+#if CYC_SMOKE == 4
+    printf("CYC_SMOKE 4 io placed ok\n");
+    CNN_DESTRUCT();
+    pmsis_exit(0);
+    return 0;
+#endif
+
+#if CYC_SMOKE == 5
+    pi_cluster_task(&task, run_noop, NULL);
+#else
     pi_cluster_task(&task, run_cnn, NULL);
+#endif
+    /* pi_cluster_task_stacks() sets ONLY the slave stack (task->slave_stack_size);
+     * pi_cluster_task() leaves the master's task->stack_size at 0, which the
+     * runtime silently resolves to a 2048-byte default -- and cc_stack_size in
+     * the cluster conf does NOT govern it. The generated <prefix>CNN() frame
+     * alone is ~2 KB (it declares one HyperRAM event struct per DMA channel),
+     * so on PE0 it overran that default by ~900 B and GVSOC aborted with
+     * "SP-based access outside stack". mnist never trips this: its CNN frame is
+     * tiny. Set the master stack explicitly; STACK_SIZE == CLUSTER_STACK_SIZE,
+     * the same value model_decl.mk already deducts from AutoTiler's L1 budget,
+     * so the two stay consistent. */
+    task.stack_size = (uint32_t)STACK_SIZE;
     pi_cluster_task_stacks(&task, NULL, SLAVE_STACK_SIZE);
     pi_cluster_send_task(&cluster_dev, &task);
+
+#if CYC_SMOKE == 5
+    printf("CYC_SMOKE 5 cluster dispatch ok\n");
+    CNN_DESTRUCT();
+    pmsis_exit(0);
+    return 0;
+#endif
 
     if (cnn_err) {
         printf("CYC_ERROR CNN returned %d\n", cnn_err);
