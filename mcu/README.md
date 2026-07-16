@@ -163,7 +163,47 @@ excludes DFL decode + anchor concat + NMS — they run in C on the fabric
 controller, not through AutoTiler (`detect/export_grafted_onnx.py:207-216`). It
 cancels from the 2.02× ratio; the absolute FPS owes one FC-side measurement.
 
-Fences: NOT iso-params (631 K vs 2.70 M) — it is the deliverable comparison the
+### The 2.02× does NOT survive accuracy — resolution screen, CLOSED 2026-07-16
+
+`res_screen.py` prices what CP 10.1 never did: accuracy **at the MCU resolution**.
+Rebuild the pruned shape (data-free `l2` — importance-invariant, so it matches the
+AGX's `global_taylor`), load the trained state_dict, sweep `imgsz` on CPU. The
+**640 control is mandatory and passed**: 0.7629 vs the recorded 0.7637 (Δ 0.0008),
+bracketing the AGX's fresh 0.7625 — three measurements of one model inside 0.0012.
+
+| imgsz | graft 631 K | yolo11n 2.7 M | gap | graft drop | base drop |
+|---|---|---|---|---|---|
+| 640 | 0.7629 | 0.8774 | −0.1145 | — | — |
+| 320 | 0.6299 | 0.8014 | −0.1714 | −17.4 % | −8.7 % |
+| 224 | 0.4882 | 0.7097 | −0.2215 | −36.0 % | −19.1 % |
+| **160** | **0.3158** | **0.5974** | **−0.2816** | **−58.6 %** | **−31.9 %** |
+| 128 | 0.2205 | 0.4961 | −0.2756 | −71.1 % | −43.5 % |
+| 96 | 0.1241 | 0.3848 | −0.2607 | −83.7 % | −56.1 % |
+
+**The graft is ~2× more resolution-fragile**, and the gap *widens* as resolution
+falls (−0.11 @640 → −0.28 @160). **At matched FPS the baseline dominates every
+operating point above 0.32 mAP50-95**: graft@160 (0.3158 @ 6.85 FPS) loses to
+**yolo11n@96 (0.3848 @ 9.42 FPS) — faster AND more accurate**. The 2.02× buys about
+one resolution step; one resolution step of the baseline buys more accuracy than the
+graft's entire speed advantage. Cycles off-160 are naive r² scaling, which *flatters*
+the graft (the L1 cliff worsens it as resolution rises) — so the dominance is
+understated. This is the MCU leg's Stage-0 moment.
+
+**Fences:** both arms are **640-trained lower bounds**. The mismatch is *identical*,
+so the comparison is fair even though the absolutes are not; a model trained at each
+`imgsz` scores higher. Closing −0.28 needs the graft to gain ~2× more from
+train-at-resolution than the baseline. Three candidate mechanisms are architectural
+rather than train/test: a 40 ch P3 tap vs the baseline's 64, 4.3× fewer params, and
+**no neck at all** (1×1 adapters ⇒ zero cross-scale fusion, which is what small
+objects at low resolution need most — Phase 5's V3 PAN nano-neck is the repair).
+
+```bash
+python -m mcu.res_screen --spec prune/specs/v2_act292.json \
+    --ckpt data/lightning_out/l4_v2_act292/recover_graft_v2_act292_kd.pt \
+    --expect-map 0.7637      # .venv-nas; the 640 control gates the whole run
+```
+
+Fences on the cycle ratio: NOT iso-params (631 K vs 2.70 M) — it is the deliverable comparison the
 "NAS-born, not a pruned YOLO" constraint defines, not an architecture-controlled
 one; **accuracy is unmeasured and is the whole Pareto question** (AGX run pending;
 nearest measured neighbour r50_gtay @760 K = 0.7947). Full analysis in
