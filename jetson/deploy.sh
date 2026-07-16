@@ -32,6 +32,7 @@ HOST="${XAVIER_HOST:?set XAVIER_HOST=user@host (the Jetson SSH target)}"
 IMG="${IMAGE:-tfm-nas-cp33:latest}"
 NAME="cp33"
 DONOR="$ROOT/runs/pose/experiments/gate_baseline/weights/best.pt"
+TEACHER="${TEACHER_PT:-$ROOT/runs/pose/experiments/gate_teacher_yolo11x/weights/best.pt}"
 LOCAL_OUT="$ROOT/data/cp33_kaggle_out"
 
 # Resolve the remote $HOME once so every path (incl. docker -v, which needs an absolute
@@ -63,6 +64,13 @@ do_sync() {
   echo "rsync data -> $HOST:$DATA (dataset ~1.6 GB — this one is legitimately large)"
   rsync -a --info=progress2 "$ROOT/dataset/" "$HOST:$DATA/dataset/"
   rsync -a "$DONOR" "$HOST:$DATA/gate_best.pt"      # run_search.py find()s 'gate_best.pt'
+  # Optional Track-2t teacher override (PG_TEACHER points at this on the container side).
+  # Not needed for the closed-by-evidence prune_recover queue (KD teacher = donor default);
+  # ship it only if TEACHER_PT/the default path exists and you intend to pass PG_TEACHER=.
+  if [ -f "$TEACHER" ]; then
+    rsync -a "$TEACHER" "$HOST:$DATA/teacher_yolo11x.pt"
+    echo "  teacher shipped: $TEACHER -> $DATA/teacher_yolo11x.pt"
+  fi
   for f in lut.jsonl cp33_acc_memo.json phase3_nsga2_frontier.json; do
     if [ -f "$ROOT/data/$f" ]; then rsync -a "$ROOT/data/$f" "$HOST:$DATA/"; else echo "  (skip data/$f)"; fi
   done
