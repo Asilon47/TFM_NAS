@@ -4214,7 +4214,54 @@ nodes each — it is literally the same module) gives a **backbone-only ratio of
 3.14× @160**. So swapping in CP 10.2's tiny Frontnet head would make the *unpruned* graft look
 worse, not better. Both legs point the same way, and neither changes the pruned verdict above.
 
-**Next: CP 10.2 task re-scope**, now on a much better footing — the MCU leg's premise survived,
-conditional on pruning. The open question the user owns is no longer "does the NAS family have a
-place on the MCU" but **what operating point** (accuracy vs 5.67 FPS) the deliverable should sit
-at, which needs the AGX accuracy number first.
+**Corrected same session — the pruned run above was itself L2-starved.** It was given 84 KB,
+which is the *unpruned* graft's ceiling, not its own: pruning shrinks `.text` 405 → 360 KB
+(`__l2_end` 0x1c05a7cc), leaving a **154,164-byte** heap. Re-run at each model's own ceiling:
+
+| model | params | L2 | cycles | ms | FPS |
+|---|---|---|---|---|---|
+| yolo11n-pose (deployed baseline) | 2,704,443 | 160 KB | 51,610,157 | 295 | 3.39 |
+| **graft, PRUNED v2_act292** | **631,851** | 148 KB | **25,541,274** | **146** | **6.85** |
+
+**→ 2.02× faster** (the matched-84 KB 1.94× above stands as the controlled number; this is the
+deployment-realistic one). Per-model L2 ceilings are why `cyc_probe.sh` takes `CYC_L2`, and why
+a budget must never be carried across models.
+
+**The mechanism, finally pinned — and it is NOT the convolutions.** Arithmetic intensity per
+node in the pruned graft: the convs run at **0.2–0.4 cycles/op (2.5–5 ops/cycle) — they are
+efficient**, which is the pivot's premise vindicated. The cost is elementwise work doing almost
+no arithmetic: `S11_MatAdd_16x80x80` **45.7 cyc/op**, `S155_Op_expr_1` **91.4 cyc/op**. Together
+**MatAdd (MBv3's residual skips) + expressions = 44.5 % of all cycles for ~3 % of the ops** —
+pure HyperRAM round-trips for tensors that will not stay resident. So the graft's GAP8 problem
+is a *memory-residency/fusion* problem, not an architecture-compute problem, and a large part of
+it is the toolchain gap already on record (patch 0001 keeps expressions out of the convs because
+AutoTiler's CHW SQ8 depthwise set has no custom-activation variant).
+
+**Deployability — the number that actually gates Phase 10, and it is not the baseline ratio.**
+The racing budget is **15–30 FPS at 175 MHz** (PROJECT_PLAN CP 10.4; literature anchor ~27 Hz,
+arXiv 2312.08991). At **6.85 FPS we are 2.19× short of the 15 FPS floor** — and the baseline
+(3.39 FPS) is 4.4× short. *Beating the baseline is not the same as being deployable*, and both
+families currently fail the bar. Stacked levers from 25.54 M, each measured or directly
+estimable:
+
+| lever | cycles | FPS | costs accuracy? |
+|---|---|---|---|
+| drop the raw pose head (CP 10.2's Frontnet head) | 21.05 M | 8.3 | no (task re-scope) |
+| + fuse activations/residuals (~70 % of the elementwise tax) | 13.09 M | 13.4 | **no — toolchain** |
+| + 160 → 128 | 8.37 M | 20.9 | yes |
+| + 160 → 96 (PULP-Frontnet runs 160×96) | 4.71 M | 37.1 | yes |
+
+**Grayscale is not a speed lever**: the stem conv is 3.0 % of cycles, so 3ch→1ch saves ~2 % —
+it is a sensor/accuracy decision. And **CP 10.2's head swap alone reaches only 8.3 FPS**, so
+training at 160 today would spend a run on a non-deployable operating point.
+
+**Next (ordering matters — this is the Stage-0 lesson: never train to a latency you have not
+measured).** Cycles are weight-independent, so the whole CP 10.2 shape can be priced *before*
+any dataset conversion or training: (1) build the gray + Frontnet-head model at 160/128/96,
+export, `cyc_probe` → pick the resolution that clears 15 FPS with margin; (2) attack the 44.5 %
+elementwise tax (fused-act DW kernel, or keeping residuals L2-resident now that `.text` shrank)
+— the biggest single lever and it costs no accuracy; (3) *then* convert the dataset and train
+once, at a shape already proven to clear the bar. Note the AGX run in flight (640 RGB, pose
+head) is the **Orin** deliverable — the MCU leg needs its own training at the MCU shape; do not
+conflate them. The user still owns the operating point (accuracy vs FPS), which needs an
+accuracy number at the MCU shape, not just at 640.

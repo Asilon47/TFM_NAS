@@ -119,16 +119,34 @@ no custom-act DW kernel exists).
 **But the PRUNED graft — the actual deliverable — is 1.94× FASTER than the
 baseline** (@160, matched 84 KB L2):
 
-| model | params | cycles | ms | FPS | ops/cyc |
+| model | params | L2 | cycles | ms | FPS |
 |---|---|---|---|---|---|
-| yolo11n (deployed baseline) | 2,704,443 | 59,852,262 | 342 | 2.92 | 3.55 |
-| graft, unpruned w1.0 | 3,003,835 | 148,218,707 | 847 | 1.18 | 1.35 |
-| **graft, PRUNED v2_act292** | **631,851** | **30,852,955** | **176** | **5.67** | **2.06** |
+| yolo11n (deployed baseline) | 2,704,443 | 160 KB | 51,610,157 | 295 | 3.39 |
+| graft, unpruned w1.0 | 3,003,835 | 84 KB | 148,218,707 | 847 | 1.18 |
+| **graft, PRUNED v2_act292** | **631,851** | 148 KB | **25,541,274** | **146** | **6.85** |
+
+**2.02× faster** each-at-own-L2-ceiling (1.94× at a matched 84 KB). Per-model
+ceilings are why `CYC_L2` exists — never carry a budget across models: the
+pruned graft's `.text` is 360 KB (heap 154,164 B), the unpruned one's 405 KB.
 
 Pruning bought 4.80× = **3.15× fewer ops × 1.52× better ops/cycle** (narrower
 channels shrink the working set, so the memory-bound graft tiles better). The
 hardware-conditional finding: the same pruned NAS family is *marginal* on the
-Orin (~8 % predicted fp16) and *decisive* on the MCU (**94 %**).
+Orin (~8 % predicted fp16) and *decisive* on the MCU (**~2×**).
+
+**The bottleneck is not the convolutions.** They run at 0.2–0.4 cycles/op (2.5–5
+ops/cycle) — efficient, exactly as the pivot assumed. The cost is elementwise
+work: `MatAdd` (MBv3's residual skips) at 45.7 cyc/op and expressions at 91
+cyc/op — **44.5 % of cycles for ~3 % of the ops**, pure HyperRAM round-trips.
+It is a memory-residency/fusion problem, partly the patch-0001 toolchain gap.
+
+**Deployability gates Phase 10, not the baseline ratio.** The racing bar is
+**15–30 FPS**; at 6.85 FPS we are 2.19× short (the baseline, 3.39, is 4.4×
+short). CP 10.2's head swap alone reaches only 8.3 FPS. Grayscale is worth ~2 %
+(the stem is 3 % of cycles) — a sensor decision, not a speed lever. Fusing the
+elementwise tax → ~13.4 FPS at **no accuracy cost**; 128 → ~20.9; 96 → ~37
+(PULP-Frontnet runs 160×96). Price the shape BEFORE training it — cycles are
+weight-independent, so it is free.
 
 Fences: NOT iso-params (631 K vs 2.70 M) — it is the deliverable comparison the
 "NAS-born, not a pruned YOLO" constraint defines, not an architecture-controlled
