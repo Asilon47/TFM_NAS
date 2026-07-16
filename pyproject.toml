@@ -14,7 +14,14 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+# py310, NOT the laptop's py312: the AGX Docker kit (`jetson/Dockerfile`, base
+# ultralytics:latest-jetson-jetpack6) ships Python 3.10, and it runs the NAS source
+# tree wholesale (prune/, search/, detect/, eval/). Declaring py312 made ruff's UP
+# ruleset demand 3.11+ idioms that crash there: UP017 rewrites `dt.timezone.utc` ->
+# `dt.UTC`, which is 3.11+, and that is exactly what killed a finished 100-epoch AGX
+# run at the final report-writing line (2026-07-16 — the training was already done).
+# 85b896e fixed the 25 call sites; this line stops `ruff --fix` re-breaking them.
+target-version = "py310"
 # nas-course/ is HTML course material; lut/bench/ runs on the Jetson inside
 # Docker and is deployed separately — local lint churn there buys nothing.
 # yolo-ros2-inference/ is the user's separate ROS2 deployment package (its own

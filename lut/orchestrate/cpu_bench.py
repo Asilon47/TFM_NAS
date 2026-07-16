@@ -28,6 +28,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import TypeVar
 
 import numpy as np
 import onnxruntime as ort
@@ -45,6 +46,8 @@ from lut.orchestrate.cpu_ort import (
     time_iterations,
 )
 from lut.orchestrate.cpu_pairs import CANARY, resolve_pairs
+
+_T = TypeVar("_T")
 
 WARMUP = 5
 DEFAULT_ROUNDS = 10
@@ -74,8 +77,12 @@ def build_configs(p_cores: list[int]) -> list[BenchConfig]:
     return [*sweep, BenchConfig(name="all22", threads=0, affinity=())]
 
 
-def rotate[T](seq: list[T], offset: int) -> list[T]:
-    """Rotate left by offset (wraps)."""
+def rotate(seq: list[_T], offset: int) -> list[_T]:
+    """Rotate left by offset (wraps).
+
+    Explicit TypeVar rather than PEP-695 ``def rotate[T]`` — that syntax is 3.12+, and the whole
+    tree is COPY'd into the AGX image (Python 3.10), where it is a SyntaxError, not a soft failure.
+    """
     if not seq:
         return []
     k = offset % len(seq)
