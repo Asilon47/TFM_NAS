@@ -142,11 +142,26 @@ It is a memory-residency/fusion problem, partly the patch-0001 toolchain gap.
 
 **Deployability gates Phase 10, not the baseline ratio.** The racing bar is
 **15–30 FPS**; at 6.85 FPS we are 2.19× short (the baseline, 3.39, is 4.4×
-short). CP 10.2's head swap alone reaches only 8.3 FPS. Grayscale is worth ~2 %
-(the stem is 3 % of cycles) — a sensor decision, not a speed lever. Fusing the
-elementwise tax → ~13.4 FPS at **no accuracy cost**; 128 → ~20.9; 96 → ~37
-(PULP-Frontnet runs 160×96). Price the shape BEFORE training it — cycles are
-weight-independent, so it is free.
+short). Grayscale is worth ~2 % (the stem is 3 % of cycles) — a sensor decision,
+not a speed lever. Fusing the elementwise tax → ~13.4 FPS at **no accuracy
+cost**; 128 → ~20.9; 96 → ~37 (PULP-Frontnet runs 160×96). Price the shape
+BEFORE training it — cycles are weight-independent, so it is free.
+
+**The head is NOT the lever — CP 10.2's Frontnet head swap is dropped** (user,
+2026-07-16; PROJECT_PLAN.md amended). Splitting the pruned graft's 25,541,274
+cycles: backbone 20,465,724 (80.1 %), adapter 162,966 (0.6 %), **YOLO11-pose head
+4,495,634 (17.6 %)** — deleting the head *outright* reaches only **8.3 FPS**,
+still 1.8× short. The 44.5 % elementwise tax is **41.7 pts backbone / 2.8 pts
+head**, so a head swap cannot touch it. Keeping the head holds the comparison
+(same head both families ⇒ any delta is the backbone = the NAS claim), the metric
+(OKS-mAP, continuous with the Orin record), and the warm-head donor. The head is
+pruned too (`rest_ratio` covers cv2/cv3/cv4) — hence 17.6 % here vs 26.4 M cyc
+@224 unpruned, where it matched yolo11n's 26.1 M because it *is* the same module.
+
+**FPS caveat owed by the raw-head export (applies to BOTH families):** the graph
+excludes DFL decode + anchor concat + NMS — they run in C on the fabric
+controller, not through AutoTiler (`detect/export_grafted_onnx.py:207-216`). It
+cancels from the 2.02× ratio; the absolute FPS owes one FC-side measurement.
 
 Fences: NOT iso-params (631 K vs 2.70 M) — it is the deliverable comparison the
 "NAS-born, not a pruned YOLO" constraint defines, not an architecture-controlled

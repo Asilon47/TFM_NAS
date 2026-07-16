@@ -668,10 +668,24 @@ New module dir: `mcu/`.
   - **DoD:** reproducible cycle numbers (or a documented infeasibility — itself the
     baseline result) for both, scripted under `mcu/`.
 - **CP 10.2 — Task re-scope + dataset conversion + reference trains.** 640-RGB →
-  grayscale 320²/160² with rescaled keypoints + nearest-gate selection; head =
-  Frontnet-style single-gate 8-kpt regression (+ visibility); metrics pinned BEFORE any
-  comparison: mean corner error (px) + PCK@t primary (head-agnostic), OKS-mAP secondary.
-  References trained on the AGX: downscaled yolo11n-pose + one OFA subnet + tiny head.
+  grayscale 320²/160² with rescaled keypoints + nearest-gate selection. **Head = the
+  YOLO11-pose head, unchanged (D1)** — the Frontnet-style regression head this checkpoint
+  originally proposed is **dropped (2026-07-16, user)**: it was written before CP 10.1
+  measured anything, and CP 10.1 kills the premise. The head is 4,495,634 cyc = **17.6 %** of
+  the pruned graft; deleting it outright reaches only **8.3 FPS** against a 15–30 FPS bar, so
+  it is not the deployability lever (the elementwise tax is — 44.5 % of cycles for 1.4 % of
+  ops, and **41.7 of those 44.5 points sit in the backbone**, only 2.8 in the head). Keeping
+  it holds three things a swap would cost: the **comparison** (same head both families ⇒ any
+  delta is the backbone = the NAS claim; yolo11n cannot wear a Frontnet head), the **metric**
+  (OKS-mAP, continuous with the whole Orin record), and the **warm-start donor**
+  (`gate_baseline/weights/best.pt` transfers+freezes; CP 2.4 measured a random-init head
+  destroying the ranking, τ=0.20). Metrics pinned BEFORE any comparison: **OKS-mAP primary**;
+  mean corner error (px) + PCK@t kept as secondary diagnostics.
+  *Owed by this choice:* the raw-head graph excludes DFL decode + anchor concat + NMS (they
+  run in C on the fabric controller — `detect/export_grafted_onnx.py:207-216`), so every CP
+  10.1 FPS is optimistic for **both** families. It cancels from the graft-vs-baseline ratio,
+  but the absolute number owes one fabric-controller decode measurement.
+  References trained on the AGX: downscaled yolo11n-pose + one OFA subnet, same head.
   - **DoD:** both references trained + evaluated on the converted val, numbers recorded.
 - **CP 10.3 — GAP8 latency LUT.** Append-only rows keyed per block at the new resolution
   (`source=gap8_nntool|gap8_gvsoc`, `precision=int8`; device fields documented in
