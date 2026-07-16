@@ -71,3 +71,50 @@ Draws from the TRAIN split (val stays untouched for accuracy claims);
 - **Probe B (baseline):** `models/res224/yolo11n_pose_224.onnx` through the
   identical path. Expected friction: C2PSA attention / DFL head ops — a
   documented infeasibility is itself the baseline result.
+
+### Codegen (`probes/gen_probe.sh`) — DONE
+
+Both families compile to GAP8 kernels + a memory plan. `probes/at/Makefile` is
+**app-less on purpose**: `make model` exercises every codegen gate without a
+main.c. It answers *"does it compile, and does it fit HyperRAM?"* — nothing more.
+
+### Cycles (`probes/cyc_probe.sh`) — the DoD number, IN PROGRESS
+
+`probes/cyc/` adds the app (`net_cyc.c`) the codegen probe deliberately lacks:
+nntool with the cycle monitor on → AutoTiler → link → GVSOC → parse
+`AT_GraphPerf` → `data/mcu/cyc/<model>.json`. One harness serves both models —
+the graft and the yolo11n twin export an **identical entry signature** (1 int8
+input, 6 int8 outputs, matched shapes), so the same object code drives both and
+any cycle delta is the backbone alone.
+
+**Two L2 facts the app-less probe could not see** (both measured here, both
+resolution-independent, both shaping the whole MCU leg):
+
+1. **The generated graph's `.text` is ~329 KB — 63 % of GAP8's 512 KB L2** (214
+   node functions), leaving only ~180 KB of L2 heap. Code size scales with
+   **node count**, not input size, so this tax is identical at 160² and 224²:
+   the MCU leg favours *shallower* graphs, not merely smaller ones.
+2. **The stock `--L2 400000` is unrunnable.** AutoTiler is greedy (it consumes
+   whatever budget it is given), and it shares that one L2 with the binary. The
+   measured ladder: 400000 tiles but dies at runtime (`construct rc=3`, L2
+   alloc); 70000 fails at codegen ("Failed to allocate Buffer … Kernel Bias");
+   **160000 tiles and constructs**. All graph IO (150528 B in + 179389 B of
+   raw-head outputs) is therefore pushed to HyperRAM, leaving the heap to
+   AutoTiler alone.
+
+Status: boot → cluster open → `CNN_Construct` all pass on GVSOC (verified by the
+staged `CYC_SMOKE=1|2|3` bisect; arena base reported at 5248064). **The CNN run
+itself still aborts** — open blocker, see procedure.md.
+
+Toolchain gotchas encoded here (each cost a debug cycle, none documented upstream):
+- AutoTiler emits `#include "<prefix>.h"` into its `Kernels.h` and expects the
+  app to supply it (mnist ships a hand-written one); `cyc_probe.sh` generates it.
+- **`io=host` is mandatory** — both SDK references that run clean on GVSOC set
+  it. Stdout is buffered and lost on SIGABRT, so a crash reports as *silence*;
+  that is what the `CYC_SMOKE` staging exists to see through.
+- **"Magick: abort due to signal 6" is a red herring** — the board's camera model
+  links ImageMagick, whose signal handler catches any SIGABRT. The camera is not
+  the fault, and it masks GVSOC's real message.
+- PMSIS's `extern_alloc` serves HyperRAM **from the top**, so free space is
+  *below* `CNN_L3_MEMORY`, not above it. Derive buffer addresses from the arena
+  base rather than assuming it starts at 0.

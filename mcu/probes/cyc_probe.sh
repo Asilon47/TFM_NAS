@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# CP 10.1 DoD: simulated cycle counts per model.
+#   nntool (cycle monitor ON, outputs -> HyperRAM) -> AutoTiler -> GAP8 kernels
+#   -> link net_cyc.c app -> run on GVSOC -> parse AT_GraphPerf -> JSON.
+#
+# Emits data/mcu/cyc/<model>.{run.log,json}. The JSON is the CP 10.1 deliverable;
+# cycles are SIM numbers and RANKING-ONLY (procedure.md, Stage 0 discipline) --
+# they are never comparable to a Jetson millisecond.
+#
+#   mcu/probes/cyc_probe.sh                      # the CP 10.1 matched pair
+#   mcu/probes/cyc_probe.sh graft_raw_224_mcu    # one model
+#   CYC_L2=200000 mcu/probes/cyc_probe.sh        # re-tile with a tighter L2
+#
+# A failed stage is a RESULT to record (documented infeasibility satisfies the
+# DoD too), not a script error -- hence no `set -e`.
+set -uo pipefail
+
+MCU_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "${MCU_DIR}/.." && pwd)"
+OUT_DIR="${REPO}/data/mcu/cyc"
+mkdir -p "${OUT_DIR}"
+
+# AutoTiler's L2 budget, and it is the binding constraint of this whole probe.
+# AutoTiler is GREEDY (it consumes whatever it is given), but it shares GAP8's
+# single 512 KB L2 with the binary itself -- and the generated graph's .text
+# MEASURES ~329 KB for these 214-node models, leaving only ~180 KB of L2 heap.
+# So the SDK's stock 400000 is not merely optimistic, it is unrunnable; that is
+# what the app-less CP 10.1 codegen assumed (it only ever checked HyperRAM/flash
+# fit, never the L2 an actual app leaves behind). Measured ladder: 240000 tiles
+# but dies at runtime with construct rc=3 (L2 alloc); 70000 fails to tile at
+# codegen ("Failed to allocate Buffer ... used in Kernel Bias"). ALL graph IO is
+# pushed to HyperRAM (see net_cyc.c) to leave the heap to AutoTiler alone.
+CYC_L2="${CYC_L2:-160000}"
+
+MODELS=(graft_raw_224_mcu yolo11n_pose_224_raw)
+[[ $# -gt 0 ]] && MODELS=("$@")
+
+for m in "${MODELS[@]}"; do
+    build_host="${OUT_DIR}/${m}"
+    build_ctr="/workspace/TFM_NAS/data/mcu/cyc/${m}"
+    genlog="${build_host}.gen.log"
+    runlog="${build_host}.run.log"
+    mkdir -p "${build_host}"
+
+    # IDENTICAL script for every model -- the pair only differs in its backbone,
+    # so any cycle delta must not come from the quantization/codegen recipe.
+    # One `fusions` call: each invocation re-runs adjust_order and a second pass
+    # over a detection head raises "axes don't match array" (CP 10.1 fact 4).
+    # default_{input,output}_* -> HyperRAM: with ~329 KB of .text there is not
+    # enough L2 left for AutoTiler's working set AND the 330 KB of graph IO.
+    cat > "${build_host}/nntool_script" <<EOF
+adjust
+fusions -a scaled_match_group expression_matcher
+set default_input_home_location AT_MEM_L3_HRAM
+set default_input_exec_location AT_MEM_L3_HRAM
+set default_output_home_location AT_MEM_L3_HRAM
+set default_output_exec_location AT_MEM_L3_HRAM
+set l3_ram_device AT_MEM_L3_HRAM
+set l3_flash_device AT_MEM_L3_HFLASH
+set graph_produce_node_names true
+set graph_produce_operinfos true
+set graph_monitor_cycles true
+aquant /workspace/TFM_NAS/data/mcu/probes/aq_sample/*.jpg -H 224 -W 224 -T
+save_state ${build_ctr}/${m}
+EOF
+
+    # AutoTiler unconditionally emits `#include "<prefix>.h"` into its Kernels.h
+    # and expects the app to supply it (the SDK ships a hand-written one per
+    # example, e.g. mnist/mnist.h). Its only job is to declare the _L3_Flash
+    # symbol the app defines. Ours is model-named, so generate it; -I$(MODEL_BUILD)
+    # is already on the include path. The app-less at/ codegen probe never
+    # compiled Kernels.h, which is why CP 10.1 never needed this.
+    cat > "${build_host}/${m}.h" <<EOF
+#ifndef __${m}_APP_H__
+#define __${m}_APP_H__
+#include "Gap.h"
+extern AT_HYPERFLASH_FS_EXT_ADDR_TYPE ${m}_L3_Flash;
+#endif
+EOF
+
+    echo "=== ${m}: codegen (AutoTiler L2 budget ${CYC_L2}) ==="
+    "${MCU_DIR}/run.sh" \
+        "make -C /workspace/TFM_NAS/mcu/probes/cyc model \
+            MODEL_PREFIX=${m} \
+            MODEL_BUILD=${build_ctr} \
+            MODEL_L2_MEMORY=${CYC_L2} \
+            NNTOOL_SCRIPT=${build_ctr}/nntool_script" \
+        >"${genlog}" 2>&1
+    if [[ ! -f "${build_host}/${m}Kernels.c" ]]; then
+        echo "GEN_FAIL ${m}  (${genlog})"
+        grep -iE 'error|abort|cannot|unable' "${genlog}" | head -5 | sed 's/^/    /'
+        continue
+    fi
+
+    # Construct()'s HyperRAM arena size is a codegen output; the app needs it to
+    # place its output buffers immediately above the arena.
+    arena=$(grep -oE 'AT_HYPERRAM_ALLOC\(&HyperRam, [0-9]+\)' \
+            "${build_host}/${m}Kernels.c" | head -1 | grep -oE '[0-9]+')
+    if [[ -z "${arena}" ]]; then
+        echo "GEN_FAIL ${m}  (no HyperRAM arena found -- graph has no L3 tensors?)"
+        continue
+    fi
+    echo "    L3 arena ${arena} B; building app + running GVSOC (slow: full int8 CNN)"
+
+    "${MCU_DIR}/run.sh" \
+        "make -C /workspace/TFM_NAS/mcu/probes/cyc all run platform=gvsoc \
+            MODEL_PREFIX=${m} \
+            MODEL_BUILD=${build_ctr} \
+            MODEL_L2_MEMORY=${CYC_L2} \
+            AT_L3_ARENA=${arena} \
+            NNTOOL_SCRIPT=${build_ctr}/nntool_script" \
+        >"${runlog}" 2>&1
+
+    if grep -q '^CYC_TOTAL' "${runlog}"; then
+        REPO="${REPO}" python3 - "${m}" "${runlog}" "${genlog}" "${CYC_L2}" "${arena}" <<'PY'
+import json, os, re, sys
+
+model, runlog, genlog, l2, arena = sys.argv[1:6]
+run = open(runlog, errors="replace").read()
+gen = open(genlog, errors="replace").read()
+
+tot = re.search(r'^CYC_TOTAL sum_nodes=(\d+) at_total=(\d+) operations=(\d+) nodes=(\d+)',
+                run, re.M)
+nodes = [{"idx": int(i), "name": n, "cycles": int(c), "operations": int(o)}
+         for i, n, c, o in re.findall(r'^CYC_NODE (\d+) (\S+) (\d+) (\d+)', run, re.M)]
+mem = re.search(r'^CYC_MEM arena_base=(\d+) arena_bytes=(\d+) out_base=(\d+) '
+                r'out_bytes=(\d+) in_l2_bytes=(\d+)', run, re.M)
+
+def gm(pat):
+    m = re.search(pat, gen)
+    return int(m.group(1)) if m else None
+
+cyc = int(tot.group(2)) or int(tot.group(1))
+FREQ_CL_MHZ = 175  # GAP8 V3 cluster ceiling; the AI-deck 1.1 figure
+
+rec = {
+    "model": model,
+    "source": "gap8_gvsoc",
+    "precision": "int8",
+    "note": "SIM cycles, RANKING-ONLY -- not comparable to measured Jetson ms",
+    "cycles_sum_nodes": int(tot.group(1)),
+    "cycles_at_total": int(tot.group(2)),
+    "operations": int(tot.group(3)),
+    "n_nodes": int(tot.group(4)),
+    "ops_per_cycle": round(int(tot.group(3)) / cyc, 4) if cyc else None,
+    "ms_at_175mhz": round(cyc / (FREQ_CL_MHZ * 1e6) * 1e3, 3) if cyc else None,
+    "fps_at_175mhz": round((FREQ_CL_MHZ * 1e6) / cyc, 2) if cyc else None,
+    "autotiler_l2_budget": int(l2),
+    "l3_arena_bytes": int(arena),
+    "mem": {
+        "l1_used": gm(r'Shared L1 Memory size \(Bytes\)\s+: Given:\s+\d+, Used:\s+(\d+)'),
+        "l2_used": gm(r'L2 Memory size \(Bytes\)\s+: Given:\s+\d+, Used:\s+(\d+)'),
+        "hyperram_used": gm(r'HyperRam Memory size \(Bytes\)\s+: Given:\s+\d+, Used:\s+(\d+)'),
+        "hyperflash_used": gm(r'HyperFlash Memory size \(Bytes\)\s+: Given:\s+\d+, Used:\s+(\d+)'),
+        "input_l2_bytes": int(mem.group(5)) if mem else None,
+        "output_l3_bytes": int(mem.group(4)) if mem else None,
+    },
+    "nodes": sorted(nodes, key=lambda n: -n["cycles"]),
+}
+path = os.path.join(os.environ["REPO"], "data", "mcu", "cyc", model + ".json")
+with open(path, "w") as f:
+    json.dump(rec, f, indent=2)
+print(f"RUN_OK   {model}  {rec['cycles_at_total']:>12,} cycles  "
+      f"{rec['ms_at_175mhz']:>8} ms @175MHz  ({rec['fps_at_175mhz']} FPS)  -> {path}")
+PY
+    else
+        echo "RUN_FAIL ${m}  (${runlog})"
+        grep -iE '^CYC_ERROR|error|abort|cannot|not enough|overflow' "${runlog}" \
+            | head -6 | sed 's/^/    /'
+    fi
+done

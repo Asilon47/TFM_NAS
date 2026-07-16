@@ -90,3 +90,7 @@ dataset.zip
 # Recovered proprietary AutoTiler blob (GAP8 toolchain) — fetched +
 # SHA-verified on demand by mcu/fetch_tiler.sh, never tracked (EULA).
 mcu/vendor/
+
+# GAP8 app build trees (regenerable; written root-owned from inside the
+# tfm-gap8 container, so clean them with mcu/run.sh 'rm -rf ...', not host rm).
+mcu/probes/*/BUILD/
