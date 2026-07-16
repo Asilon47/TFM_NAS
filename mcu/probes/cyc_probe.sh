@@ -41,7 +41,35 @@ CYC_L2="${CYC_L2:-160000}"
 # value the app does. Identical for every model, so the comparison stays fair.
 CYC_MASTER_STACK="${CYC_MASTER_STACK:-8192}"
 
-MODELS=(graft_raw_224_mcu yolo11n_pose_224_raw)
+# Probe resolution. CP 10.1 used 224; CP 10.2's task shape is 160-320, and the
+# resolution leg of that question is testable here with no training.
+CYC_RES="${CYC_RES:-224}"
+
+# Graph IO byte counts are read from each model's ONNX, never assumed. A closed
+# form over CYC_RES holds only for the UNPRUNED raw-head pair; a spec-pruned
+# graft has narrower adapter feats (71,925 out vs 91,525 at 160), and feeding the
+# harness undersized output buffers would let the CNN write out of bounds. int8,
+# so numel == bytes. Needs .venv-nas (onnx) -- the same venv that produced the
+# exports.
+NAS_PY="${REPO}/.venv-nas/bin/python"
+io_bytes() {   # $1 = host path to the .onnx -> prints "IN O1 O2 O3 O4 O5 O6"
+    "${NAS_PY}" - "$1" <<'PY'
+import sys
+import onnx
+m = onnx.load(sys.argv[1], load_external_data=False)
+def numel(t):
+    n = 1
+    for d in t.type.tensor_type.shape.dim:
+        n *= (d.dim_value or 0)
+    return n
+vals = [numel(m.graph.input[0])] + [numel(o) for o in m.graph.output]
+if len(vals) != 7:
+    sys.exit(f"expected 1 input + 6 outputs, got {len(vals)-1} outputs")
+print(" ".join(str(v) for v in vals))
+PY
+}
+
+MODELS=(graft_raw_${CYC_RES}_mcu yolo11n_pose_${CYC_RES}_raw)
 [[ $# -gt 0 ]] && MODELS=("$@")
 
 for m in "${MODELS[@]}"; do
@@ -50,6 +78,13 @@ for m in "${MODELS[@]}"; do
     genlog="${build_host}.gen.log"
     runlog="${build_host}.run.log"
     mkdir -p "${build_host}"
+
+    onnx_host="${REPO}/models/res${CYC_RES}/${m}.onnx"
+    if ! read -r IN_B O1_B O2_B O3_B O4_B O5_B O6_B < <(io_bytes "${onnx_host}"); then
+        echo "IO_FAIL  ${m}  (could not read IO shapes from ${onnx_host})"
+        continue
+    fi
+    echo "=== ${m}: IO in=${IN_B} out=$((O1_B+O2_B+O3_B+O4_B+O5_B+O6_B)) B (from ONNX)"
 
     # IDENTICAL script for every model -- the pair only differs in its backbone,
     # so any cycle delta must not come from the quantization/codegen recipe.
@@ -69,7 +104,7 @@ set l3_flash_device AT_MEM_L3_HFLASH
 set graph_produce_node_names true
 set graph_produce_operinfos true
 set graph_monitor_cycles true
-aquant /workspace/TFM_NAS/data/mcu/probes/aq_sample/*.jpg -H 224 -W 224 -T
+aquant /workspace/TFM_NAS/data/mcu/probes/aq_sample/*.jpg -H ${CYC_RES} -W ${CYC_RES} -T
 save_state ${build_ctr}/${m}
 EOF
 
@@ -92,6 +127,7 @@ EOF
         "make -C /workspace/TFM_NAS/mcu/probes/cyc model \
             MODEL_PREFIX=${m} \
             MODEL_BUILD=${build_ctr} \
+            TRAINED_MODEL=/workspace/TFM_NAS/models/res${CYC_RES}/${m}.onnx \
             MODEL_L2_MEMORY=${CYC_L2} \
             CLUSTER_STACK_SIZE=${CYC_MASTER_STACK} \
             NNTOOL_SCRIPT=${build_ctr}/nntool_script" \
@@ -122,6 +158,10 @@ EOF
          make -C /workspace/TFM_NAS/mcu/probes/cyc all run platform=gvsoc \
             MODEL_PREFIX=${m} \
             MODEL_BUILD=${build_ctr} \
+            TRAINED_MODEL=/workspace/TFM_NAS/models/res${CYC_RES}/${m}.onnx \
+            AT_INPUT_BYTES=${IN_B} \
+            AT_OUT1_BYTES=${O1_B} AT_OUT2_BYTES=${O2_B} AT_OUT3_BYTES=${O3_B} \
+            AT_OUT4_BYTES=${O4_B} AT_OUT5_BYTES=${O5_B} AT_OUT6_BYTES=${O6_B} \
             MODEL_L2_MEMORY=${CYC_L2} \
             CLUSTER_STACK_SIZE=${CYC_MASTER_STACK} \
             AT_L3_ARENA=${arena} \

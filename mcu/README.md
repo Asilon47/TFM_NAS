@@ -110,14 +110,39 @@ resolution-independent, both shaping the whole MCU leg):
 | yolo11n-pose raw-head | 214 | 329 KB | 84 KB (matched) | 113,353,831 | 648 | 1.54 | 3.67 |
 | graft (winner-v1) | 180 | 405 KB | 84 KB (own max) | 268,207,010 | 1533 | 0.65 | 1.46 |
 
-**The graft loses on GAP8 too — 2.37× at matched L2, 2.84× each-at-own-max.**
-It does 6 % FEWER ops (392 M vs 417 M) yet burns 2.37× the cycles: 1.46 vs 3.67
-ops/cycle. Depthwise convs are only 7.5 % of cycles — the cost is MBv3's
-inverted bottleneck (1×1 expand/project = 60 %) and unfused activations (26 %,
-partly patch 0001's doing: no custom-act DW kernel exists). Fourth device to
-agree (Orin +39 %, x86 +13–21 %, GAP8 L3 bandwidth 2.1×, GAP8 cycles 2.37×).
-Full analysis + caveats (unpruned w1.0; probe shape ≠ CP 10.2 task shape) in
-procedure.md "CP 10.1 CLOSED".
+The **unpruned w1.0** graft loses — 2.37× at matched L2, 2.84× each-at-own-max.
+It does 6 % FEWER ops yet burns 2.37× the cycles: 1.46 vs 3.67 ops/cycle.
+Depthwise convs are only 7.5 % — the cost is MBv3's inverted bottleneck (1×1
+expand/project = 60 %) and unfused activations (26 %, partly patch 0001's doing:
+no custom-act DW kernel exists).
+
+**But the PRUNED graft — the actual deliverable — is 1.94× FASTER than the
+baseline** (@160, matched 84 KB L2):
+
+| model | params | cycles | ms | FPS | ops/cyc |
+|---|---|---|---|---|---|
+| yolo11n (deployed baseline) | 2,704,443 | 59,852,262 | 342 | 2.92 | 3.55 |
+| graft, unpruned w1.0 | 3,003,835 | 148,218,707 | 847 | 1.18 | 1.35 |
+| **graft, PRUNED v2_act292** | **631,851** | **30,852,955** | **176** | **5.67** | **2.06** |
+
+Pruning bought 4.80× = **3.15× fewer ops × 1.52× better ops/cycle** (narrower
+channels shrink the working set, so the memory-bound graft tiles better). The
+hardware-conditional finding: the same pruned NAS family is *marginal* on the
+Orin (~8 % predicted fp16) and *decisive* on the MCU (**94 %**).
+
+Fences: NOT iso-params (631 K vs 2.70 M) — it is the deliverable comparison the
+"NAS-born, not a pruned YOLO" constraint defines, not an architecture-controlled
+one; **accuracy is unmeasured and is the whole Pareto question** (AGX run pending;
+nearest measured neighbour r50_gtay @760 K = 0.7947). Full analysis in
+procedure.md "CP 10.1 CLOSED" + "CP 10.1 AMENDED".
+
+Reproduce the pruned point (no training, no data — the spec pins the shape, so a
+data-free `l2` prune is architecture-identical to the AGX's `global_taylor`):
+```bash
+python -m mcu.export_pruned --spec prune/specs/v2_act292.json --imgsz 160 \
+    --out models/res160/graft_r292_160_mcu.onnx     # .venv-nas
+CYC_RES=160 CYC_L2=84000 mcu/probes/cyc_probe.sh graft_r292_160_mcu
+```
 
 Third L2 fact, from the pair: **`.text` scales with kernel complexity, not node
 count** — the graft has FEWER nodes (180 vs 214) yet 405 KB vs 329 KB, i.e. 79 %

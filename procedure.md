@@ -4085,12 +4085,16 @@ backbone alone.
 | yolo11n-pose raw-head | 214 | 329 KB | 84 KB (matched) | 113,353,831 | 648 | 1.54 | 417 M | 3.67 |
 | graft (winner-v1 arch) | 180 | **405 KB** | 84 KB (own max) | **268,207,010** | **1533** | **0.65** | 392 M | **1.46** |
 
-**The pivot's hypothesis is contradicted by measurement.** Phase 10 was entered expecting
-depthwise MBv3 to be the *native efficient family* on a GAP8-class MCU and the NAS deliverable
-to Pareto-dominate there. It does not: the graft is **2.37× slower at a matched L2 budget** and
-**2.84× slower when each model is given the most L2 its own binary allows** (the
-deployment-realistic reading). This is the **fourth independent device to agree** — Orin +39 %,
-x86 +13–21 % (CPU rank check), GAP8 AutoTiler L3 bandwidth 2.1×, and now GAP8 cycles.
+**The UNPRUNED graft loses.** Phase 10 was entered expecting depthwise MBv3 to be the *native
+efficient family* on a GAP8-class MCU and the NAS deliverable to Pareto-dominate there. The
+w1.0 graft does not: it is **2.37× slower at a matched L2 budget** and **2.84× slower when each
+model is given the most L2 its own binary allows**. On the unpruned axis this is the **fourth
+independent device to agree** — Orin +39 %, x86 +13–21 % (CPU rank check), GAP8 AutoTiler L3
+bandwidth 2.1×, and now GAP8 cycles.
+
+> **AMENDED SAME DAY — see "CP 10.1 AMENDED" below. The PRUNED graft REVERSES this: it is
+> 1.94× FASTER than the baseline on GAP8. The conclusion drawn in this section holds only for
+> the unpruned w1.0 graft, which is not the deliverable. Do not cite this section standalone.**
 
 **Mechanism (the part that generalises past this probe shape).** The graft is not doing more
 work — it does **6 % FEWER operations** (392 M vs 417 M) and still burns 2.37× the cycles,
@@ -4117,9 +4121,11 @@ cluster. Per-kernel-class, at the matched 84 KB budget:
 
 **Caveats that keep this preliminary (unchanged from the codegen entry, still owed):** the graft
 is **unpruned w1.0** (3.00 M vs 2.70 M params) and pruning-as-search is the lever that closed the
-Orin gap — though note it cuts params/ops, and the deficit here is **ops/cycle**, which pruning
-does not obviously fix; 224² RGB raw-head is a **probe shape**, not the CP 10.2 task shape
-(grayscale, 160–320, Frontnet-style head); and these are simulator cycles, ranking-only.
+Orin gap — I reasoned it would not help here because the deficit is *ops/cycle* rather than
+params, **and that reasoning was wrong: see the amendment below, where pruning improves ops/cycle
+1.52× as well as cutting ops 3.15×**; 224² RGB raw-head is a **probe shape**, not the CP 10.2
+task shape (grayscale, 160–320, Frontnet-style head); and these are simulator cycles,
+ranking-only.
 
 **Toolchain facts learned here** (none documented upstream, all encoded in `mcu/probes/cyc/`):
 5. **AutoTiler emits `#include "<prefix>.h"` into its Kernels.h and expects the *app* to supply
@@ -4149,9 +4155,66 @@ Controls that pass in this image (use to bisect): `examples/gap8/basic/helloworl
 `examples/gap8/nn/nntool/mnist` (seed `images/` from its own `samples/*.pgm` — its sample
 generator needs TensorFlow, which is absent). mnist prints full per-node cycles.
 
-**Next: CP 10.2 task re-scope** — and it now carries a real question the user owns: the MCU leg
-was justified by an expected rank flip that four devices have now refused to produce. Options
-are (a) run CP 10.2's task shape + a pruned graft and let the honest negative stand as the
-thesis's hardware-conditional finding, or (b) re-scope Phase 10 around the finding itself
-(code-size + ops/cycle as MCU-specific cost axes the Orin cannot see). Do not resolve
-unilaterally.
+## CP 10.1 AMENDED — the PRUNED graft is 1.94× FASTER than the baseline on GAP8 (2026-07-16)
+
+User call ("lets wait and try with the pruned") — and it overturned the section above. No
+waiting was needed: **cycles do not depend on weight values, and the pruned shape does not
+either.** `recover_graft` prunes from a `--ratio-spec` with `pruning_ratio_dict` and
+deliberately passes no `global_pruning`, so per-stage channel counts are pinned by the spec;
+importance only picks *which* channels to drop. Its own comment says "shapes (and latency) are
+importance-invariant", and the torch-pruning parity check measured a global_taylor ONNX's
+activation bytes equal to the l2 screen's to 0.00 %. So a **data-free `l2` prune** (`mcu/export_pruned.py`,
+new) reproduces the AGX champion's architecture exactly — verified by params landing on
+**631,851 = the spec's `params_after` to the digit** — while the AGX was still at epoch ~24/100.
+
+**Results** (@160, matched 84 KB L2, identical recipe, GAP8 V3 @175 MHz; IO read per-model from
+the ONNX — a pruned graft's adapter feats are narrower, 71,925 out vs 91,525, and assuming the
+closed form would have handed the harness undersized buffers):
+
+| model | params | cycles | ms | FPS | ops | ops/cyc |
+|---|---|---|---|---|---|---|
+| yolo11n-pose (deployed baseline) | 2,704,443 | 59,852,262 | 342 | 2.92 | 212 M | 3.55 |
+| graft, unpruned w1.0 | 3,003,835 | 148,218,707 | 847 | 1.18 | 201 M | 1.35 |
+| **graft, PRUNED v2_act292** | **631,851** | **30,852,955** | **176** | **5.67** | 64 M | **2.06** |
+
+**The NAS deliverable beats the deployed baseline by 1.94× on GAP8** (176 ms vs 342 ms).
+Pruning bought the graft **4.80×**, and the earlier "pruning cannot fix an ops/cycle deficit"
+reasoning was wrong on both counts — the speedup decomposes as **3.15× fewer ops × 1.52× better
+ops/cycle** (1.35 → 2.06). Mechanism: narrower channels shrink the working set, so the
+memory-bound graft tiles far better — the same effect `allocate_v2`'s activation fence was built
+around (base act 533 MB → this spec's 290 MB). The cycle mix moves accordingly: pointwise conv
+66 % → 32 %, with depthwise rising 8 % → 14 % as the *remaining* work.
+
+**This is the hardware-conditional finding the pivot was after, and it is sharper than a rank
+flip.** The same pruned NAS family is *marginal* on the Orin and *decisive* on the MCU:
+
+| device | pruned NAS graft vs deployed yolo11n |
+|---|---|
+| Orin Nano, fp16 TRT | v2_act292 **predicted** 7.156 ms vs 7.75 → ~8 % faster (r50_gtay **measured** 7.48 → 3.5 %) |
+| GAP8, int8 sim @160 | **176 ms vs 342 ms → 94 % faster (1.94×)** |
+
+**Honest fences on that claim:**
+- **Not iso-params**: pruned graft 631 K vs unpruned baseline 2.70 M. This is the *deliverable*
+  comparison the user's constraint defines (the deliverable must be NAS-born — "not the yolo or
+  a pruned yolo"), **not** an architecture-controlled one. A pruned yolo11n would also speed up
+  (Orin: prune r20 at 1.6 M is 25 % faster than baseline); it is simply not an allowed
+  deliverable. Any *scientific* claim about MBv3-vs-CSP must say this out loud.
+- **Accuracy is not measured here and is the whole Pareto question.** 631 K params will sit well
+  below the baseline's 0.877; the closest measured neighbour is r50_gtay (760 K) at 0.7947. The
+  AGX run (v2_act292 + KD, seed 0) is what settles it. Latency without that number is half a claim.
+- The Orin fp16 figure for *this* spec is **predicted**, not measured; only r50_gtay is measured.
+- Sim cycles, ranking-only; 160² RGB raw-head still is not CP 10.2's gray + Frontnet head.
+
+**The resolution leg of the shape probe (also settled, no training).** Re-exported the matched
+pair at 160² and re-ran: the deficit does **not** shrink at the smaller shape — it slightly grows
+(**2.37× @224 → 2.48× @160**), because the *baseline* gains more from the shrink (1.89× vs
+1.81×). And the shared raw-head is a fixed common cost that *dilutes* the gap: splitting each
+graph at its feats-producing boundary (validated by the head costing 26.4 M vs 26.1 M over 60
+nodes each — it is literally the same module) gives a **backbone-only ratio of 2.79× @224 and
+3.14× @160**. So swapping in CP 10.2's tiny Frontnet head would make the *unpruned* graft look
+worse, not better. Both legs point the same way, and neither changes the pruned verdict above.
+
+**Next: CP 10.2 task re-scope**, now on a much better footing — the MCU leg's premise survived,
+conditional on pruning. The open question the user owns is no longer "does the NAS family have a
+place on the MCU" but **what operating point** (accuracy vs 5.67 FPS) the deliverable should sit
+at, which needs the AGX accuracy number first.
