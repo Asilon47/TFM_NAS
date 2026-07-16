@@ -78,7 +78,7 @@ Both families compile to GAP8 kernels + a memory plan. `probes/at/Makefile` is
 **app-less on purpose**: `make model` exercises every codegen gate without a
 main.c. It answers *"does it compile, and does it fit HyperRAM?"* — nothing more.
 
-### Cycles (`probes/cyc_probe.sh`) — the DoD number, IN PROGRESS
+### Cycles (`probes/cyc_probe.sh`) — the DoD number, CLOSED 2026-07-16
 
 `probes/cyc/` adds the app (`net_cyc.c`) the codegen probe deliberately lacks:
 nntool with the cycle monitor on → AutoTiler → link → GVSOC → parse
@@ -102,9 +102,30 @@ resolution-independent, both shaping the whole MCU leg):
    raw-head outputs) is therefore pushed to HyperRAM, leaving the heap to
    AutoTiler alone.
 
-Status: boot → cluster open → `CNN_Construct` all pass on GVSOC (verified by the
-staged `CYC_SMOKE=1|2|3` bisect; arena base reported at 5248064). **The CNN run
-itself still aborts** — open blocker, see procedure.md.
+**Results** (@224 int8, matched raw-head, GAP8 V3 @175 MHz; SIM cycles, RANKING-ONLY):
+
+| model | nodes | .text | AT L2 | cycles | ms | FPS | ops/cyc |
+|---|---|---|---|---|---|---|---|
+| yolo11n-pose raw-head | 214 | 329 KB | 160 KB (own max) | 94,538,316 | 540 | 1.85 | 3.67 |
+| yolo11n-pose raw-head | 214 | 329 KB | 84 KB (matched) | 113,353,831 | 648 | 1.54 | 3.67 |
+| graft (winner-v1) | 180 | 405 KB | 84 KB (own max) | 268,207,010 | 1533 | 0.65 | 1.46 |
+
+**The graft loses on GAP8 too — 2.37× at matched L2, 2.84× each-at-own-max.**
+It does 6 % FEWER ops (392 M vs 417 M) yet burns 2.37× the cycles: 1.46 vs 3.67
+ops/cycle. Depthwise convs are only 7.5 % of cycles — the cost is MBv3's
+inverted bottleneck (1×1 expand/project = 60 %) and unfused activations (26 %,
+partly patch 0001's doing: no custom-act DW kernel exists). Fourth device to
+agree (Orin +39 %, x86 +13–21 %, GAP8 L3 bandwidth 2.1×, GAP8 cycles 2.37×).
+Full analysis + caveats (unpruned w1.0; probe shape ≠ CP 10.2 task shape) in
+procedure.md "CP 10.1 CLOSED".
+
+Third L2 fact, from the pair: **`.text` scales with kernel complexity, not node
+count** — the graft has FEWER nodes (180 vs 214) yet 405 KB vs 329 KB, i.e. 79 %
+of L2, leaving a 90,388-byte heap. It *cannot* be given the 160 KB yolo11n can.
+
+Reproduce: `mcu/probes/cyc_probe.sh` (both), or `CYC_L2=84000 mcu/probes/cyc_probe.sh`
+for the matched-budget control. Files: `data/mcu/cyc/<model>.json` (+ the
+`.L2_160000.json` variant); each JSON self-describes its `autotiler_l2_budget`.
 
 Toolchain gotchas encoded here (each cost a debug cycle, none documented upstream):
 - AutoTiler emits `#include "<prefix>.h"` into its `Kernels.h` and expects the

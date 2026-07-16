@@ -4068,5 +4068,90 @@ resolution, not the CP 10.2 task shape (grayscale, 160–320, Frontnet-style hea
 deficit survives cycles + pruning + the real task shape, the hardware-conditional-NAS thesis
 needs the honest negative recorded, not the pivot re-litigated.
 
-**Owed for CP 10.1 DoD:** GVSOC cycle numbers for the pair (app harness around the generated
-`*Kernels.c` — the mnist example is the pattern), then the CP 10.2 task re-scope.
+## CP 10.1 CLOSED — GVSOC cycles: the graft loses on GAP8 too (2026-07-16)
+
+The owed DoD number. `mcu/probes/cyc/` (`net_cyc.c` + Makefile) is the app the codegen probe
+deliberately lacks; `mcu/probes/cyc_probe.sh` drives nntool (cycle monitor on) → AutoTiler →
+link → GVSOC → `AT_GraphPerf` → `data/mcu/cyc/<model>.json`. **One harness serves both models**:
+the graft and the yolo11n twin export an identical entry signature (1 int8 input, 6 int8
+outputs, byte-identical shapes), so the same object code drives both and the delta is the
+backbone alone.
+
+**Results** (@224 int8, matched raw-head, GAP8 V3 cluster @175 MHz; SIM cycles, RANKING-ONLY):
+
+| model | nodes | .text | AT L2 | cycles | ms | FPS | ops | ops/cyc |
+|---|---|---|---|---|---|---|---|---|
+| yolo11n-pose raw-head | 214 | 329 KB | 160 KB (own max) | 94,538,316 | 540 | 1.85 | 417 M | **3.67** |
+| yolo11n-pose raw-head | 214 | 329 KB | 84 KB (matched) | 113,353,831 | 648 | 1.54 | 417 M | 3.67 |
+| graft (winner-v1 arch) | 180 | **405 KB** | 84 KB (own max) | **268,207,010** | **1533** | **0.65** | 392 M | **1.46** |
+
+**The pivot's hypothesis is contradicted by measurement.** Phase 10 was entered expecting
+depthwise MBv3 to be the *native efficient family* on a GAP8-class MCU and the NAS deliverable
+to Pareto-dominate there. It does not: the graft is **2.37× slower at a matched L2 budget** and
+**2.84× slower when each model is given the most L2 its own binary allows** (the
+deployment-realistic reading). This is the **fourth independent device to agree** — Orin +39 %,
+x86 +13–21 % (CPU rank check), GAP8 AutoTiler L3 bandwidth 2.1×, and now GAP8 cycles.
+
+**Mechanism (the part that generalises past this probe shape).** The graft is not doing more
+work — it does **6 % FEWER operations** (392 M vs 417 M) and still burns 2.37× the cycles,
+because it runs at **1.46 ops/cycle vs 3.67**, i.e. 2.5× worse utilisation of the 8-core
+cluster. Per-kernel-class, at the matched 84 KB budget:
+- **The depthwise convs are cheap — 7.5 % (20.2 M cyc over 21 nodes).** The intuition that
+  "depthwise is native on PULP" is not wrong; it is just not where the money goes.
+- **Pointwise convs are 60 % (161.2 M over 76 nodes).** MBv3's inverted bottleneck sandwiches
+  every DW conv between 1×1 expand/project convs on *widened* channels (e=3–6). That structure,
+  not the DW op, is the cost.
+- **Activations are 26 % (68.9 M over 53 nodes) vs yolo11n's 11.6 % (13.2 M over 80)** — 7.9×
+  worse *per node* despite fewer nodes. **Partly our own toolchain constraint, and recorded as
+  such:** image patch 0001 forces expressions to stay OUT of the convs because the CHW SQ8
+  **depthwise** kernel set has no custom-activation variant (fact 2 above), so every h-swish is
+  a separate memory-bound pass over the tensor, while yolo11n's activations fuse into its
+  standard convs. A fused-activation DW kernel would claw some of this back — that is a real
+  gap in AutoTiler's shipped kernel library today, not a law of physics.
+- **New L2 fact: `.text` scales with kernel complexity, not node count.** The graft has FEWER
+  nodes (180 vs 214) yet 405 KB vs 329 KB of code — **79 % of GAP8's 512 KB L2** — leaving a
+  90,388-byte heap (`__l2_end` 0x1c069eec) versus yolo11n's ~180 KB. So the graft *cannot* be
+  given 160 KB of L2: its own code forbids it. Squeezing yolo11n 160→84 KB costs it +20 %
+  (94.5 M → 113.4 M), which is exactly the penalty the graft pays permanently. Code footprint is
+  a first-class MCU cost axis that does not exist on the Orin.
+
+**Caveats that keep this preliminary (unchanged from the codegen entry, still owed):** the graft
+is **unpruned w1.0** (3.00 M vs 2.70 M params) and pruning-as-search is the lever that closed the
+Orin gap — though note it cuts params/ops, and the deficit here is **ops/cycle**, which pruning
+does not obviously fix; 224² RGB raw-head is a **probe shape**, not the CP 10.2 task shape
+(grayscale, 160–320, Frontnet-style head); and these are simulator cycles, ranking-only.
+
+**Toolchain facts learned here** (none documented upstream, all encoded in `mcu/probes/cyc/`):
+5. **AutoTiler emits `#include "<prefix>.h"` into its Kernels.h and expects the *app* to supply
+   it** (the SDK ships a hand-written one per example, e.g. `mnist/mnist.h`); its only job is to
+   declare the `_L3_Flash` symbol the app defines. `cyc_probe.sh` generates it.
+6. **The master cluster stack silently defaults to 2048 B.** `pi_cluster_task_stacks()` sets
+   ONLY `task->slave_stack_size`; `pi_cluster_task()` leaves `task->stack_size` at 0, and
+   `cc_stack_size` in the cluster conf does **not** govern it. The generated `<prefix>CNN()`
+   frame alone is ~2 KB (one HyperRAM event struct per DMA channel), so PE0 overran it by ~900 B
+   and GVSOC aborted. Set `task.stack_size` explicitly and pass `CLUSTER_STACK_SIZE` to *both*
+   make calls (model_decl.mk deducts it from AutoTiler's L1 share, so codegen and app must
+   agree). mnist never trips this: its CNN frame is tiny.
+7. **`io=host` is mandatory, and stdout is buffered and LOST on SIGABRT** — a crash therefore
+   reports as *silence*, not an error. The staged `CYC_SMOKE=1..5` bisect exists to see through
+   that; `stdbuf -o0 -e0` reveals GVSOC's real message.
+8. **"Magick: abort due to signal 6" is a red herring** — the board's camera model links
+   ImageMagick, whose signal handler catches any SIGABRT and masks GVSOC's real error
+   (`/sys/board/chip/cluster/pe0/trace: SP-based access outside stack`).
+9. **PMSIS `extern_alloc` serves HyperRAM from the TOP** — free space is *below*
+   `<prefix>_L3_Memory` (observed arena base 5248064 on an 8 MiB part), never assume base 0.
+   All graph IO is pushed to HyperRAM (`default_{input,output}_{home,exec}_location`) because
+   L2 cannot hold AutoTiler's working set *and* 330 KB of IO.
+10. **`net_cyc.o` bakes in `-DAT_MODEL_PREFIX` but make only tracks timestamps** — switching
+   models relinks the previous model's object; force the recompile per model.
+
+Controls that pass in this image (use to bisect): `examples/gap8/basic/helloworld`, and
+`examples/gap8/nn/nntool/mnist` (seed `images/` from its own `samples/*.pgm` — its sample
+generator needs TensorFlow, which is absent). mnist prints full per-node cycles.
+
+**Next: CP 10.2 task re-scope** — and it now carries a real question the user owns: the MCU leg
+was justified by an expected rank flip that four devices have now refused to produce. Options
+are (a) run CP 10.2's task shape + a pruned graft and let the honest negative stand as the
+thesis's hardware-conditional finding, or (b) re-scope Phase 10 around the finding itself
+(code-size + ops/cycle as MCU-specific cost axes the Orin cannot see). Do not resolve
+unilaterally.
