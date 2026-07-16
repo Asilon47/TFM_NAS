@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_DONOR = REPO / "runs/pose/experiments/gate_baseline/weights/best.pt"
@@ -41,6 +42,33 @@ def load_arch(path: Path) -> dict:
     return arch
 
 
+def build_pruned_graft(arch: dict, spec: dict, donor: Path) -> tuple[Any, dict]:
+    """The spec-pruned graft, data-free (``l2``) — shapes pinned by the spec, weights untrained.
+
+    Shape-identical to the AGX's ``global_taylor`` run (see the module docstring), which is what
+    lets a *trained* pruned ``state_dict`` load straight into it: importance chooses which
+    channels survive, never how many, so the tensors line up exactly. Callers that load trained
+    weights overwrite every parameter anyway — for them this is purely a shape scaffold.
+    """
+    import torch
+
+    from detect.pose_model import build_grafted_pose_model
+    from prune.prune_baseline import TRACE_IMGSZ
+    from prune.prune_graft import prune_graft
+    from prune.recover_graft import spec_ratio_dict
+    from supernet.sampler import load_supernet
+
+    sn = load_supernet()
+    model = build_grafted_pose_model(arch, supernet=sn, head_weights=donor).eval()
+    before = sum(p.numel() for p in model.parameters())
+    prd, ignored = spec_ratio_dict(model, arch["d"], spec)
+    report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
+                         ratio=float(spec["rest_ratio"]), pruning_ratio_dict=prd,
+                         extra_ignored=ignored, importance="l2")
+    after = sum(p.numel() for p in model.parameters())
+    return model, {"params_before": before, "params_after": after, "prune_report": report}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--spec", type=Path, required=True, help="prune/specs/*.json ratio spec")
@@ -53,30 +81,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
 
-    import torch
-
     from detect.export_grafted_onnx import export_grafted_onnx
-    from detect.pose_model import build_grafted_pose_model
-    from prune.prune_baseline import TRACE_IMGSZ
-    from prune.prune_graft import prune_graft
-    from prune.recover_graft import spec_ratio_dict
-    from supernet.sampler import load_supernet
 
     arch = load_arch(args.arch_meta)
     spec = json.loads(args.spec.read_text())
 
-    sn = load_supernet()
-    model = build_grafted_pose_model(arch, supernet=sn, head_weights=args.donor).eval()
-    before = sum(p.numel() for p in model.parameters())
-
-    # Same call shape as recover_graft's spec branch, with importance='l2' (its default):
-    # data-free, and shape-identical to the AGX's global_taylor run (see the module docstring).
-    prd, ignored = spec_ratio_dict(model, arch["d"], spec)
-    report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
-                         ratio=float(spec["rest_ratio"]), pruning_ratio_dict=prd,
-                         extra_ignored=ignored, importance="l2")
-
-    after = sum(p.numel() for p in model.parameters())
+    model, build = build_pruned_graft(arch, spec, args.donor)
+    before, after, report = build["params_before"], build["params_after"], build["prune_report"]
     expect = spec.get("params_after")
     print(f"pruned {before:,} -> {after:,} params (spec params_after={expect:,})"
           if expect else f"pruned {before:,} -> {after:,} params")
