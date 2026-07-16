@@ -49,7 +49,7 @@ CALIBRATE = int(os.environ.get("CALIBRATE", "1"))  # time N real evals first (wa
 # Resume is same-VM only: the ckpt in /data/out/prune_recover is safe to reuse HERE because
 # the re-prune is deterministic on one platform — never seed it with a Colab/Lightning ckpt.
 # Everything else = the CP 3.3 search (default).
-MODE = os.environ.get("MODE", "search")            # search | full_finetune | prune_recover
+MODE = os.environ.get("MODE", "search")   # search | full_finetune | prune_recover | baseline_train
 FT_EPOCHS = int(os.environ.get("FT_EPOCHS", "100"))
 FT_SEEDS = os.environ.get("FT_SEEDS", "0")
 FT_NECK = os.environ.get("FT_NECK", "")            # "" | topdown | pan
@@ -68,6 +68,15 @@ PG_EPOCHS = os.environ.get("PG_EPOCHS", "100")
 PG_BATCH = os.environ.get("PG_BATCH", "16")
 PG_LR = os.environ.get("PG_LR", "1e-3")
 PG_CKPT_EVERY = os.environ.get("PG_CKPT_EVERY", "10")
+PG_IMGSZ = os.environ.get("PG_IMGSZ", "640")   # MCU arms train at 160; rides the artifact tag
+PG_NECK = os.environ.get("PG_NECK", "")        # "" | topdown | pan — Phase-5 nano-neck
+# MODE="baseline_train" (MCU resolution question, 2026-07-16): the baseline's matched arm —
+# COCO-seeded yolo11n-pose gate-trained AT the target resolution, recipe pinned to the deployed
+# baseline's own args.yaml. See detect/train_baseline.py.
+BT_MODEL = os.environ.get("BT_MODEL", "yolo11n-pose.pt")
+BT_IMGSZ = os.environ.get("BT_IMGSZ", "160")
+BT_EPOCHS = os.environ.get("BT_EPOCHS", "")    # "" = the recipe's 2000 (patience 300 ends it)
+BT_BATCH = os.environ.get("BT_BATCH", "")      # "" = the recipe's 4
 # ------------------------------------------------------------------------------------
 
 
@@ -90,12 +99,14 @@ def prune_recover_cmd(donor: Path, data_yaml: Path, out_dir: Path) -> str:
     and the KD teacher defaults to the gate donor.
     """
     cmd = (f"python3 -m prune.recover_graft --head-weights {donor} --data-yaml {data_yaml} "
-           f"--out-dir {out_dir} --device cuda --imgsz 640 --batch {PG_BATCH} --lr {PG_LR} "
-           f"--epochs {PG_EPOCHS} --seed {PG_SEED} --ckpt-every {PG_CKPT_EVERY} "
-           f"--technique {PG_TECH}")
+           f"--out-dir {out_dir} --device cuda --imgsz {PG_IMGSZ} --batch {PG_BATCH} "
+           f"--lr {PG_LR} --epochs {PG_EPOCHS} --seed {PG_SEED} "
+           f"--ckpt-every {PG_CKPT_EVERY} --technique {PG_TECH}")
     cmd += f" --ratio-spec {PG_SPEC}" if PG_SPEC else f" --ratios {PG_RATIOS}"
     if PG_ARCH_JSON:
         cmd += f" --arch-json {PG_ARCH_JSON}"
+    if PG_NECK:
+        cmd += f" --neck {PG_NECK}"
     if PG_KD:
         cmd += f" --teacher {PG_TEACHER or donor} --kd-alpha {PG_KD_ALPHA}"
     return cmd
@@ -162,6 +173,26 @@ def main() -> None:
         print(f"[done] {out_json.name}: mean={payload.get('mean')} "
               f"delta_vs_proxy={payload.get('delta_vs_proxy')} "
               f"graft_kwargs={payload.get('graft_kwargs')}", flush=True)
+        return
+
+    if MODE == "baseline_train":
+        # MCU resolution question: the baseline's matched arm, gate-trained AT BT_IMGSZ with the
+        # deployed baseline's own recipe (multi_scale + 2000ep/patience300). Resumable in place.
+        bt_out = OUT / f"baseline_r{BT_IMGSZ}"
+        cmd = (f"python3 -m detect.train_baseline --model {BT_MODEL} --imgsz {BT_IMGSZ} "
+               f"--data-yaml {yaml_src} --out-dir {bt_out} --device 0")
+        if BT_EPOCHS:
+            cmd += f" --epochs {BT_EPOCHS}"
+        if BT_BATCH:
+            cmd += f" --batch {BT_BATCH}"
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True, cwd=REPO).returncode
+        report = bt_out / f"baseline_{Path(BT_MODEL).stem}_r{BT_IMGSZ}.json"
+        if not report.exists():
+            raise SystemExit(f"detect.train_baseline produced no {report.name} (rc={rc})")
+        p = json.loads(report.read_text())
+        print(f"[done] {p['tag']}: map={p['map']:.4f} map50={p['map50']:.4f} "
+              f"(vs @640 anchor: {p['delta_vs_640_anchor']:+.4f})", flush=True)
         return
 
     if MODE == "prune_recover":

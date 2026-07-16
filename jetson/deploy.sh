@@ -25,6 +25,23 @@
 # Re-running with the same PG_* config resumes from the ckpt in $DATA/out/prune_recover
 # (same-VM resume is safe; never seed it with a Colab/Lightning ckpt — cross-platform re-prune
 # diverges). Results: bash jetson/deploy.sh --pull → data/cp33_kaggle_out/prune_recover/.
+#
+# MCU resolution question (2026-07-16) — three arms, run one at a time, ALL need --sync --build
+# first (see the WARNING below). Verdict = does the gap at 160 return to its @640 value (-0.115)?
+#   MODE=prune_recover PG_SPEC=prune/specs/v2_act292.json PG_IMGSZ=160 \
+#     bash jetson/deploy.sh --run                                    # A1 graft @160
+#   MODE=prune_recover PG_SPEC=prune/specs/v2_act292.json PG_IMGSZ=160 PG_NECK=pan \
+#     bash jetson/deploy.sh --run                                    # A2 graft @160 + V3 PAN neck
+#   MODE=baseline_train BT_IMGSZ=160 bash jetson/deploy.sh --run     # A3 baseline @160
+# PG_IMGSZ/PG_NECK ride the artifact tag (v2_act292_kd_pan_r160), so arms never clobber the @640
+# rows. A3's recipe is gate_baseline/args.yaml verbatim; A1/A2 keep the bare-AdamW recipe — the
+# absolutes stay recipe-confounded (A3 has multi_scale + 2000ep, the graft has neither), so read
+# the CHANGE in gap vs @640, not the raw numbers.
+#
+# WARNING: the image BAKES the code (Dockerfile `COPY . /workspace/TFM_NAS`; only $DATA is a
+# mounted volume). `--sync` alone changes NOTHING the container sees — you MUST `--sync --build`
+# before `--run` or it silently re-runs the old source. This cost a finished 100-epoch run on
+# 2026-07-16 (it died writing its report on a py312-ism the fix had already removed locally).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -120,7 +137,10 @@ do_run() {
       -e PG_KD='${PG_KD:-1}' -e PG_KD_ALPHA='${PG_KD_ALPHA:-1.0}' \
       -e PG_TEACHER='${PG_TEACHER:-}' -e PG_SEED='${PG_SEED:-0}' \
       -e PG_EPOCHS='${PG_EPOCHS:-100}' -e PG_BATCH='${PG_BATCH:-16}' \
-      -e PG_LR='${PG_LR:-1e-3}' -e PG_CKPT_EVERY='${PG_CKPT_EVERY:-10}' '$IMG'"
+      -e PG_LR='${PG_LR:-1e-3}' -e PG_CKPT_EVERY='${PG_CKPT_EVERY:-10}' \
+      -e PG_IMGSZ='${PG_IMGSZ:-640}' -e PG_NECK='${PG_NECK:-}' \
+      -e BT_MODEL='${BT_MODEL:-yolo11n-pose.pt}' -e BT_IMGSZ='${BT_IMGSZ:-160}' \
+      -e BT_EPOCHS='${BT_EPOCHS:-}' -e BT_BATCH='${BT_BATCH:-}' '$IMG'"
   echo "started '$NAME' detached. Follow: bash jetson/deploy.sh --logs"
 }
 

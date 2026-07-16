@@ -119,8 +119,15 @@ def graft_prune_train_ladder(
     teacher_path: Any = None,
     kd_alpha: float = 1.0,
     ckpt_every: int = 10,
+    neck: str | None = None,
 ) -> dict:
-    """Prune the graft at each ratio, train to capacity, eval mAP; per-point + report."""
+    """Prune the graft at each ratio, train to capacity, eval mAP; per-point + report.
+
+    ``neck`` ("topdown"/"pan") inserts the Phase-5 nano-neck between the adapters and the head.
+    Default None keeps the neck-less graft every prior row was measured on. It exists for the
+    MCU resolution question (2026-07-16): the graft has zero cross-scale fusion, which is what
+    small objects at low resolution need most — see mcu/README.md "resolution screen".
+    """
     import torch
 
     from detect.evaluate import DEFAULT_DATA_YAML
@@ -153,7 +160,13 @@ def graft_prune_train_ladder(
 
     # Unpruned anchor: winner-v1's own full-FT mAP (not re-trained). params from a plain build.
     anchor_model = build_grafted_pose_model(arch, supernet=sn)
-    donor_row = {"path": f"winner-v1 full-FT (full_finetune.json); topology={arch_tag}",
+    # Deliberately neck-less and @640 even when this run is not: the anchor IS a specific
+    # historical run (winner-v1 full-FT), so delta_map_vs_donor is a fixed reference point, not
+    # a matched control. With --neck or --imgsz != 640 the delta is cross-topology — say so.
+    anchor_note = "" if (neck is None and imgsz == 640) else \
+        f"; NOT matched to this run (neck={neck}, imgsz={imgsz}) — delta is cross-topology"
+    donor_row = {"path": f"winner-v1 full-FT (full_finetune.json); topology={arch_tag}"
+                         f"{anchor_note}",
                  "params": sum(p.numel() for p in anchor_model.parameters()),
                  "map": UNPRUNED_GRAFT_ANCHOR_MAP}
     del anchor_model
@@ -169,6 +182,12 @@ def graft_prune_train_ladder(
                           seed=seed)
         if teacher is not None:
             tag += "_kd"
+        # neck/imgsz ride the tag or a 160 run silently CLOBBERS the 640 artifacts it shares a
+        # spec stem with (weights/onnx/resume-ckpt are all tag-named).
+        if neck:
+            tag += f"_{neck}"
+        if imgsz != 640:
+            tag += f"_r{imgsz}"
         if arch_tag != "winner":
             tag = f"{arch_tag}_{tag}"
 
@@ -177,7 +196,7 @@ def graft_prune_train_ladder(
         # 1x1 adapters are randomly initialized, so the seed owns them too.
         _seed_everything(seed)
         model = build_grafted_pose_model(arch, supernet=sn, head_weights=head_weights,
-                                         freeze_head=False)
+                                         freeze_head=False, neck=neck)
 
         bn_feed = []
         loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
@@ -224,13 +243,16 @@ def graft_prune_train_ladder(
 
         weights = out_dir / f"recover_graft_{tag}.pt"
         torch.save(model.state_dict(), str(weights))
-        onnx = out_dir / f"recover_graft_{tag}_640.onnx"
+        # {imgsz}, not a hardcoded 640: the export below already honours --imgsz, so a 160 run was
+        # writing a graph named "_640". Identical filename for every pre-2026-07-16 @640 row.
+        onnx = out_dir / f"recover_graft_{tag}_{imgsz}.onnx"
         _export_deploy_onnx(model, onnx, imgsz=imgsz)
         row = {"ratio": ratio, "params": report["params_after"],
                "params_sparsity": report["params_sparsity"], "all_rounded": report["all_rounded"],
                "n_convs_changed": report["n_convs_changed"],
                "technique": ("halp_spec" if ratio_spec is not None else technique),
                "iterative_steps": iterative_steps, "seed": seed, "arch_tag": arch_tag,
+               "neck": neck, "imgsz": imgsz,
                "kd": (None if teacher is None else {"teacher": str(teacher_path),
                                                     "alpha": kd_alpha}), **metrics,
                "weights": str(weights), "onnx": str(onnx)}
@@ -287,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--teacher", type=Path, default=None,
                    help="frozen raw-map KD teacher .pt (CP 8.2-early; e.g. the gate donor)")
     p.add_argument("--kd-alpha", type=float, default=1.0)
+    p.add_argument("--neck", choices=["topdown", "pan"], default=None,
+                   help="insert the Phase-5 nano-neck (V2 topdown / V3 PAN) between the adapters "
+                        "and the head; default = the neck-less graft every prior row used. Rides "
+                        "the artifact tag, as does a non-640 --imgsz")
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--device", default="cpu")
@@ -325,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
         taylor_batches=a.taylor_batches, arch=arch, arch_tag=arch_tag,
         ratio_spec=ratio_spec, spec_tag=spec_tag,
-        teacher_path=a.teacher, kd_alpha=a.kd_alpha, ckpt_every=a.ckpt_every)
+        teacher_path=a.teacher, kd_alpha=a.kd_alpha, ckpt_every=a.ckpt_every, neck=a.neck)
     print(f"unpruned anchor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "

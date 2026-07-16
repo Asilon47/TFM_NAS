@@ -42,13 +42,18 @@ def load_arch(path: Path) -> dict:
     return arch
 
 
-def build_pruned_graft(arch: dict, spec: dict, donor: Path) -> tuple[Any, dict]:
+def build_pruned_graft(arch: dict, spec: dict, donor: Path,
+                       neck: str | None = None) -> tuple[Any, dict]:
     """The spec-pruned graft, data-free (``l2``) — shapes pinned by the spec, weights untrained.
 
     Shape-identical to the AGX's ``global_taylor`` run (see the module docstring), which is what
     lets a *trained* pruned ``state_dict`` load straight into it: importance chooses which
     channels survive, never how many, so the tensors line up exactly. Callers that load trained
     weights overwrite every parameter anyway — for them this is purely a shape scaffold.
+
+    ``neck`` must match the run whose weights are being loaded (``recover_graft --neck``), or the
+    state_dict will not fit. The neck's convs are not named by the spec, so they fall under
+    ``rest_ratio`` like any other unlisted layer.
     """
     import torch
 
@@ -59,7 +64,7 @@ def build_pruned_graft(arch: dict, spec: dict, donor: Path) -> tuple[Any, dict]:
     from supernet.sampler import load_supernet
 
     sn = load_supernet()
-    model = build_grafted_pose_model(arch, supernet=sn, head_weights=donor).eval()
+    model = build_grafted_pose_model(arch, supernet=sn, head_weights=donor, neck=neck).eval()
     before = sum(p.numel() for p in model.parameters())
     prd, ignored = spec_ratio_dict(model, arch["d"], spec)
     report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
@@ -76,6 +81,9 @@ def main(argv: list[str] | None = None) -> int:
                     help=f"export meta sidecar carrying the arch (default: {DEFAULT_ARCH})")
     ap.add_argument("--donor", type=Path, default=DEFAULT_DONOR,
                     help="gate-trained head donor (nc=1/8-kpt) for the graft's head")
+    ap.add_argument("--neck", choices=["topdown", "pan"], default=None,
+                    help="must MATCH the recover_graft --neck of the weights this shape is "
+                         "for; changes the graph, so it changes the cycle count")
     ap.add_argument("--imgsz", type=int, default=160)
     ap.add_argument("--opset", type=int, default=12)
     ap.add_argument("--out", type=Path, required=True)
@@ -86,17 +94,23 @@ def main(argv: list[str] | None = None) -> int:
     arch = load_arch(args.arch_meta)
     spec = json.loads(args.spec.read_text())
 
-    model, build = build_pruned_graft(arch, spec, args.donor)
+    model, build = build_pruned_graft(arch, spec, args.donor, neck=args.neck)
     before, after, report = build["params_before"], build["params_after"], build["prune_report"]
     expect = spec.get("params_after")
     print(f"pruned {before:,} -> {after:,} params (spec params_after={expect:,})"
           if expect else f"pruned {before:,} -> {after:,} params")
-    if expect and after != expect:
+    if expect and after != expect and args.neck is None:
         # Not fatal — a mismatch means this shape is NOT the one the AGX is training, and the
         # cycle number would then describe a different architecture. Say so loudly.
         print(f"  WARNING: params != spec params_after ({after:,} vs {expect:,}) — this is a "
               f"DIFFERENT shape than the spec's; the cycle probe would not describe the "
               f"champion. Investigate before trusting the number.")
+    elif expect and args.neck:
+        # Expected: the spec's params_after is a neck-less count. Report the neck's real cost —
+        # it is exactly what decides whether a necked graft can still win the Pareto.
+        print(f"  neck={args.neck} adds {after - expect:+,} params over the spec's neck-less "
+              f"{expect:,} ({100 * (after - expect) / expect:+.1f}%) — price its cycles before "
+              f"reading any accuracy win as a Pareto win.")
 
     path, meta = export_grafted_onnx(
         arch, args.out, prebuilt=model, imgsz=args.imgsz, opset=args.opset,
