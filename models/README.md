@@ -5,8 +5,16 @@ Every architecture considered for the drone-gate pose task, organised by family.
 manifest is the tracked record.
 
 **Latencies** — Jetson Orin Nano, TensorRT 10.3, **mode 0 / 612 MHz, clocks locked**, @640,
-batch 1, ms, measured one-process-at-a-time (fp32 is the reliable axis; **fp16 carries ±~20 %
-TRT build variance** — indicative). **Accuracy is NOT apples-to-apples**: `baseline`/`anchor`
+batch 1, ms, measured one-process-at-a-time. The long-standing "**fp16 carries ±~20 % TRT build
+variance — indicative only**" caveat (procedure.md 2026-07-08) is **UNDER REVISION (2026-07-17)**:
+it was never directly measured, it was *inferred* from outliers in a session that also documented
+a contention incident and a contention-caused "r15 fp16 FAIL". The first controlled test —
+v2_act292, 3 rebuilds with the timing cache wiped between each, idle board
+(`bench_model --repeat 3 --fresh-cache`) — measured **0.34 %** (7.2087/7.2212/7.2330), not 20 %.
+One graph is not all graphs, so the caveat is not retracted: a bimodal tactic pick on some other
+graph could still swing (the standing suspect is **r45 fp16 = 7.18**, wedged between r35's 5.38
+and r55's 5.07 despite sitting between them in size — re-run it with `--repeat 3 --fresh-cache`
+to settle it). But treat ±20 % as an untested worst case, not a measured property. **Accuracy is NOT apples-to-apples**: `baseline`/`anchor`
 are COCO-pretrained + full recipe; grafts/dense are from scratch, pruned are pruned-from-baseline
 + 50-ep bare-AdamW recovery. Single-seed except the pretrained anchors — **de-noise owed before
 any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its size).
@@ -122,6 +130,6 @@ models/
   graft_pruned/     recover_graft_r{40,60}              (.pt + .onnx)   ← CP 6.2-G rungs
 ```
 _Excludes dead ends (graft fallbacks; dense depth-duplicates). fp16 latencies are single clean
-builds (±20 % variance); w30 fp16 skipped (dominated). Some fp16 builds are slow (autotuner) but
+builds (build variance measured at 0.34 % on v2_act292, not the ±20 % long assumed — see above); w30 fp16 skipped (dominated). Some fp16 builds are slow (autotuner) but
 none genuinely fail on an idle board — the earlier "r15 fp16 FAIL / hangs" were GPU-contention
 artifacts, since corrected._
