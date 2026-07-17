@@ -18,9 +18,10 @@ batch 1, ms, measured one-process-at-a-time.
 > *build* is a stable-but-different number (std stays tight); contention is instability
 > *within* a run (std explodes, p95 detaches from p50). `prune_base_r45_640_fp16` was
 > recorded at std 1.0582 / p95 3.38 ms off p50 while clean rows sit at std ~0.2 % / ~0.015 ms.
-> Re-measured clean: **5.124 ms, not 7.185 — the old row was +40 % too high**, and r45 now
-> sits monotonically between its neighbours (r35 5.38 › r45 5.12 › r55 5.07) instead of 33 %
-> *above* both. **`python -m lut.orchestrate.audit_e2e`** makes this check mechanical; it
+> Re-measured clean: r45 **5.124, not 7.185 (+40 % error)** — it now sits monotonically
+> between its neighbours (r35 5.38 › r45 5.12 › r55 5.07) instead of 33 % *above* both —
+> and w25/ctrl_n **6.638, not 8.111 (+22 % error)**, whose old row had mean 8.111 *below*
+> its own p50 8.440, i.e. broken in a way no summary statistic could salvage. **`python -m lut.orchestrate.audit_e2e`** makes this check mechanical; it
 > exits 1 on any suspect row. 67/70 rows were always clean — **fp16 is a reliable axis.**
 
 **Accuracy is NOT apples-to-apples**: `baseline`/`anchor` are COCO-pretrained + full recipe;
@@ -38,7 +39,7 @@ any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its
 | search | s31-40-40-40-13 | 2.9M | 0.870 | 15.14 | 8.94 | +19 % ✗ |
 | search | s40-38-39-36-13 | 2.6M | 0.868 | 14.98 | 8.67 | +18 % ✗ |
 | dense | w30 | 3.9M | 0.856 | 15.27 | — | +20 % ✗ |
-| **dense** | **w25** (ctrl_n) | 2.7M | **0.854** | 11.33 | 8.11 | **−11 %** |
+| **dense** | **w25** (ctrl_n) | 2.7M | **0.854** | 11.33 | **6.64** | **−11 %** |
 | graft | v2topdown | ~2.4M | 0.846 | 18.15 | 12.58 | +42 % ✗ |
 | dense | w22 | 2.3M | 0.845 | 11.55 | 6.95 | −9 % |
 | graft | v3pan | ~2.5M | 0.842 | 18.37 | 12.76 | +44 % ✗ |
@@ -142,3 +143,38 @@ _Excludes dead ends (graft fallbacks; dense depth-duplicates). fp16 latencies ar
 builds (build variance measured at 0.34 % on v2_act292, not the ±20 % long assumed — see above); w30 fp16 skipped (dominated). Some fp16 builds are slow (autotuner) but
 none genuinely fail on an idle board — the earlier "r15 fp16 FAIL / hangs" were GPU-contention
 artifacts, since corrected._
+
+## The fp16 frontier (2026-07-17) — not the same shape as the fp32 one
+
+fp32 has always been clean and its story is unchanged. But fp16 is what **deploys**, it was
+demoted to "indicative only" for nine days on a caveat that was never measured (see header),
+and two of its rows were contaminated. Corrected, the fp16 frontier is:
+
+| model | mAP | fp16 | vs baseline |
+|---|---|---|---|
+| **baseline** yolo11n | **0.877** | 7.752 | — |
+| **dense w25** (ctrl_n) | 0.854 | **6.638** | **−14.4 %** |
+| prune r20 | 0.838 | 5.911 | −23.7 % |
+| prune r35 | 0.826 | 5.378 | −30.6 % |
+| prune r45 | 0.809 | 5.124 | −33.9 % |
+| prune r55 | 0.798 | 5.074 | −34.6 % |
+
+**The ctrl_n correction flipped w25 from dominated to dominant.** At its contended 8.111 the
+baseline beat it on *both* axes; at its true 6.638 it is 14.4 % faster for −0.023 mAP, and it
+dominates w22 outright (0.854 @ 6.638 vs 0.845 @ 6.945). The fp32 headline pick was right all
+along — a corrupted row was contradicting it at fp16.
+
+**Every graft is dominated at fp16**, and the fix made that *sharper*, not softer:
+
+| graft | dominated by | costs |
+|---|---|---|
+| winner-v1 noneck (0.841 @ 12.382) | baseline | +0.036 acc, −4.63 ms |
+| r50_gtay (0.795 @ 7.482) | **w25** | +0.059 acc, −0.84 ms |
+| v2_act292 (0.762 @ 7.221) | **w25** | **+0.092 acc, −0.58 ms** |
+
+Before the correction w25 (8.111) was *slower* than both pruned grafts, so they appeared to buy
+latency. Corrected, **w25 is faster AND 6–9 points more accurate than every graft** — the graft
+family buys nothing at fp16. Fence: w25 is a dense-scaled yolo11, **not an allowed deliverable**
+under the NAS-born constraint, so this sharpens the known finding rather than moving the
+deliverable. Accuracies remain single-seed and recipe-confounded (see header) — this corrects the
+latency axis only.
