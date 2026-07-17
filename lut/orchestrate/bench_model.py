@@ -70,10 +70,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--precision", default=None,
                     help="override; default is sweep.precision from config (fp32, LUT-consistent)")
     ap.add_argument("--out", type=Path, default=ROOT / "data" / "baseline_anchor.json")
+    ap.add_argument("--repeat", type=int, default=1,
+                    help="rebuild+bench N times, report the median build. TRT's fp16 kernel "
+                         "selection is non-deterministic, so ONE fp16 build is a sample of one — "
+                         "its 200-iter sigma measures iteration jitter, not build variance")
+    ap.add_argument("--fresh-cache", action="store_true",
+                    help="wipe the remote TRT timing cache before each repeat. WITHOUT this, "
+                         "--repeat is theatre: the persistent cache replays the first build's "
+                         "kernel picks, so every repeat returns the same number")
     ap.add_argument("--skip-preflight", action="store_true",
                     help="trust device state instead of re-probing (bring-up/debug only)")
     ap.add_argument("--config", default=str(ROOT / "config.yaml"))
     args = ap.parse_args(argv)
+    if args.repeat > 1 and not args.fresh_cache:
+        raise SystemExit("--repeat > 1 without --fresh-cache measures nothing: the persistent TRT "
+                         "timing cache makes every rebuild replay the first build's kernel choice. "
+                         "Pass --fresh-cache, or drop --repeat.")
 
     if not args.onnx.exists():
         raise SystemExit(
@@ -102,19 +114,44 @@ def main(argv: list[str] | None = None) -> int:
               f"clocks_locked={device_info.get('clocks_locked')}", flush=True)
 
     conn.run(f"mkdir -p {cfg.remote_workdir}/job {cfg.remote_workdir}/cache", hide=True)
-    bench = run_remote_bench(
-        conn, cfg, name, args.onnx, precision=precision,
-        warmup=int(sweep_cfg.get("warmup_iters", 50)),
-        iters=int(sweep_cfg.get("timed_iters", 200)),
-        min_window_s=float(sweep_cfg.get("min_window_s", 0.5)),
-    )
-    row = baseline_row(bench, name=name, precision=precision, imgsz=args.imgsz,
-                       device_info=device_info)
+
+    rows = []
+    for i in range(args.repeat):
+        if args.fresh_cache:
+            conn.run(f"rm -rf {cfg.remote_workdir}/cache/*", hide=True, warn=True)
+        bench = run_remote_bench(
+            conn, cfg, name, args.onnx, precision=precision,
+            warmup=int(sweep_cfg.get("warmup_iters", 50)),
+            iters=int(sweep_cfg.get("timed_iters", 200)),
+            min_window_s=float(sweep_cfg.get("min_window_s", 0.5)),
+        )
+        rows.append(baseline_row(bench, name=name, precision=precision, imgsz=args.imgsz,
+                                 device_info=device_info))
+        if args.repeat > 1:
+            print(f"  build {i + 1}/{args.repeat}: {rows[-1]['latency_ms']['mean']:.4f} ms "
+                  f"(p50 {rows[-1]['latency_ms']['p50']:.4f})", flush=True)
+
+    # Median BUILD, by mean latency — not a mean of means: with a non-deterministic kernel
+    # search the builds are draws from a discrete set, so the median is the representative
+    # draw and an average would name a latency no build actually achieved.
+    rows.sort(key=lambda r: r["latency_ms"]["mean"])
+    row = rows[len(rows) // 2]
+    if args.repeat > 1:
+        means = [r["latency_ms"]["mean"] for r in rows]
+        row = {**row, "builds": {
+            "n": args.repeat, "fresh_cache": args.fresh_cache, "means_ms": means,
+            "spread_ms": means[-1] - means[0], "reported": "median build by mean latency",
+        }}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(row, indent=2) + "\n")
     print(f"baseline {name} @{args.imgsz} ({precision}): "
           f"latency={row['latency_ms']['mean']:.4g} ms  peak={row['peak_mem_mib']:.4g} MiB "
           f"-> {args.out}")
+    if args.repeat > 1:
+        b = row["builds"]
+        print(f"  {b['n']} fresh-cache builds: {[f'{m:.4f}' for m in b['means_ms']]} "
+              f"-> spread {b['spread_ms']:.4f} ms. Compare rival models against THIS spread "
+              f"before calling a difference real.")
     print(f"T_max = min({row['latency_ms']['mean']:.4g} ms baseline, 16.7 ms @60FPS) "
           "feeds `search.bo --t-max-ms`.")
     return 0
