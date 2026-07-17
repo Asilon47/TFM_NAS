@@ -3280,6 +3280,20 @@ stays user-owned and de-noise-gated.
 saved under `models/`; per-model JSON in `data/e2e/`). fp32 is the reliable axis; **fp16 carries
 ±~20 % TRT-build variance** (autotuner kernel selection) — indicative only.
 
+> **⚠ RETRACTED 2026-07-17 — the ±20 % fp16 claim on the line above is WRONG.** It was never
+> measured; it was inferred from three outliers in *this* session — the same session that
+> records its own contention incident (below) and an "r15 fp16 FAIL [that] was another
+> contention artifact". Measured properly (rebuild ×3, timing cache wiped between each, idle
+> board, `docker ps` verified empty): fp16 build spread is **<1 %** — v2_act292 0.34 %, r45
+> 0.51 %. The outliers were **contention**, not autotuner choice, and the rows said so: a
+> different *build* is a stable-but-different number; contention detaches p95 from p50 and
+> blows up std. r45's fp16 was recorded at std 1.0582 / p95 3.38 ms off p50, against a corpus
+> where clean rows sit at std ~0.2 % / ~0.015 ms. Re-measured clean: **5.124 ms, not 7.185
+> (+40 % error)** — and it then sits monotonically between r35 (5.38) and r55 (5.07) instead
+> of 33 % *above* both, which was never possible for a model of its size. 67/70 rows were
+> always clean. **fp16 is a reliable axis**, and this line demoted it for nine days.
+> `python -m lut.orchestrate.audit_e2e` now catches the fingerprint mechanically.
+
 | family | model | mAP | fp32 ms | fp16 ms | vs baseline fp32 |
 |---|---|---|---|---|---|
 | baseline | yolo11n-pose | 0.877 | 12.74 | 7.75 | — |
@@ -3299,7 +3313,8 @@ saved under `models/`; per-model JSON in `data/e2e/`). fp32 is the reliable axis
 flat across families (0.79–0.85 from-scratch), so **latency is the separator** — the dense-family
 arm was the right call. Two standouts (faster + best accuracy in their region): **dense w0.25
 (11.33 ms, 0.854)** and **pruned r15 (9.54 ms, 0.834)**. fp16: every model builds clean
-(±~20 % build variance); the earlier "r15 fp16 FAIL" was another contention artifact — retried
+(±~20 % build variance — RETRACTED 2026-07-17, see the banner above: real spread is <1 %, and
+this very sentence names the true cause); the earlier "r15 fp16 FAIL" was another contention artifact — retried
 on an idle board, r15 fp16 = 5.93 ms.
 
 **Measurement incident (recorded so it doesn't recur).** The first bench pass was invalid: two
@@ -3336,7 +3351,8 @@ scratch, so pruning owns the frontier below 0.85 and dense w25 owns just the top
 **Caveats.** The prune ladder is **noisy / non-monotonic** (r30 @ 0.790 is an outlier for its
 1.1M params; r10 0.830 < r20 0.838 despite more params) → recovery variance, **de-noise at seeds
 {1,2,3} owed before any CP 6.3 pick**. The dense accuracy curve is by contrast clean-monotonic in
-width (0.813 → 0.856). fp16 remains ±20 % build-variance (and some dense fp16 builds are slow —
+width (0.813 → 0.856). fp16 was believed ±20 % build-variance (RETRACTED 2026-07-17 — measured
+<1 %; the outliers were contention) (and some dense fp16 builds are slow —
 the autotuner, not a failure). Gap to the pretrained baseline's 0.877 stays ~0.02–0.04 (the
 from-scratch/weak-recovery penalty) → the target for the Tier-2 distillation experiment (distil
 prune r20 / a gentler rung against the 0.877 teacher).
@@ -4265,3 +4281,73 @@ once, at a shape already proven to clear the bar. Note the AGX run in flight (64
 head) is the **Orin** deliverable — the MCU leg needs its own training at the MCU shape; do not
 conflate them. The user still owns the operating point (accuracy vs FPS), which needs an
 accuracy number at the MCU shape, not just at 640.
+
+## fp16 rehabilitated — the "±20 % build variance" was contention (2026-07-17)
+
+**Not a checkpoint.** A measurement-methodology correction, in the lineage of the 2026-06-12
+measurement audit and Stage 0: a number that was never measured had been governing which axis
+the whole comparison set was read on.
+
+**The claim.** The 2026-07-08 cross-family bench recorded "fp32 is the reliable axis; **fp16
+carries ±~20 % TRT-build variance** (autotuner kernel selection) — indicative only", and
+`models/README.md` carried it forward. Consequence: **fp16 — the deploy precision, the axis
+every deployment claim rests on — was demoted to decoration for nine days.**
+
+**It was never measured.** It was *inferred* from three anomalous fp16 rows. The same write-up,
+two paragraphs later, records the session's own "Measurement incident … the first bench pass was
+invalid: two [concurrent processes]" and an "r15 fp16 FAIL [that] was another contention
+artifact". The diagnosis blamed the autotuner while the write-up itself named contention.
+
+**The two failure modes have different fingerprints, and the rows already showed which:**
+
+| | mean | std | p95 − p50 |
+|---|---|---|---|
+| a different *build* | shifts | **stays tight** | unchanged |
+| *contention* / throttling | dragged off p50 | **explodes** | **detaches** |
+
+`prune_base_r45_640_fp16` was recorded at **std 1.0582 (14.7 % of mean), p95 3.38 ms above
+p50**, in a corpus where clean rows sit at **std ~0.2 %, p95−p50 ~0.015 ms**. Scanning all 70
+rows in `data/e2e`: **exactly 3 are suspect** (r45 14.7 %, dense_ctrl_n 9.6 %, yolo11s 2.2 %);
+**67 are clean**. The caveat generalised three contaminated rows to a whole column.
+
+**Measured properly** (`bench_model --repeat 3 --fresh-cache`, added here; idle board with
+`docker ps` verified empty, mode 0, clocks locked). `--fresh-cache` is load-bearing and
+`--repeat > 1` without it is a hard error: the *persistent* TRT timing cache at
+`{remote_workdir}/cache` replays the first build's kernel picks, so naive repeats return the
+same number and manufacture a false spread of ~0.
+
+| model | 3 fresh-cache builds | spread |
+|---|---|---|
+| v2_act292 fp16 | 7.2087 / 7.2212 / 7.2330 | **0.34 %** |
+| r45 fp16 | 5.1203 / 5.1238 / 5.1462 | **0.51 %** |
+
+**Real fp16 build spread is <1 %, not ±20 %** — a 40× error in the caveat.
+
+**r45 was wrong by +40 %**: recorded **7.185** (std 1.0582), clean **5.124** (std 0.0059). The
+confirmation is not the bench but the *ordering*: r45 now sits monotonically between its
+neighbours (**r35 5.38 › r45 5.12 › r55 5.07**) instead of 33 % *above* both — impossible for a
+model of its size, and visible on the page since 2026-07-08.
+
+**Consequences.**
+1. **fp16 is a reliable axis.** fp32 conclusions are untouched (every fp32 row is clean), so
+   "every dense/pruned model beats the baseline; every graft loses" stands as written.
+2. **The fp16 frontier is NOT the fp32 frontier**, and fp16 is what deploys. fp32's top point
+   (dense w25 / ctrl_n, 0.854 @ 11.33) is **dominated at fp16** by the baseline itself (0.877 @
+   7.752 beats 0.854 @ 8.111 on *both* axes) — pending its own re-measure, since ctrl_n is one
+   of the 3 contaminated rows. The measured fp16 frontier: baseline 0.877@7.752 › **dense w22
+   0.845@6.945** › prune r20 0.838@5.911 › r35 0.826@5.378 › r45 0.809@5.124 › r55 0.798@5.074.
+3. **Both grafts are Pareto-dominated at fp16 by dense w22** (0.845 @ 6.945): −5.0 pts and
+   −0.54 ms vs r50_gtay, −8.3 pts and −0.28 ms vs v2_act292. (w22 is a dense-scaled yolo11 →
+   **not an allowed deliverable** under the NAS-born constraint; this sharpens the known
+   finding rather than changing the deliverable.)
+
+**Guard.** `python -m lut.orchestrate.audit_e2e` flags the fingerprint mechanically (exits 1 on
+any suspect row; 6 regression tests). It keys on relative std **OR** a detached p95−p50, not std
+alone — `dense_ctrl_n` skews the *other* way (mean 8.111 **below** p50 8.440), so a
+right-tail-only check would silently pass it. Run it after any bench session.
+
+**Standing rule this reinforces.** A killed local ssh client does **not** kill the remote
+engine build. During this session a timeout left an orphaned `lut-runner` holding the GPU at
+92–99 %; the next measurement would have been silently contended and looked entirely normal.
+**`docker ps` on the board must be empty before any bench** — that is how 2026-07-08's three
+bad rows were born.

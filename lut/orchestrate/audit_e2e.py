@@ -1,7 +1,7 @@
 """Audit measured e2e rows for the contention signature — which numbers are safe to believe.
 
 The 2026-07-08 cross-family bench saw three anomalous fp16 numbers and concluded "fp16 carries
-±~20 % TRT-build variance (autotiler kernel selection) — indicative only", demoting the whole
+±~20 % TRT-build variance (autotuner kernel selection) — indicative only", demoting the whole
 fp16 column of models/README.md. fp16 is the deploy precision, so that caveat suppressed the one
 axis every deployment claim rests on.
 
