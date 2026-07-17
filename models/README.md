@@ -41,8 +41,47 @@ any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its
 | prune | r55 (−76 %) | 0.65M | 0.798 | 7.66 | 5.07 | −40 % |
 | prune | r30 (−58 %) | 1.1M | 0.790 | 8.28 | 5.34 | −35 % |
 | **graft-pruned** | **r50_gtay** | 0.76M | **0.795** | 10.23 | **7.48** | −20 % |
+| graft-pruned | v2_act292 +KD | 0.63M | 0.762 | 10.40 | **7.22** | −20 % |
 | graft-pruned | r60_gtay | 0.44M | 0.777 | 8.85 | 6.36 | −31 % |
 | graft-pruned | r60 (−84 %) | 0.49M | 0.759 | 9.01 | 6.58 | −29 % |
+
+## v2_act292 measured (2026-07-17) — the activation spec works, at fp16 only
+
+First real Nano numbers for v2_act292 (previously predicted-only). Mode-0 locked clocks,
+`source=jetson_trt`; fp16 is the **median of 3 fresh-timing-cache builds**
+(`bench_model --repeat 3 --fresh-cache`).
+
+**Build variance is negligible**: 7.2087 / 7.2212 / 7.2330 → **spread 0.0243 ms**. So TRT's
+fp16 tactic pick is stable on these graphs, and every *single-build* fp16 number already in
+this table (incl. r50_gtay's 7.48) is trustworthy without re-measurement. That was not
+knowable before — it is now measured, not assumed.
+
+**The rank flips with precision**, and the flip is the point:
+
+| | fp32 | fp16 |
+|---|---|---|
+| v2_act292 vs r50_gtay | +0.171 ms (**+1.7 % slower**) | −0.261 ms (**−3.5 % faster**) |
+
+The fp16 gap is **10.7× the build spread** — real. Why: the activation-latency oracle
+(`ms ≈ 1.200 + 0.0205·act_MB`) that v2_act292's per-stage spec was allocated against is
+**fp16-fitted**. It predicts what it was fitted on and degrades elsewhere:
+
+| precision | spec predicted | measured | error |
+|---|---|---|---|
+| fp16 | 7.156 | **7.221** | **+0.9 %** |
+| fp32 | 9.955 | **10.399** | **+4.5 %** |
+
+The spec also hit its *stated* target — peak working set 30.19 vs r50_gtay's 33.26 MiB
+(−9 %) at fp32, 17.92 MiB at fp16. It simply does not convert to fp32 latency, so read
+HALP-lite allocations at fp16 or not at all.
+
+**Champion: still open — it is a Pareto TRADE, not a domination.** v2_act292 (0.7625 @ 7.221)
+is faster; r50_gtay (0.7947 @ 7.482) is more accurate; neither dominates, and both sit under
+the baseline's 7.752 fp16. Fences: r50_gtay's 0.7947 is an **un-de-noised single seed** at
+**+21 % params** (764 K vs 632 K), so the 3.2-pt accuracy gap is not a like-for-like result.
+And the trade is bad in absolute terms — **−11.5 accuracy points to save 6.9 % latency**,
+against a baseline already at 129 FPS on a 60 FPS bar. Latency was never the binding
+constraint on this device.
 
 ## The story
 - **Every dense/pruned model beats the baseline on latency; every graft loses** (the depthwise
