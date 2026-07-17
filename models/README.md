@@ -5,17 +5,26 @@ Every architecture considered for the drone-gate pose task, organised by family.
 manifest is the tracked record.
 
 **Latencies** — Jetson Orin Nano, TensorRT 10.3, **mode 0 / 612 MHz, clocks locked**, @640,
-batch 1, ms, measured one-process-at-a-time. The long-standing "**fp16 carries ±~20 % TRT build
-variance — indicative only**" caveat (procedure.md 2026-07-08) is **UNDER REVISION (2026-07-17)**:
-it was never directly measured, it was *inferred* from outliers in a session that also documented
-a contention incident and a contention-caused "r15 fp16 FAIL". The first controlled test —
-v2_act292, 3 rebuilds with the timing cache wiped between each, idle board
-(`bench_model --repeat 3 --fresh-cache`) — measured **0.34 %** (7.2087/7.2212/7.2330), not 20 %.
-One graph is not all graphs, so the caveat is not retracted: a bimodal tactic pick on some other
-graph could still swing (the standing suspect is **r45 fp16 = 7.18**, wedged between r35's 5.38
-and r55's 5.07 despite sitting between them in size — re-run it with `--repeat 3 --fresh-cache`
-to settle it). But treat ±20 % as an untested worst case, not a measured property. **Accuracy is NOT apples-to-apples**: `baseline`/`anchor`
-are COCO-pretrained + full recipe; grafts/dense are from scratch, pruned are pruned-from-baseline
+batch 1, ms, measured one-process-at-a-time.
+
+> **The "fp16 carries ±~20 % TRT build variance — indicative only" caveat is RETRACTED
+> (2026-07-17).** It was never measured; it was *inferred* from outliers in the 2026-07-08
+> session — which documented its own contention incident and a contention-caused "r15 fp16
+> FAIL" two paragraphs later. Two controlled tests (rebuild ×3, timing cache wiped between
+> each, idle board, `docker ps` verified empty) put real fp16 build spread at **<1 %**:
+> v2_act292 **0.34 %** (7.2087/7.2212/7.2330), r45 **0.51 %** (5.1203/5.1238/5.1462).
+>
+> The anomalies were **contention**, and it was legible in the rows all along — a different
+> *build* is a stable-but-different number (std stays tight); contention is instability
+> *within* a run (std explodes, p95 detaches from p50). `prune_base_r45_640_fp16` was
+> recorded at std 1.0582 / p95 3.38 ms off p50 while clean rows sit at std ~0.2 % / ~0.015 ms.
+> Re-measured clean: **5.124 ms, not 7.185 — the old row was +40 % too high**, and r45 now
+> sits monotonically between its neighbours (r35 5.38 › r45 5.12 › r55 5.07) instead of 33 %
+> *above* both. **`python -m lut.orchestrate.audit_e2e`** makes this check mechanical; it
+> exits 1 on any suspect row. 67/70 rows were always clean — **fp16 is a reliable axis.**
+
+**Accuracy is NOT apples-to-apples**: `baseline`/`anchor` are COCO-pretrained + full recipe;
+grafts/dense are from scratch, pruned are pruned-from-baseline
 + 50-ep bare-AdamW recovery. Single-seed except the pretrained anchors — **de-noise owed before
 any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its size).
 
@@ -44,7 +53,7 @@ any pick** (the prune ladder is visibly noisy: r30 @ 0.790 is an outlier for its
 | dense | w15 | 1.2M | 0.815 | 9.53 | 6.30 | −25 % |
 | dense | w13 | 1.0M | 0.813 | 9.56 | 6.45 | −25 % |
 | graft-pruned | halp_10p4 +KD | 2.4M | 0.813 | 12.58 | 8.91 | −1 % |
-| prune | r45 (−66 %) | 0.9M | 0.809 | 7.94 | 7.18 | −38 % |
+| prune | r45 (−66 %) | 0.9M | 0.809 | 7.94 | **5.12** | −38 % |
 | graft-pruned | halp_9p0 +KD | 1.8M | 0.802 | 11.37 | 8.14 | −11 % |
 | prune | r55 (−76 %) | 0.65M | 0.798 | 7.66 | 5.07 | −40 % |
 | prune | r30 (−58 %) | 1.1M | 0.790 | 8.28 | 5.34 | −35 % |
@@ -61,9 +70,8 @@ First real Nano numbers for v2_act292 (previously predicted-only). Mode-0 locked
 
 **Build variance on this graph is negligible**: 7.2087 / 7.2212 / 7.2330 → **spread 0.0243 ms
 (0.34 %)**. That licenses comparing v2_act292 against r50_gtay's single-build 7.48 — the gap is
-10.7× the spread. It does **not** licence a blanket "fp16 is fine": one graph is not all graphs
-(see the header). r45's fp16 = 7.18 remains the outlier that could still be a real bimodal
-tactic pick rather than the contention artifact it looks like.
+10.7× the spread. r45 was then re-measured the same way and came back **5.124 ms, not 7.185** at 0.51 %
+spread — confirming the outlier was contention, and retiring the ±20 % caveat (see header).
 
 **The rank flips with precision**, and the flip is the point:
 
