@@ -59,10 +59,11 @@ First real Nano numbers for v2_act292 (previously predicted-only). Mode-0 locked
 `source=jetson_trt`; fp16 is the **median of 3 fresh-timing-cache builds**
 (`bench_model --repeat 3 --fresh-cache`).
 
-**Build variance is negligible**: 7.2087 / 7.2212 / 7.2330 → **spread 0.0243 ms**. So TRT's
-fp16 tactic pick is stable on these graphs, and every *single-build* fp16 number already in
-this table (incl. r50_gtay's 7.48) is trustworthy without re-measurement. That was not
-knowable before — it is now measured, not assumed.
+**Build variance on this graph is negligible**: 7.2087 / 7.2212 / 7.2330 → **spread 0.0243 ms
+(0.34 %)**. That licenses comparing v2_act292 against r50_gtay's single-build 7.48 — the gap is
+10.7× the spread. It does **not** licence a blanket "fp16 is fine": one graph is not all graphs
+(see the header). r45's fp16 = 7.18 remains the outlier that could still be a real bimodal
+tactic pick rather than the contention artifact it looks like.
 
 **The rank flips with precision**, and the flip is the point:
 
