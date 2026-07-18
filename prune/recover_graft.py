@@ -118,6 +118,8 @@ def graft_prune_train_ladder(
     spec_tag: str = "halp",
     teacher_path: Any = None,
     kd_alpha: float = 1.0,
+    kd_feat: bool = False,
+    kd_feat_alpha: float = 1.0,
     ckpt_every: int = 10,
     neck: str | None = None,
 ) -> dict:
@@ -155,6 +157,9 @@ def graft_prune_train_ladder(
     if teacher_path is not None:
         from distill.kd_loss import load_frozen_teacher
         teacher = load_frozen_teacher(teacher_path, device=device)
+    if kd_feat and teacher is None:
+        raise ValueError("kd_feat needs a teacher (--teacher) — the feature taps come "
+                         "from the teacher forward")
     if arch is None:
         arch = load_winner(Path(winner_dir))["arch"]
 
@@ -181,7 +186,7 @@ def graft_prune_train_ladder(
             tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps,
                           seed=seed)
         if teacher is not None:
-            tag += "_kd"
+            tag += "_kdf" if kd_feat else "_kd"
         # neck/imgsz ride the tag or a 160 run silently CLOBBERS the 640 artifacts it shares a
         # spec stem with (weights/onnx/resume-ckpt are all tag-named). Neck-aware spec files
         # (v2_pan_act*.json) already carry the neck in their stem — don't double it.
@@ -236,11 +241,19 @@ def graft_prune_train_ladder(
                                  **tech)
 
         reestimate_bn(model.to(device), bn_feed)
+        feat_kd = None
+        if kd_feat:
+            # Sized from the PRUNED student's actual head-input widths — build after prune.
+            from distill.kd_feat import build_feature_kd
+            feat_kd = build_feature_kd(model, teacher)
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
                                     batch=batch, data_yaml=data_yaml, seed=seed,
                                     max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha,
+                                    feat_kd=feat_kd, kd_feat_alpha=kd_feat_alpha,
                                     ckpt_path=out_dir / f"ckpt_{tag}.pt",
                                     ckpt_every=ckpt_every)
+        if feat_kd is not None:
+            feat_kd.detach_hooks()   # the saved/exported student must carry no KD hooks
 
         weights = out_dir / f"recover_graft_{tag}.pt"
         torch.save(model.state_dict(), str(weights))
@@ -254,8 +267,10 @@ def graft_prune_train_ladder(
                "technique": ("halp_spec" if ratio_spec is not None else technique),
                "iterative_steps": iterative_steps, "seed": seed, "arch_tag": arch_tag,
                "neck": neck, "imgsz": imgsz,
-               "kd": (None if teacher is None else {"teacher": str(teacher_path),
-                                                    "alpha": kd_alpha}), **metrics,
+               "kd": (None if teacher is None else
+                      {"teacher": str(teacher_path), "alpha": kd_alpha,
+                       "feat": kd_feat,
+                       **({"feat_alpha": kd_feat_alpha} if kd_feat else {})}), **metrics,
                "weights": str(weights), "onnx": str(onnx)}
         if ratio_spec is not None:
             row["spec"] = {k: ratio_spec.get(k) for k in
@@ -310,6 +325,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--teacher", type=Path, default=None,
                    help="frozen raw-map KD teacher .pt (CP 8.2-early; e.g. the gate donor)")
     p.add_argument("--kd-alpha", type=float, default=1.0)
+    p.add_argument("--kd-feat", action="store_true",
+                   help="Arm K: add FitNets feature-mimic at the P3/P4/P5 head-input taps "
+                        "(distill/kd_feat.py; needs --teacher; regressors are training-only)")
+    p.add_argument("--kd-feat-alpha", type=float, default=1.0)
     p.add_argument("--neck", choices=["topdown", "pan"], default=None,
                    help="insert the Phase-5 nano-neck (V2 topdown / V3 PAN) between the adapters "
                         "and the head; default = the neck-less graft every prior row used. Rides "
@@ -363,7 +382,8 @@ def main(argv: list[str] | None = None) -> int:
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
         taylor_batches=a.taylor_batches, arch=arch, arch_tag=arch_tag,
         ratio_spec=ratio_spec, spec_tag=spec_tag,
-        teacher_path=a.teacher, kd_alpha=a.kd_alpha, ckpt_every=a.ckpt_every, neck=a.neck)
+        teacher_path=a.teacher, kd_alpha=a.kd_alpha, kd_feat=a.kd_feat,
+        kd_feat_alpha=a.kd_feat_alpha, ckpt_every=a.ckpt_every, neck=a.neck)
     print(f"unpruned anchor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "

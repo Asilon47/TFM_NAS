@@ -245,6 +245,8 @@ def recovery_finetune(
     max_steps: int | None = None,
     teacher: Any = None,
     kd_alpha: float = 1.0,
+    feat_kd: Any = None,
+    kd_feat_alpha: float = 1.0,
     ckpt_path: Any = None,
     ckpt_every: int = 10,
 ) -> dict[str, float]:
@@ -253,6 +255,11 @@ def recovery_finetune(
     ``teacher`` (a frozen raw-map teacher from ``distill.kd_loss.load_frozen_teacher``) adds
     output-level KD: ``pose_loss + kd_alpha · kd_map_loss`` (CP 8.2-early). ``None`` = the
     plain loop, bit-identical to the pre-KD behavior.
+
+    ``feat_kd`` (a ``distill.kd_feat.FeatureKD`` already attached to this model + the
+    teacher; Arm K) adds ``kd_feat_alpha · feat_kd.loss()`` — the FitNets regressors join
+    the optimizer, never the model's state_dict. Requires ``teacher`` (its forward feeds
+    the teacher-side taps).
 
     ``ckpt_path`` (free-tier hardening, 2026-07-13): save {epoch, model, optimizer, rng}
     every ``ckpt_every`` epochs (atomic tmp+rename) and auto-resume when the file exists —
@@ -273,8 +280,16 @@ def recovery_finetune(
     if teacher is not None:
         from distill.kd_loss import kd_map_loss
         teacher = teacher.to(device)
+    if feat_kd is not None:
+        if teacher is None:
+            raise ValueError("feat_kd needs a teacher — its taps come from the teacher "
+                             "forward")
+        feat_kd = feat_kd.to(device).train()
     loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
-    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
+    train_params = [p for p in model.parameters() if p.requires_grad]
+    if feat_kd is not None:
+        train_params += list(feat_kd.parameters())
+    optimizer = torch.optim.AdamW(train_params, lr=lr)
 
     step = 0
     start_epoch = 0
@@ -299,9 +314,15 @@ def recovery_finetune(
                     tpreds = teacher(batch_dict["img"])
                 kd = kd_map_loss(preds, tpreds)
                 loss = task_loss.sum() + kd_alpha * kd
+                feat = None
+                if feat_kd is not None:
+                    feat = feat_kd.loss()
+                    loss = loss + kd_feat_alpha * feat
                 if step == 0:
                     print(f"[kd] step0 task={float(task_loss.sum()):.3f} "
-                          f"kd={float(kd):.3f} alpha={kd_alpha}", flush=True)
+                          f"kd={float(kd):.3f} alpha={kd_alpha}"
+                          + (f" feat={float(feat):.3f} feat_alpha={kd_feat_alpha}"
+                             if feat is not None else ""), flush=True)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
