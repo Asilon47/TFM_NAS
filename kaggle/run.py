@@ -94,6 +94,11 @@ PB_KD_ALPHA = 1.0
 # harmful on converged dense recovery (procedure.md "KD twins", 2026-07-12).
 PB_SPEC = ""
 PB_DONOR = ""
+# Recipe-lite bundle (Arm R): cosine LR + warmup, ModelEMA, close-mosaic — the measured
+# recipe gap minus COCO pretrain. PB_RECIPE/PG_RECIPE=1 appends RECIPE_ARGS; artifacts
+# gain a _rl tag so twins never clobber.
+RECIPE_ARGS = "--cos-lr --warmup-epochs 3 --ema --close-mosaic 10"
+PB_RECIPE = 0
 # MODE="dense_scaling" — yolo11-pose scaling grid, stock recipe, from scratch, one candidate
 #   subset per T4; latencies measured later on the Nano. DS_WAVE selects the wave (2 = the
 #   finer width sweep; depth is a dead knob below n, see CP 3c.1). DS_SEED != 0 = de-noise
@@ -153,6 +158,7 @@ PG_KD_ALPHA = 1.0
 PG_NECK = ""
 PG_KD_FEAT = 0
 PG_KD_FEAT_ALPHA = 1.0
+PG_RECIPE = 0      # append RECIPE_ARGS to the graft recovery (Arm R)
 # -----------------------------------------------------------------------------
 
 
@@ -319,13 +325,15 @@ def main() -> None:
         pb_suffix = (f"_{Path(PB_SPEC).stem}" if PB_SPEC else "") + \
                     (f"_{PB_TECH}" if PB_TECH != "uniform" else "") + \
                     (f"_it{PB_ITER}" if PB_ITER > 1 else "") + \
-                    (f"_s{PB_SEED}" if PB_SEED != 0 else "") + ("_kd" if PB_KD else "")
+                    (f"_s{PB_SEED}" if PB_SEED != 0 else "") + ("_kd" if PB_KD else "") + \
+                    ("_rl" if PB_RECIPE else "")
         out_dir = work / f"prune_baseline{pb_suffix}"
         cmd = (f"{sys.executable} -m prune.prune_baseline --donor {pb_donor} "
                f"--ratios {PB_RATIOS} --epochs {PB_EPOCHS} --device cuda "
                f"--technique {PB_TECH} --iterative-steps {PB_ITER} --seed {PB_SEED} "
                + (f"--ratio-spec {repo}/{PB_SPEC} " if PB_SPEC else "")
                + (f"--teacher {head} --kd-alpha {PB_KD_ALPHA} " if PB_KD else "")
+               + (f"{RECIPE_ARGS} " if PB_RECIPE else "")
                + f"--imgsz 640 --batch 16 --out-dir {out_dir}")
         print("+", cmd, flush=True)
         rc = subprocess.run(cmd, shell=True).returncode
@@ -349,9 +357,11 @@ def main() -> None:
                     + (f" --index {PG_INDEX}" if PG_INDEX != "" else "")
                     + (f" --teacher {head} --kd-alpha {PG_KD_ALPHA}" if PG_KD else "")
                     + (f" --kd-feat --kd-feat-alpha {PG_KD_FEAT_ALPHA}" if PG_KD_FEAT else "")
+                    + (f" {RECIPE_ARGS}" if PG_RECIPE else "")
                     + (f" --neck {PG_NECK}" if PG_NECK else ""))
         pg_prefix = f"idx{PG_INDEX}_" if PG_INDEX != "" else ""
-        pg_kd_sfx = ("_kdf" if PG_KD_FEAT else "_kd") if PG_KD else ""
+        pg_kd_sfx = (("_kdf" if PG_KD_FEAT else "_kd") if PG_KD else "") + \
+                    ("_rl" if PG_RECIPE else "")
         pg_neck_sfx = f"_{PG_NECK}" if PG_NECK else ""
 
         def pg_cmd(ratio_csv: str, sub: str, spec: str = "") -> str:

@@ -120,6 +120,10 @@ def graft_prune_train_ladder(
     kd_alpha: float = 1.0,
     kd_feat: bool = False,
     kd_feat_alpha: float = 1.0,
+    cos_lr: bool = False,
+    warmup_epochs: float = 0.0,
+    ema: bool = False,
+    close_mosaic: int = 0,
     ckpt_every: int = 10,
     neck: str | None = None,
 ) -> dict:
@@ -187,6 +191,8 @@ def graft_prune_train_ladder(
                           seed=seed)
         if teacher is not None:
             tag += "_kdf" if kd_feat else "_kd"
+        if cos_lr or warmup_epochs > 0 or ema or close_mosaic:
+            tag += "_rl"        # recipe-lite rides the tag — twins must not clobber
         # neck/imgsz ride the tag or a 160 run silently CLOBBERS the 640 artifacts it shares a
         # spec stem with (weights/onnx/resume-ckpt are all tag-named). Neck-aware spec files
         # (v2_pan_act*.json) already carry the neck in their stem — don't double it.
@@ -250,6 +256,8 @@ def graft_prune_train_ladder(
                                     batch=batch, data_yaml=data_yaml, seed=seed,
                                     max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha,
                                     feat_kd=feat_kd, kd_feat_alpha=kd_feat_alpha,
+                                    cos_lr=cos_lr, warmup_epochs=warmup_epochs, ema=ema,
+                                    close_mosaic=close_mosaic,
                                     ckpt_path=out_dir / f"ckpt_{tag}.pt",
                                     ckpt_every=ckpt_every)
         if feat_kd is not None:
@@ -276,6 +284,9 @@ def graft_prune_train_ladder(
             row["spec"] = {k: ratio_spec.get(k) for k in
                            ("stage_ratios", "rest_ratio", "predicted_fp32_ms",
                             "fp16_estimate_ms", "target_fp32_ms")}
+        if cos_lr or warmup_epochs > 0 or ema or close_mosaic:
+            row["recipe"] = {"cos_lr": cos_lr, "warmup_epochs": warmup_epochs,
+                             "ema": ema, "close_mosaic": close_mosaic}
         (out_dir / f"recover_graft_{tag}.meta.json").write_text(
             json.dumps({"pruned_graft": True, **row}, indent=2) + "\n")
         rows.append(row)
@@ -329,6 +340,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="Arm K: add FitNets feature-mimic at the P3/P4/P5 head-input taps "
                         "(distill/kd_feat.py; needs --teacher; regressors are training-only)")
     p.add_argument("--kd-feat-alpha", type=float, default=1.0)
+    p.add_argument("--cos-lr", action="store_true",
+                   help="recipe-lite (Arm R): cosine LR decay over the recovery")
+    p.add_argument("--warmup-epochs", type=float, default=0.0)
+    p.add_argument("--ema", action="store_true",
+                   help="recipe-lite: ModelEMA; final weights = the EMA weights")
+    p.add_argument("--close-mosaic", type=int, default=0,
+                   help="recipe-lite: disable mosaic/mixup for the last N epochs")
     p.add_argument("--neck", choices=["topdown", "pan"], default=None,
                    help="insert the Phase-5 nano-neck (V2 topdown / V3 PAN) between the adapters "
                         "and the head; default = the neck-less graft every prior row used. Rides "
@@ -383,7 +401,8 @@ def main(argv: list[str] | None = None) -> int:
         taylor_batches=a.taylor_batches, arch=arch, arch_tag=arch_tag,
         ratio_spec=ratio_spec, spec_tag=spec_tag,
         teacher_path=a.teacher, kd_alpha=a.kd_alpha, kd_feat=a.kd_feat,
-        kd_feat_alpha=a.kd_feat_alpha, ckpt_every=a.ckpt_every, neck=a.neck)
+        kd_feat_alpha=a.kd_feat_alpha, cos_lr=a.cos_lr, warmup_epochs=a.warmup_epochs,
+        ema=a.ema, close_mosaic=a.close_mosaic, ckpt_every=a.ckpt_every, neck=a.neck)
     print(f"unpruned anchor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "

@@ -126,6 +126,41 @@ def test_spec_branch_pins_counts_and_merges_ignored() -> None:
     assert 'ckpt_path=(out_dir / f"ckpt_{tag}.pt"' in src
 
 
+# --- Arm R (beat-n program): recipe-lite ------------------------------------------------------
+
+def test_lr_schedule_factor_shapes() -> None:
+    """Linear warmup → cosine to 0; both knobs off = the bare loop's constant 1.0."""
+    from prune.prune_baseline import lr_schedule_factor
+
+    assert lr_schedule_factor(500, 10, epochs=100, cos_lr=False, warmup_epochs=0.0) == 1.0
+
+    def f(s: int) -> float:
+        return lr_schedule_factor(s, 10, epochs=100, cos_lr=True, warmup_epochs=3.0)
+
+    assert f(0) == pytest.approx(1e-3)               # warmup floor, never exactly 0
+    assert f(15) == pytest.approx(0.5, abs=1e-6)     # halfway through warmup
+    assert f(30) == pytest.approx(1.0, abs=1e-6)     # warmup done = cosine t=0
+    assert f(400) > f(700)                           # monotone decay
+    assert f(1000) == pytest.approx(0.0, abs=1e-9)   # cosine floor at the last step
+
+
+def test_recipe_lite_wiring_source_pins() -> None:
+    """The heavy loop needs .venv-nas — pin the wiring: EMA updates per step, final weights
+    ARE the EMA weights (what gets evaluated is what gets saved/exported), mosaic closes on
+    the stock-trainer schedule, and recipe runs ride a _rl tag so twins never clobber."""
+    import inspect
+
+    from prune.prune_baseline import prune_ladder, recovery_finetune
+    from prune.recover_graft import graft_prune_train_ladder
+
+    src = inspect.getsource(recovery_finetune)
+    assert "ema_obj.update(model)" in src
+    assert "model.load_state_dict(ema_obj.ema.state_dict())" in src
+    assert "close_mosaic(hyp=hyp)" in src
+    assert 'tag += "_rl"' in inspect.getsource(prune_ladder)
+    assert 'tag += "_rl"' in inspect.getsource(graft_prune_train_ladder)
+
+
 # donor-dependent guards for the 2026-07-08 criterion/args reset (Kaggle rc=1). Gated on
 # ultralytics + the trained donor being present → run locally (.venv-nas), skip in CI.
 _DONOR = __import__("pathlib").Path(

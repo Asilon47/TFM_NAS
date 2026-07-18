@@ -199,6 +199,24 @@ def load_baseline_model(donor: Path) -> Any:
     return model
 
 
+def lr_schedule_factor(gstep: int, steps_per_epoch: int, *, epochs: int,
+                       cos_lr: bool, warmup_epochs: float) -> float:
+    """Recipe-lite LR multiplier at global step ``gstep`` (linear warmup → cosine to 0).
+
+    Pure so the schedule shape is testable without a training loop; with both knobs off
+    it is the constant 1.0 the bare loop always used.
+    """
+    import math
+
+    e = gstep / max(1, steps_per_epoch)
+    if warmup_epochs > 0 and e < warmup_epochs:
+        return max(e / warmup_epochs, 1e-3)
+    if not cos_lr:
+        return 1.0
+    t = (e - warmup_epochs) / max(epochs - warmup_epochs, 1e-9)
+    return 0.5 * (1.0 + math.cos(math.pi * min(t, 1.0)))
+
+
 def _save_train_ckpt(path: Path, model: Any, optimizer: Any, *, epoch: int,
                      step: int) -> None:
     """Atomic resume-ckpt write (tmp + rename) — a disconnect mid-save leaves the old file."""
@@ -247,6 +265,10 @@ def recovery_finetune(
     kd_alpha: float = 1.0,
     feat_kd: Any = None,
     kd_feat_alpha: float = 1.0,
+    cos_lr: bool = False,
+    warmup_epochs: float = 0.0,
+    ema: bool = False,
+    close_mosaic: int = 0,
     ckpt_path: Any = None,
     ckpt_every: int = 10,
 ) -> dict[str, float]:
@@ -260,6 +282,15 @@ def recovery_finetune(
     teacher; Arm K) adds ``kd_feat_alpha · feat_kd.loss()`` — the FitNets regressors join
     the optimizer, never the model's state_dict. Requires ``teacher`` (its forward feeds
     the teacher-side taps).
+
+    Recipe-lite (Arm R; all default-off = bit-identical to the bare loop): ``cos_lr``
+    (cosine decay to 0 over the run) + ``warmup_epochs`` (linear ramp), ``ema``
+    (ultralytics ModelEMA; final weights = the EMA weights, the stock-trainer convention),
+    ``close_mosaic`` (disable mosaic/mixup for the last N epochs, the stock trainer's
+    close_mosaic). The loader already applies stock train augmentation (get_cfg(DEFAULT_CFG)
+    mosaic/HSV/flip), so these three are the actual recipe gap vs the donor's training —
+    minus COCO pretrain, which no recovery can retrofit. EMA restarts on a resumed run
+    (initialized from the resumed weights), same caveat class as the KD regressors.
 
     ``ckpt_path`` (free-tier hardening, 2026-07-13): save {epoch, model, optimizer, rng}
     every ``ckpt_every`` epochs (atomic tmp+rename) and auto-resume when the file exists —
@@ -291,6 +322,12 @@ def recovery_finetune(
         train_params += list(feat_kd.parameters())
     optimizer = torch.optim.AdamW(train_params, lr=lr)
 
+    steps_per_epoch = max(1, len(loader))
+    ema_obj = None
+    if ema:
+        from ultralytics.utils.torch_utils import ModelEMA
+        ema_obj = ModelEMA(model)
+
     step = 0
     start_epoch = 0
     ckpt = Path(ckpt_path) if ckpt_path is not None else None
@@ -302,7 +339,21 @@ def recovery_finetune(
                   f"({step} steps done)", flush=True)
 
     for epoch in range(start_epoch, epochs):
+        if close_mosaic and epoch == max(epochs - close_mosaic, 0) and \
+                hasattr(loader.dataset, "close_mosaic"):
+            from ultralytics.cfg import get_cfg
+            from ultralytics.utils import DEFAULT_CFG
+
+            hyp = get_cfg(DEFAULT_CFG)
+            hyp.task, hyp.imgsz = "pose", imgsz     # same cfg _build_pose_loader used
+            loader.dataset.close_mosaic(hyp=hyp)
+            print(f"[recipe] mosaic closed at epoch {epoch + 1}/{epochs}", flush=True)
         for raw in loader:
+            if cos_lr or warmup_epochs > 0:
+                factor = lr_schedule_factor(step, steps_per_epoch, epochs=epochs,
+                                            cos_lr=cos_lr, warmup_epochs=warmup_epochs)
+                for g in optimizer.param_groups:
+                    g["lr"] = lr * factor
             batch_dict = _to_device(_preprocess_batch(raw), device)
             if teacher is None:
                 loss, _items = model(batch_dict)
@@ -326,6 +377,8 @@ def recovery_finetune(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            if ema_obj is not None:
+                ema_obj.update(model)
             step += 1
             if max_steps is not None and step >= max_steps:
                 break
@@ -336,6 +389,10 @@ def recovery_finetune(
             print(f"[ckpt] {ckpt.name} @ epoch {epoch + 1}/{epochs}", flush=True)
         if max_steps is not None and step >= max_steps:
             break
+    if ema_obj is not None:
+        # Final weights = EMA weights (the stock-trainer convention) — what gets evaluated
+        # is what the ladder saves and exports.
+        model.load_state_dict(ema_obj.ema.state_dict())
     # Val a throwaway copy: the validator's AutoBackend fuses Conv+BN IN PLACE, which would
     # leave the model we return (and prune_ladder then saves/exports) without its BNs.
     import copy
@@ -384,6 +441,10 @@ def prune_ladder(
     ratio_spec: dict | None = None,
     spec_tag: str = "spec",
     ckpt_every: int = 10,
+    cos_lr: bool = False,
+    warmup_epochs: float = 0.0,
+    ema: bool = False,
+    close_mosaic: int = 0,
 ) -> dict:
     """The full control-arm ladder: prune → BN re-estimate → recover → eval → export, per ratio.
 
@@ -436,6 +497,8 @@ def prune_ladder(
                           seed=seed)
         if teacher is not None:
             tag += "_kd"
+        if cos_lr or warmup_epochs > 0 or ema or close_mosaic:
+            tag += "_rl"        # recipe-lite rides the tag — twins must not clobber
 
         model = load_baseline_model(donor)  # fresh weights per point — points are independent
         # yolo11-specific prep: split the C2f-family chunks + keep attention dense —
@@ -483,6 +546,8 @@ def prune_ladder(
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
                                     batch=batch, data_yaml=data_yaml, seed=seed,
                                     max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha,
+                                    cos_lr=cos_lr, warmup_epochs=warmup_epochs, ema=ema,
+                                    close_mosaic=close_mosaic,
                                     ckpt_path=(out_dir / f"ckpt_{tag}.pt"
                                                if ratio_spec is not None else None),
                                     ckpt_every=ckpt_every)
@@ -503,6 +568,9 @@ def prune_ladder(
             row["spec"] = {k: ratio_spec.get(k) for k in
                            ("stage_ratios", "rest_ratio", "predicted_fp32_ms",
                             "fp16_estimate_ms", "act_mbytes_honest")}
+        if cos_lr or warmup_epochs > 0 or ema or close_mosaic:
+            row["recipe"] = {"cos_lr": cos_lr, "warmup_epochs": warmup_epochs,
+                             "ema": ema, "close_mosaic": close_mosaic}
         (out_dir / f"prune_base_{tag}.meta.json").write_text(json.dumps(
             {"pruned_baseline": True, **row}, indent=2) + "\n")
         rows.append(row)
@@ -543,6 +611,13 @@ def main(argv: list[str] | None = None) -> int:
                         "selects the importance only")
     p.add_argument("--ckpt-every", type=int, default=10,
                    help="resume-ckpt cadence in epochs for spec runs (0 = off)")
+    p.add_argument("--cos-lr", action="store_true",
+                   help="recipe-lite (Arm R): cosine LR decay over the recovery")
+    p.add_argument("--warmup-epochs", type=float, default=0.0)
+    p.add_argument("--ema", action="store_true",
+                   help="recipe-lite: ModelEMA; final weights = the EMA weights")
+    p.add_argument("--close-mosaic", type=int, default=0,
+                   help="recipe-lite: disable mosaic/mixup for the last N epochs")
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--device", default="cpu")
@@ -567,7 +642,9 @@ def main(argv: list[str] | None = None) -> int:
         technique=a.technique, iterative_steps=a.iterative_steps,
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
         taylor_batches=a.taylor_batches, teacher_path=a.teacher, kd_alpha=a.kd_alpha,
-        ratio_spec=ratio_spec, spec_tag=spec_tag, ckpt_every=a.ckpt_every)
+        ratio_spec=ratio_spec, spec_tag=spec_tag, ckpt_every=a.ckpt_every,
+        cos_lr=a.cos_lr, warmup_epochs=a.warmup_epochs, ema=a.ema,
+        close_mosaic=a.close_mosaic)
     print(f"donor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "

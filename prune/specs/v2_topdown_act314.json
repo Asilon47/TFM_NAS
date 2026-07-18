@@ -1,0 +1,309 @@
+{
+  "stage_ratios": [
+    0.6,
+    0.2,
+    0.5,
+    0.6,
+    0.4
+  ],
+  "rest_ratio": 0.1,
+  "predicted_fp32_ms": 10.644,
+  "fp16_estimate_ms": 7.604,
+  "target_fp32_ms": 10.716,
+  "act_mbytes_honest": 311.74,
+  "act_mbytes_predicted": 312.28,
+  "params_after": 1067501,
+  "fence": {
+    "fp16_target_ms": 7.65,
+    "act_max_mb": 314.0,
+    "fit": "search/graft_latency_fit.json"
+  },
+  "objective": "max act \u2264 fence; ties: min max-stage, min rest, min mean (balance beats concentration \u2014 measured, procedure.md 2026-07-12)",
+  "provenance": "allocate_v2 honest fence: CPU-built pruned graft \u2192 deploy ONNX \u2192 act_mbytes \u2192 physical graft fit (LOO ~2-3 %); linear predictor is screening-only, this spec's act is the honest re-price",
+  "arch_tag": "winner",
+  "timestamp": "2026-07-18T09:32:09Z",
+  "neck": "topdown",
+  "sensitivities": {
+    "base_act": 539.0423736572266,
+    "stage": [
+      125.0,
+      56.24359130859375,
+      118.1640625,
+      105.97702026367188,
+      44.620513916015625
+    ],
+    "rest": 29.237747192382812
+  },
+  "verified": [
+    {
+      "stage_ratios": [
+        0.5,
+        0.4,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rest_ratio": 0.3,
+      "act_predicted": 313.82,
+      "act_honest": 319.42,
+      "params": 803365,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.4
+      ],
+      "rest_ratio": 0.3,
+      "act_predicted": 312.65,
+      "act_honest": 321.29,
+      "params": 951173,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.3,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rest_ratio": 0.5,
+      "act_predicted": 313.59,
+      "act_honest": 326.22,
+      "params": 789805,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.4,
+        0.5,
+        0.5,
+        0.4
+      ],
+      "rest_ratio": 0.5,
+      "act_predicted": 312.43,
+      "act_honest": 323.78,
+      "params": 936245,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.5,
+        0.5,
+        0.4,
+        0.5
+      ],
+      "rest_ratio": 0.5,
+      "act_predicted": 312.94,
+      "act_honest": 328.18,
+      "params": 876933,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.4,
+        0.5,
+        0.5,
+        0.3
+      ],
+      "rest_ratio": 0.6,
+      "act_predicted": 313.97,
+      "act_honest": 316.82,
+      "params": 989653,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.2
+      ],
+      "rest_ratio": 0.6,
+      "act_predicted": 312.81,
+      "act_honest": 319.32,
+      "params": 1193749,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.2,
+        0.6,
+        0.6,
+        0.1
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 313.85,
+      "act_honest": 314.87,
+      "params": 1609277,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.3,
+        0.6,
+        0.6,
+        0.0
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 312.68,
+      "act_honest": 316.2,
+      "params": 1864501,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.5,
+        0.6,
+        0.6,
+        0.0
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 313.94,
+      "act_honest": 329.86,
+      "params": 1862589,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.4,
+        0.6,
+        0.5,
+        0.1
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 313.2,
+      "act_honest": 316.74,
+      "params": 1664773,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.5,
+        0.5,
+        0.6,
+        0.0
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 313.25,
+      "act_honest": 318.24,
+      "params": 1871725,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.5,
+        0.6,
+        0.5,
+        0.0
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 312.03,
+      "act_honest": 319.24,
+      "params": 1932365,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.5,
+        0.2,
+        0.6,
+        0.6,
+        0.4
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 312.96,
+      "act_honest": 323.36,
+      "params": 1058109,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.0,
+        0.6,
+        0.5,
+        0.6
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 313.38,
+      "act_honest": 317.56,
+      "params": 884669,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.1,
+        0.5,
+        0.6,
+        0.5
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 313.44,
+      "act_honest": 314.17,
+      "params": 922093,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.1,
+        0.6,
+        0.5,
+        0.5
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 312.22,
+      "act_honest": 315.18,
+      "params": 978893,
+      "coverage": 0.773,
+      "fits": false
+    },
+    {
+      "stage_ratios": [
+        0.6,
+        0.2,
+        0.5,
+        0.6,
+        0.4
+      ],
+      "rest_ratio": 0.1,
+      "act_predicted": 312.28,
+      "act_honest": 311.74,
+      "params": 1067501,
+      "coverage": 0.773,
+      "fits": true
+    }
+  ]
+}

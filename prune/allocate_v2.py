@@ -314,15 +314,22 @@ def search_specs(arch: dict, fence_fp16_ms: list[float], *, supernet: Any = None
             raise ValueError(f"fence {fence} ms: none of the top {max_verify} verified under "
                              f"{act_max:.0f} MB — widen rungs or raise the fence")
         spec, c, h = chosen
+        out = out_dir / f"v2{('_' + neck) if neck else ''}_act{round(act_max)}.json"
+        # Keep the chosen graph under the spec's own name — the weight-free Nano bench
+        # candidate (same deploy exporter as every measured graft row).
+        import shutil
+
+        probe_onnx = (Path(workdir) if workdir is not None else WORKDIR) / \
+            f"{out.stem}_{imgsz}.onnx"
+        shutil.copy2(h["onnx"], probe_onnx)
         payload = spec_payload(spec["stage_ratios"], spec["rest_ratio"],
                                act_honest=h["act_mbytes"], act_predicted=c["act"],
                                params_after=h["params_after"], fence_fp16_ms=fence,
                                act_max=act_max,
-                               extra={"neck": neck,
+                               extra={"neck": neck, "probe_onnx": str(probe_onnx),
                                       "sensitivities": {k: sens[k] for k in
                                                         ("base_act", "stage", "rest")},
                                       "verified": verified})
-        out = out_dir / f"v2{('_' + neck) if neck else ''}_act{round(act_max)}.json"
         out.write_text(json.dumps(payload, indent=2) + "\n")
         print(f"[emit] {out.name}: stages={payload['stage_ratios']} "
               f"rest={payload['rest_ratio']} act={payload['act_mbytes_honest']} MB "
