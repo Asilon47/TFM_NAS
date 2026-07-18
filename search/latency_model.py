@@ -120,25 +120,93 @@ def act_limit_for_ms(target_ms: float, model: dict) -> float:
     return (float(target_ms) - float(model["intercept"])) / float(model["slope"])
 
 
-def graft_fit_report(e2e_dir: Any, root: Any = None) -> dict:
-    """Per-precision physical fits over the measured OFA-graft e2e family only."""
+def _family_fit_report(e2e_dir: Any, root: Any, *, family: str, keep: Any) -> dict:
+    """Per-precision physical fits over one measured e2e family (``keep`` filters by name)."""
     points = collect_points(e2e_dir, root=root)
-    graft = [p for p in points if "ms" in p and is_graft_e2e_point(p["name"])]
+    fam = [p for p in points if "ms" in p and keep(p["name"])]
     out: dict = {
-        "family": "ofa_graft_e2e",
-        "n_points": len(graft),
+        "family": family,
+        "n_points": len(fam),
         "excluded": sorted({p["name"] for p in points
-                            if "ms" in p and not is_graft_e2e_point(p["name"])}),
+                            if "ms" in p and not keep(p["name"])}),
         "doctrine": "physical single-feature law (memory-bound: ms = b + a*act_mbytes); "
-                    "fit per precision on graft e2e points only — whole nets, never marginal; "
+                    f"fit per precision on {family} points only — whole nets, never marginal; "
                     "claimed latencies are still verified on-device",
         "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fits": {},
     }
-    for prec in sorted({p["precision"] for p in graft}):
-        pts = [p for p in graft if p["precision"] == prec]
+    for prec in sorted({p["precision"] for p in fam}):
+        pts = [p for p in fam if p["precision"] == prec]
         out["fits"][prec] = (fit_physical(pts) if len(pts) >= 3
                              else {"skipped": f"only {len(pts)} points"})
+    return out
+
+
+def graft_fit_report(e2e_dir: Any, root: Any = None) -> dict:
+    """Per-precision physical fits over the measured OFA-graft e2e family only."""
+    return _family_fit_report(e2e_dir, root, family="ofa_graft_e2e", keep=is_graft_e2e_point)
+
+
+# --- dense-native-family physical fits (NAS-born beat-n program, 2026-07-18) ------------------
+# Same single-feature law over the dense op family (yolo11-shaped), but split into TWO
+# subfamilies, because they are different act CURRENCIES: channel-pruned nets pass through
+# prune/yolo_tp_prep.py's C2f chunk-split rewrite, which restructures the graph (97 → 105
+# convs on the baseline) and deflates ONNX-counted activation bytes (the fat chunk/concat
+# tensors vanish: baseline 549 MB → 197 MB at r20) without a proportional latency drop. A
+# pooled fit mixes the currencies and degrades to LOO 5–7 % with ±12 % systematic residuals;
+# split, both laws are tight:
+#   pruned  (prune_base_*): fp32 LOO 0.6 % / fp16 1.2 %   ← the Arm-S fence (a pruned s39 IS
+#           a prep-rewritten graph, priced by the same CPU probe pipeline)
+#   scaled  (dense_*/densenas_*/baseline): fp32 LOO 3.4 % / fp16 3.9 %  (diagnostic; the
+#           legacy PHYSICAL_FP32 above stays the pinned dense_nas search fence)
+# fp16 is usable since the "±20 % build variance" caveat was retracted (contention,
+# models/README.md 2026-07-17; audit_e2e runs 69/70 clean — the one suspect, yolo11s fp16,
+# is outside this family). Extrapolation caveat: the pruned fit's support is 158–203 MB and
+# Arm-S specs land ~230–265 MB — finalists gate on MEASURED ms, per standing doctrine.
+# Pinned from search/dense_latency_fit.json (regenerate: python -m search.latency_model
+# --fit-dense); tests assert constants == tracked JSON.
+PHYSICAL_DENSE_PRUNED_FP32 = {"slope": 0.048426468, "intercept": -0.021571931,
+                              "unit": "act_mbytes", "n": 7, "loo_mape": 0.006176}
+PHYSICAL_DENSE_PRUNED_FP16 = {"slope": 0.023450210, "intercept": 1.317179853,
+                              "unit": "act_mbytes", "n": 7, "loo_mape": 0.011771}
+
+DENSE_POINT_PREFIXES = ("dense_", "densenas_", "prune_base_", "baseline_recheck")
+DENSE_PRUNED_PREFIX = "prune_base_"
+
+
+def is_dense_e2e_point(name: str) -> bool:
+    """True for whole-net dense-family bench rows: width-scaled (dense_w*), searched
+    (densenas_*), channel-pruned (prune_base_*) and the deployed baseline itself. Grafts,
+    bare backbones and the yolo11s anchor (the audit's one suspect row) fall outside."""
+    return name.startswith(DENSE_POINT_PREFIXES)
+
+
+def is_dense_pruned_point(name: str) -> bool:
+    """The prep-rewritten channel-pruned subfamily — its own act currency (see above)."""
+    return name.startswith(DENSE_PRUNED_PREFIX)
+
+
+def dense_fit_report(e2e_dir: Any, root: Any = None) -> dict:
+    """Subfamily-split physical fits over the measured dense-family e2e points.
+
+    ``subfamilies.pruned`` is the Arm-S fence; ``scaled`` and ``pooled`` are kept for the
+    record (the pooled residual structure is the evidence for the split)."""
+    subs = {
+        "pruned": lambda n: is_dense_e2e_point(n) and is_dense_pruned_point(n),
+        "scaled": lambda n: is_dense_e2e_point(n) and not is_dense_pruned_point(n),
+        "pooled": is_dense_e2e_point,
+    }
+    out: dict = {
+        "family": "dense_native_e2e",
+        "split_rationale": "prep-rewritten pruned graphs deflate ONNX act (549→197 MB at "
+                           "r20) — a different currency; pooled LOO 5–7 % vs split 0.6–3.9 %",
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "subfamilies": {},
+    }
+    for name, keep in subs.items():
+        rep = _family_fit_report(e2e_dir, root, family=f"dense_native_e2e/{name}", keep=keep)
+        rep.pop("timestamp", None)
+        out["subfamilies"][name] = rep
     return out
 
 FEATURES = ("act_mbytes", "param_mbytes", "n_convs", "conv_gflops")
@@ -361,28 +429,39 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fit-graft", action="store_true",
                    help="physical single-feature fit on the OFA-graft e2e family only "
                         "(default out: the tracked search/graft_latency_fit.json)")
+    p.add_argument("--fit-dense", action="store_true",
+                   help="physical single-feature fit on the dense e2e family "
+                        "(scaled/searched/pruned/baseline; default out: the tracked "
+                        "search/dense_latency_fit.json)")
     p.add_argument("--out", type=Path, default=None)
     a = p.parse_args(argv)
 
     if a.fit_graft:
         report = graft_fit_report(a.e2e_dir)
         out = a.out or ROOT / "search" / "graft_latency_fit.json"
+    elif a.fit_dense:
+        report = dense_fit_report(a.e2e_dir)
+        out = a.out or ROOT / "search" / "dense_latency_fit.json"
     else:
         report = fit_report(collect_points(a.e2e_dir), lam=a.lam)
         out = a.out or ROOT / "data" / "latency_model.json"
     out.write_text(json.dumps(report, indent=2) + "\n")
-    for prec, fit in report["fits"].items():
-        if "skipped" in fit:
-            print(f"{prec}: {fit['skipped']}")
-            continue
-        head = f"{prec}: n={fit['n']}  LOO-MAPE={fit['loo_mape'] * 100:.1f}%"
-        if "slope" in fit:
-            head += (f"  ms = {fit['intercept']:.3f} + {fit['slope']:.6f}·act_MB"
-                     f"  (max |err| {fit['max_err_pct']:.1f}%)")
-        print(head)
-        for row in fit["points"]:
-            print(f"  {row['name']:42s} {row['ms']:7.2f} → {row['pred']:7.2f}  "
-                  f"({row['resid_pct']:+.1f}%)")
+    sections = (report["subfamilies"].items() if "subfamilies" in report
+                else [("", report)])
+    for sub_name, sub in sections:
+        for prec, fit in sub["fits"].items():
+            label = f"{sub_name + ' ' if sub_name else ''}{prec}"
+            if "skipped" in fit:
+                print(f"{label}: {fit['skipped']}")
+                continue
+            head = f"{label}: n={fit['n']}  LOO-MAPE={fit['loo_mape'] * 100:.1f}%"
+            if "slope" in fit:
+                head += (f"  ms = {fit['intercept']:.3f} + {fit['slope']:.6f}·act_MB"
+                         f"  (max |err| {fit['max_err_pct']:.1f}%)")
+            print(head)
+            for row in fit["points"]:
+                print(f"  {row['name']:42s} {row['ms']:7.2f} → {row['pred']:7.2f}  "
+                      f"({row['resid_pct']:+.1f}%)")
     if report.get("skipped"):
         print(f"skipped (no ONNX): {report['skipped']}")
     print(f"wrote {out}")

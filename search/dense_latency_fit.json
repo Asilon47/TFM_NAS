@@ -1,0 +1,707 @@
+{
+  "family": "dense_native_e2e",
+  "split_rationale": "prep-rewritten pruned graphs deflate ONNX act (549\u2192197 MB at r20) \u2014 a different currency; pooled LOO 5\u20137 % vs split 0.6\u20133.9 %",
+  "timestamp": "2026-07-18T09:08:03Z",
+  "subfamilies": {
+    "pruned": {
+      "family": "dense_native_e2e/pruned",
+      "n_points": 14,
+      "excluded": [
+        "addv_idx0_backbone_640",
+        "addv_idx11_backbone_640",
+        "addv_idx1_backbone_640",
+        "addv_idx2_backbone_640",
+        "addv_idx3_backbone_640",
+        "addv_idx4_backbone_640",
+        "addv_max_corner_backbone_640",
+        "addv_min_corner_backbone_640",
+        "baseline_recheck_640",
+        "baseline_recheck_640_fp16",
+        "dense_ctrl_n_640",
+        "dense_d33_w20_640",
+        "dense_d33_w20_640_fp16",
+        "dense_d50_w15_640",
+        "dense_d50_w15_640_fp16",
+        "dense_w13_640",
+        "dense_w13_640_fp16",
+        "dense_w18_640",
+        "dense_w18_640_fp16",
+        "dense_w22_640",
+        "dense_w22_640_fp16",
+        "dense_w30_640",
+        "densenas_s31_640",
+        "densenas_s31_640_fp16",
+        "densenas_s39_640",
+        "densenas_s39_640_fp16",
+        "densenas_s40_640",
+        "densenas_s40_640_fp16",
+        "fallback_idx11_e2e_640",
+        "fallback_idx3_e2e_640",
+        "graft_halp_10p4_640",
+        "graft_halp_10p4_640_fp16",
+        "graft_halp_9p0_640",
+        "graft_halp_9p0_640_fp16",
+        "graft_prune_r20_e2e_640",
+        "graft_prune_r40_e2e_640",
+        "graft_prune_r60_e2e_640",
+        "graft_r50_gtay_640",
+        "graft_r50_gtay_640_fp16",
+        "graft_r60_gtay_640",
+        "graft_r60_gtay_640_fp16",
+        "winner_v1_backbone_640",
+        "winner_v1_e2e_640",
+        "winner_v1_e2e_640_fp16",
+        "winner_v1_v2topdown_e2e_640",
+        "winner_v1_v2topdown_e2e_640_fp16",
+        "winner_v1_v3pan_e2e_640",
+        "winner_v1_v3pan_e2e_640_fp16",
+        "yolo11s_pose_640",
+        "yolo11s_pose_640_fp16"
+      ],
+      "doctrine": "physical single-feature law (memory-bound: ms = b + a*act_mbytes); fit per precision on dense_native_e2e/pruned points only \u2014 whole nets, never marginal; claimed latencies are still verified on-device",
+      "fits": {
+        "fp16": {
+          "feature": "act_mbytes",
+          "slope": 0.02345020992716955,
+          "intercept": 1.3171798526566996,
+          "n": 7,
+          "loo_mape": 0.011770959756238443,
+          "max_err_pct": 1.9173211967750312,
+          "points": [
+            {
+              "name": "prune_base_r10_640_fp16",
+              "ms": 6.130431520938873,
+              "act_mbytes": 202.89339447021484,
+              "pred": 6.075,
+              "resid_pct": -0.9
+            },
+            {
+              "name": "prune_base_r15_640_fp16",
+              "ms": 5.927883832454682,
+              "act_mbytes": 197.64437103271484,
+              "pred": 5.952,
+              "resid_pct": 0.4
+            },
+            {
+              "name": "prune_base_r20_640_fp16",
+              "ms": 5.911296474933624,
+              "act_mbytes": 197.27816009521484,
+              "pred": 5.943,
+              "resid_pct": 0.5
+            },
+            {
+              "name": "prune_base_r30_640_fp16",
+              "ms": 5.3441852807998655,
+              "act_mbytes": 170.95980072021484,
+              "pred": 5.326,
+              "resid_pct": -0.3
+            },
+            {
+              "name": "prune_base_r35_640_fp16",
+              "ms": 5.3782833433151245,
+              "act_mbytes": 172.13167572021484,
+              "pred": 5.354,
+              "resid_pct": -0.5
+            },
+            {
+              "name": "prune_base_r45_640",
+              "ms": 5.123785924911499,
+              "act_mbytes": 166.51644134521484,
+              "pred": 5.222,
+              "resid_pct": 1.9
+            },
+            {
+              "name": "prune_base_r55_640_fp16",
+              "ms": 5.073599371910095,
+              "act_mbytes": 157.77620697021484,
+              "pred": 5.017,
+              "resid_pct": -1.1
+            }
+          ]
+        },
+        "fp32": {
+          "feature": "act_mbytes",
+          "slope": 0.04842646779419993,
+          "intercept": -0.021571931010182576,
+          "n": 7,
+          "loo_mape": 0.006176066399409122,
+          "max_err_pct": 1.3151795355289677,
+          "points": [
+            {
+              "name": "prune_base_r10_640",
+              "ms": 9.824011821746826,
+              "act_mbytes": 202.89339447021484,
+              "pred": 9.804,
+              "resid_pct": -0.2
+            },
+            {
+              "name": "prune_base_r15_640",
+              "ms": 9.535252933502198,
+              "act_mbytes": 197.64437103271484,
+              "pred": 9.55,
+              "resid_pct": 0.2
+            },
+            {
+              "name": "prune_base_r20_640",
+              "ms": 9.522759003639221,
+              "act_mbytes": 197.27816009521484,
+              "pred": 9.532,
+              "resid_pct": 0.1
+            },
+            {
+              "name": "prune_base_r30_640",
+              "ms": 8.282849459648132,
+              "act_mbytes": 170.95980072021484,
+              "pred": 8.257,
+              "resid_pct": -0.3
+            },
+            {
+              "name": "prune_base_r35_640",
+              "ms": 8.356114044189454,
+              "act_mbytes": 172.13167572021484,
+              "pred": 8.314,
+              "resid_pct": -0.5
+            },
+            {
+              "name": "prune_base_r45_640",
+              "ms": 7.937834379673004,
+              "act_mbytes": 166.51644134521484,
+              "pred": 8.042,
+              "resid_pct": 1.3
+            },
+            {
+              "name": "prune_base_r55_640",
+              "ms": 7.65934433221817,
+              "act_mbytes": 157.77620697021484,
+              "pred": 7.619,
+              "resid_pct": -0.5
+            }
+          ]
+        }
+      }
+    },
+    "scaled": {
+      "family": "dense_native_e2e/scaled",
+      "n_points": 21,
+      "excluded": [
+        "addv_idx0_backbone_640",
+        "addv_idx11_backbone_640",
+        "addv_idx1_backbone_640",
+        "addv_idx2_backbone_640",
+        "addv_idx3_backbone_640",
+        "addv_idx4_backbone_640",
+        "addv_max_corner_backbone_640",
+        "addv_min_corner_backbone_640",
+        "fallback_idx11_e2e_640",
+        "fallback_idx3_e2e_640",
+        "graft_halp_10p4_640",
+        "graft_halp_10p4_640_fp16",
+        "graft_halp_9p0_640",
+        "graft_halp_9p0_640_fp16",
+        "graft_prune_r20_e2e_640",
+        "graft_prune_r40_e2e_640",
+        "graft_prune_r60_e2e_640",
+        "graft_r50_gtay_640",
+        "graft_r50_gtay_640_fp16",
+        "graft_r60_gtay_640",
+        "graft_r60_gtay_640_fp16",
+        "prune_base_r10_640",
+        "prune_base_r10_640_fp16",
+        "prune_base_r15_640",
+        "prune_base_r15_640_fp16",
+        "prune_base_r20_640",
+        "prune_base_r20_640_fp16",
+        "prune_base_r30_640",
+        "prune_base_r30_640_fp16",
+        "prune_base_r35_640",
+        "prune_base_r35_640_fp16",
+        "prune_base_r45_640",
+        "prune_base_r55_640",
+        "prune_base_r55_640_fp16",
+        "winner_v1_backbone_640",
+        "winner_v1_e2e_640",
+        "winner_v1_e2e_640_fp16",
+        "winner_v1_v2topdown_e2e_640",
+        "winner_v1_v2topdown_e2e_640_fp16",
+        "winner_v1_v3pan_e2e_640",
+        "winner_v1_v3pan_e2e_640_fp16",
+        "yolo11s_pose_640",
+        "yolo11s_pose_640_fp16"
+      ],
+      "doctrine": "physical single-feature law (memory-bound: ms = b + a*act_mbytes); fit per precision on dense_native_e2e/scaled points only \u2014 whole nets, never marginal; claimed latencies are still verified on-device",
+      "fits": {
+        "fp16": {
+          "feature": "act_mbytes",
+          "slope": 0.007829271036406902,
+          "intercept": 3.314695272089548,
+          "n": 10,
+          "loo_mape": 0.03909637517600066,
+          "max_err_pct": 10.833214728897898,
+          "points": [
+            {
+              "name": "baseline_recheck_640_fp16",
+              "ms": 7.752224488258362,
+              "act_mbytes": 549.5361328125,
+              "pred": 7.617,
+              "resid_pct": -1.7
+            },
+            {
+              "name": "dense_ctrl_n_640",
+              "ms": 6.638497602939606,
+              "act_mbytes": 516.3909912109375,
+              "pred": 7.358,
+              "resid_pct": 10.8
+            },
+            {
+              "name": "dense_d33_w20_640_fp16",
+              "ms": 6.928907845020294,
+              "act_mbytes": 453.6712646484375,
+              "pred": 6.867,
+              "resid_pct": -0.9
+            },
+            {
+              "name": "dense_d50_w15_640_fp16",
+              "ms": 6.296040818691254,
+              "act_mbytes": 367.0501708984375,
+              "pred": 6.188,
+              "resid_pct": -1.7
+            },
+            {
+              "name": "dense_w13_640_fp16",
+              "ms": 6.445990076065064,
+              "act_mbytes": 353.2318115234375,
+              "pred": 6.08,
+              "resid_pct": -5.7
+            },
+            {
+              "name": "dense_w18_640_fp16",
+              "ms": 6.480628952980042,
+              "act_mbytes": 414.0472412109375,
+              "pred": 6.556,
+              "resid_pct": 1.2
+            },
+            {
+              "name": "dense_w22_640_fp16",
+              "ms": 6.945441763401032,
+              "act_mbytes": 498.9105224609375,
+              "pred": 7.221,
+              "resid_pct": 4.0
+            },
+            {
+              "name": "densenas_s31_640_fp16",
+              "ms": 8.940199670791626,
+              "act_mbytes": 670.9320068359375,
+              "pred": 8.568,
+              "resid_pct": -4.2
+            },
+            {
+              "name": "densenas_s39_640_fp16",
+              "ms": 8.843432803153991,
+              "act_mbytes": 694.8577880859375,
+              "pred": 8.755,
+              "resid_pct": -1.0
+            },
+            {
+              "name": "densenas_s40_640_fp16",
+              "ms": 8.665856647491456,
+              "act_mbytes": 691.3421630859375,
+              "pred": 8.727,
+              "resid_pct": 0.7
+            }
+          ]
+        },
+        "fp32": {
+          "feature": "act_mbytes",
+          "slope": 0.01820711484913774,
+          "intercept": 2.751861751030213,
+          "n": 11,
+          "loo_mape": 0.033794352013913134,
+          "max_err_pct": 7.252439523050993,
+          "points": [
+            {
+              "name": "baseline_recheck_640",
+              "ms": 12.742724804878234,
+              "act_mbytes": 549.5361328125,
+              "pred": 12.757,
+              "resid_pct": 0.1
+            },
+            {
+              "name": "dense_ctrl_n_640",
+              "ms": 11.332005023956299,
+              "act_mbytes": 516.3909912109375,
+              "pred": 12.154,
+              "resid_pct": 7.3
+            },
+            {
+              "name": "dense_d33_w20_640",
+              "ms": 11.257768321037293,
+              "act_mbytes": 453.6712646484375,
+              "pred": 11.012,
+              "resid_pct": -2.2
+            },
+            {
+              "name": "dense_d50_w15_640",
+              "ms": 9.525354695320129,
+              "act_mbytes": 367.0501708984375,
+              "pred": 9.435,
+              "resid_pct": -1.0
+            },
+            {
+              "name": "dense_w13_640",
+              "ms": 9.560670409202576,
+              "act_mbytes": 353.2318115234375,
+              "pred": 9.183,
+              "resid_pct": -3.9
+            },
+            {
+              "name": "dense_w18_640",
+              "ms": 10.011483674049378,
+              "act_mbytes": 414.0472412109375,
+              "pred": 10.29,
+              "resid_pct": 2.8
+            },
+            {
+              "name": "dense_w22_640",
+              "ms": 11.545241274833678,
+              "act_mbytes": 498.9105224609375,
+              "pred": 11.836,
+              "resid_pct": 2.5
+            },
+            {
+              "name": "dense_w30_640",
+              "ms": 15.266025137901305,
+              "act_mbytes": 632.0648193359375,
+              "pred": 14.26,
+              "resid_pct": -6.6
+            },
+            {
+              "name": "densenas_s31_640",
+              "ms": 15.141755666732788,
+              "act_mbytes": 670.9320068359375,
+              "pred": 14.968,
+              "resid_pct": -1.2
+            },
+            {
+              "name": "densenas_s39_640",
+              "ms": 15.272501125335694,
+              "act_mbytes": 694.8577880859375,
+              "pred": 15.403,
+              "resid_pct": 0.9
+            },
+            {
+              "name": "densenas_s40_640",
+              "ms": 14.981549725532531,
+              "act_mbytes": 691.3421630859375,
+              "pred": 15.339,
+              "resid_pct": 2.4
+            }
+          ]
+        }
+      }
+    },
+    "pooled": {
+      "family": "dense_native_e2e/pooled",
+      "n_points": 35,
+      "excluded": [
+        "addv_idx0_backbone_640",
+        "addv_idx11_backbone_640",
+        "addv_idx1_backbone_640",
+        "addv_idx2_backbone_640",
+        "addv_idx3_backbone_640",
+        "addv_idx4_backbone_640",
+        "addv_max_corner_backbone_640",
+        "addv_min_corner_backbone_640",
+        "fallback_idx11_e2e_640",
+        "fallback_idx3_e2e_640",
+        "graft_halp_10p4_640",
+        "graft_halp_10p4_640_fp16",
+        "graft_halp_9p0_640",
+        "graft_halp_9p0_640_fp16",
+        "graft_prune_r20_e2e_640",
+        "graft_prune_r40_e2e_640",
+        "graft_prune_r60_e2e_640",
+        "graft_r50_gtay_640",
+        "graft_r50_gtay_640_fp16",
+        "graft_r60_gtay_640",
+        "graft_r60_gtay_640_fp16",
+        "winner_v1_backbone_640",
+        "winner_v1_e2e_640",
+        "winner_v1_e2e_640_fp16",
+        "winner_v1_v2topdown_e2e_640",
+        "winner_v1_v2topdown_e2e_640_fp16",
+        "winner_v1_v3pan_e2e_640",
+        "winner_v1_v3pan_e2e_640_fp16",
+        "yolo11s_pose_640",
+        "yolo11s_pose_640_fp16"
+      ],
+      "doctrine": "physical single-feature law (memory-bound: ms = b + a*act_mbytes); fit per precision on dense_native_e2e/pooled points only \u2014 whole nets, never marginal; claimed latencies are still verified on-device",
+      "fits": {
+        "fp16": {
+          "feature": "act_mbytes",
+          "slope": 0.006039650322791076,
+          "intercept": 4.336407233705275,
+          "n": 17,
+          "loo_mape": 0.049501953599958924,
+          "max_err_pct": 12.302944075140635,
+          "points": [
+            {
+              "name": "baseline_recheck_640_fp16",
+              "ms": 7.752224488258362,
+              "act_mbytes": 549.5361328125,
+              "pred": 7.655,
+              "resid_pct": -1.2
+            },
+            {
+              "name": "dense_ctrl_n_640",
+              "ms": 6.638497602939606,
+              "act_mbytes": 516.3909912109375,
+              "pred": 7.455,
+              "resid_pct": 12.3
+            },
+            {
+              "name": "dense_d33_w20_640_fp16",
+              "ms": 6.928907845020294,
+              "act_mbytes": 453.6712646484375,
+              "pred": 7.076,
+              "resid_pct": 2.1
+            },
+            {
+              "name": "dense_d50_w15_640_fp16",
+              "ms": 6.296040818691254,
+              "act_mbytes": 367.0501708984375,
+              "pred": 6.553,
+              "resid_pct": 4.1
+            },
+            {
+              "name": "dense_w13_640_fp16",
+              "ms": 6.445990076065064,
+              "act_mbytes": 353.2318115234375,
+              "pred": 6.47,
+              "resid_pct": 0.4
+            },
+            {
+              "name": "dense_w18_640_fp16",
+              "ms": 6.480628952980042,
+              "act_mbytes": 414.0472412109375,
+              "pred": 6.837,
+              "resid_pct": 5.5
+            },
+            {
+              "name": "dense_w22_640_fp16",
+              "ms": 6.945441763401032,
+              "act_mbytes": 498.9105224609375,
+              "pred": 7.35,
+              "resid_pct": 5.8
+            },
+            {
+              "name": "densenas_s31_640_fp16",
+              "ms": 8.940199670791626,
+              "act_mbytes": 670.9320068359375,
+              "pred": 8.389,
+              "resid_pct": -6.2
+            },
+            {
+              "name": "densenas_s39_640_fp16",
+              "ms": 8.843432803153991,
+              "act_mbytes": 694.8577880859375,
+              "pred": 8.533,
+              "resid_pct": -3.5
+            },
+            {
+              "name": "densenas_s40_640_fp16",
+              "ms": 8.665856647491456,
+              "act_mbytes": 691.3421630859375,
+              "pred": 8.512,
+              "resid_pct": -1.8
+            },
+            {
+              "name": "prune_base_r10_640_fp16",
+              "ms": 6.130431520938873,
+              "act_mbytes": 202.89339447021484,
+              "pred": 5.562,
+              "resid_pct": -9.3
+            },
+            {
+              "name": "prune_base_r15_640_fp16",
+              "ms": 5.927883832454682,
+              "act_mbytes": 197.64437103271484,
+              "pred": 5.53,
+              "resid_pct": -6.7
+            },
+            {
+              "name": "prune_base_r20_640_fp16",
+              "ms": 5.911296474933624,
+              "act_mbytes": 197.27816009521484,
+              "pred": 5.528,
+              "resid_pct": -6.5
+            },
+            {
+              "name": "prune_base_r30_640_fp16",
+              "ms": 5.3441852807998655,
+              "act_mbytes": 170.95980072021484,
+              "pred": 5.369,
+              "resid_pct": 0.5
+            },
+            {
+              "name": "prune_base_r35_640_fp16",
+              "ms": 5.3782833433151245,
+              "act_mbytes": 172.13167572021484,
+              "pred": 5.376,
+              "resid_pct": -0.0
+            },
+            {
+              "name": "prune_base_r45_640",
+              "ms": 5.123785924911499,
+              "act_mbytes": 166.51644134521484,
+              "pred": 5.342,
+              "resid_pct": 4.3
+            },
+            {
+              "name": "prune_base_r55_640_fp16",
+              "ms": 5.073599371910095,
+              "act_mbytes": 157.77620697021484,
+              "pred": 5.289,
+              "resid_pct": 4.3
+            }
+          ]
+        },
+        "fp32": {
+          "feature": "act_mbytes",
+          "slope": 0.012445458863752873,
+          "intercept": 6.072358081835156,
+          "n": 18,
+          "loo_mape": 0.07294646160500412,
+          "max_err_pct": 12.485249077065252,
+          "points": [
+            {
+              "name": "baseline_recheck_640",
+              "ms": 12.742724804878234,
+              "act_mbytes": 549.5361328125,
+              "pred": 12.912,
+              "resid_pct": 1.3
+            },
+            {
+              "name": "dense_ctrl_n_640",
+              "ms": 11.332005023956299,
+              "act_mbytes": 516.3909912109375,
+              "pred": 12.499,
+              "resid_pct": 10.3
+            },
+            {
+              "name": "dense_d33_w20_640",
+              "ms": 11.257768321037293,
+              "act_mbytes": 453.6712646484375,
+              "pred": 11.719,
+              "resid_pct": 4.1
+            },
+            {
+              "name": "dense_d50_w15_640",
+              "ms": 9.525354695320129,
+              "act_mbytes": 367.0501708984375,
+              "pred": 10.64,
+              "resid_pct": 11.7
+            },
+            {
+              "name": "dense_w13_640",
+              "ms": 9.560670409202576,
+              "act_mbytes": 353.2318115234375,
+              "pred": 10.468,
+              "resid_pct": 9.5
+            },
+            {
+              "name": "dense_w18_640",
+              "ms": 10.011483674049378,
+              "act_mbytes": 414.0472412109375,
+              "pred": 11.225,
+              "resid_pct": 12.1
+            },
+            {
+              "name": "dense_w22_640",
+              "ms": 11.545241274833678,
+              "act_mbytes": 498.9105224609375,
+              "pred": 12.282,
+              "resid_pct": 6.4
+            },
+            {
+              "name": "dense_w30_640",
+              "ms": 15.266025137901305,
+              "act_mbytes": 632.0648193359375,
+              "pred": 13.939,
+              "resid_pct": -8.7
+            },
+            {
+              "name": "densenas_s31_640",
+              "ms": 15.141755666732788,
+              "act_mbytes": 670.9320068359375,
+              "pred": 14.422,
+              "resid_pct": -4.8
+            },
+            {
+              "name": "densenas_s39_640",
+              "ms": 15.272501125335694,
+              "act_mbytes": 694.8577880859375,
+              "pred": 14.72,
+              "resid_pct": -3.6
+            },
+            {
+              "name": "densenas_s40_640",
+              "ms": 14.981549725532531,
+              "act_mbytes": 691.3421630859375,
+              "pred": 14.676,
+              "resid_pct": -2.0
+            },
+            {
+              "name": "prune_base_r10_640",
+              "ms": 9.824011821746826,
+              "act_mbytes": 202.89339447021484,
+              "pred": 8.597,
+              "resid_pct": -12.5
+            },
+            {
+              "name": "prune_base_r15_640",
+              "ms": 9.535252933502198,
+              "act_mbytes": 197.64437103271484,
+              "pred": 8.532,
+              "resid_pct": -10.5
+            },
+            {
+              "name": "prune_base_r20_640",
+              "ms": 9.522759003639221,
+              "act_mbytes": 197.27816009521484,
+              "pred": 8.528,
+              "resid_pct": -10.5
+            },
+            {
+              "name": "prune_base_r30_640",
+              "ms": 8.282849459648132,
+              "act_mbytes": 170.95980072021484,
+              "pred": 8.2,
+              "resid_pct": -1.0
+            },
+            {
+              "name": "prune_base_r35_640",
+              "ms": 8.356114044189454,
+              "act_mbytes": 172.13167572021484,
+              "pred": 8.215,
+              "resid_pct": -1.7
+            },
+            {
+              "name": "prune_base_r45_640",
+              "ms": 7.937834379673004,
+              "act_mbytes": 166.51644134521484,
+              "pred": 8.145,
+              "resid_pct": 2.6
+            },
+            {
+              "name": "prune_base_r55_640",
+              "ms": 7.65934433221817,
+              "act_mbytes": 157.77620697021484,
+              "pred": 8.036,
+              "resid_pct": 4.9
+            }
+          ]
+        }
+      }
+    }
+  }
+}

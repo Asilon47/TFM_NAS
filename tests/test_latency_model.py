@@ -139,6 +139,56 @@ def test_graft_constants_match_tracked_fit_json():
         assert fit["loo_mape"] == pytest.approx(const["loo_mape"], abs=1e-4)
 
 
+# --- dense-family physical fits (NAS-born beat-n program, 2026-07-18) -------------------------
+
+def test_is_dense_e2e_point_filter():
+    from search.latency_model import is_dense_e2e_point, is_dense_pruned_point
+
+    assert is_dense_e2e_point("dense_w22_640")
+    assert is_dense_e2e_point("densenas_s39_640_fp16")
+    assert is_dense_e2e_point("prune_base_r20_640")
+    assert is_dense_e2e_point("baseline_recheck_640")
+    assert not is_dense_e2e_point("graft_r50_gtay_640")
+    assert not is_dense_e2e_point("winner_v1_e2e_640")
+    assert not is_dense_e2e_point("yolo11s_pose_640_fp16")   # the audit's one suspect row
+    assert is_dense_pruned_point("prune_base_r45_640")
+    assert not is_dense_pruned_point("dense_ctrl_n_640")
+
+
+def test_dense_constants_match_tracked_fit_json():
+    """The pinned PHYSICAL_DENSE_PRUNED_* dicts must equal the tracked fit artifact."""
+    from search.latency_model import PHYSICAL_DENSE_PRUNED_FP16, PHYSICAL_DENSE_PRUNED_FP32
+
+    tracked = json.loads((ROOT / "search" / "dense_latency_fit.json").read_text())
+    for prec, const in (("fp32", PHYSICAL_DENSE_PRUNED_FP32),
+                        ("fp16", PHYSICAL_DENSE_PRUNED_FP16)):
+        fit = tracked["subfamilies"]["pruned"]["fits"][prec]
+        assert fit["slope"] == pytest.approx(const["slope"], rel=1e-6)
+        assert fit["intercept"] == pytest.approx(const["intercept"], rel=1e-6)
+        assert fit["n"] == const["n"]
+        assert fit["loo_mape"] == pytest.approx(const["loo_mape"], abs=1e-4)
+
+
+def test_dense_fit_report_splits_subfamilies(monkeypatch):
+    """The pruned/scaled currencies fit separately; grafts are excluded from all three."""
+    pts = ([{"name": f"prune_base_r{i}_640", "ms": 0.5 + 0.05 * a, "act_mbytes": float(a),
+             "precision": "fp32"} for i, a in enumerate((160, 180, 200))]
+           + [{"name": f"dense_w{i}_640", "ms": 3.0 + 0.02 * a, "act_mbytes": float(a),
+               "precision": "fp32"} for i, a in enumerate((400, 500, 600))]
+           + [{"name": "graft_r50_gtay_640", "ms": 10.2, "act_mbytes": 300.0,
+               "precision": "fp32"}])
+    import search.latency_model as lm
+
+    monkeypatch.setattr(lm, "collect_points", lambda d, root=None: pts)
+    rep = lm.dense_fit_report("unused")
+    assert rep["subfamilies"]["pruned"]["fits"]["fp32"]["slope"] == pytest.approx(
+        0.05, rel=1e-6)
+    assert rep["subfamilies"]["scaled"]["fits"]["fp32"]["slope"] == pytest.approx(
+        0.02, rel=1e-6)
+    assert rep["subfamilies"]["pooled"]["n_points"] == 6
+    assert "graft_r50_gtay_640" in rep["subfamilies"]["pooled"]["excluded"]
+
+
 def test_graft_fit_report_filters_and_fits(monkeypatch):
     pts = _line_points(n=6) + [
         {"name": "winner_v1_backbone_640", "ms": 9.9, "act_mbytes": 300.0},
