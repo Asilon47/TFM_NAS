@@ -4424,3 +4424,53 @@ comparison at the spec acts). Wave-2 from bench + wave-1 reads: champion de-nois
 holds with margin. Finalists: fresh-cache median-of-3 fp16 + fp32 on the Nano, audit_e2e
 clean, then stamp winner + models/README row. G-noise: no pick without de-noise. G-measure:
 no claim off-surrogate.
+
+## MCU RES ARMS A1/A2/A3 READ + THE NECK'S CYCLE PRICE (2026-07-19)
+
+**The train-at-160 arms are in** (A1/A2 = AGX runs pulled from the account-1 store; A3 =
+the Kaggle `MODE=baseline_train` r160 arm that finished 2026-07-18) **and the standing
+"640-trained lower bound" caveat on the CP 10.1/res-screen verdict is retired.** All three
+evaluated by the same Ultralytics validator @160 on the 140-img val split; A1/A2 recipe =
+bare-AdamW + output-KD (gate donor), A3 = the stock gate_baseline recipe — absolutes stay
+recipe-confounded (the baseline_r160 json says it in its own note), the *changes* are the
+result:
+
+| arm | net | params | mAP50-95 @160 | mAP50 |
+|---|---|---|---|---|
+| A1 | pruned graft v2_act292, neck-less, KD | 631,851 | 0.4567 | 0.6797 |
+| A2 | same + zero-gated PAN neck, KD | 798,623 | **0.5347** | 0.7435 |
+| A3 | yolo11n-pose, stock recipe | 2,654,636 | 0.6227 | 0.8027 |
+
+1. **The lower-bound asymmetry was real:** res-matched training bought the graft +0.12
+   (0.3362 → 0.4567) but the baseline only +0.025 (0.5974 → 0.6227). The @160 gap narrows
+   −0.282 → −0.166 (A1) → **−0.088 (A2)**.
+2. **The fragility mechanism is confirmed:** A2 − A1 = **+0.078** at identical recipe/seed —
+   the missing cross-scale fusion was the named architectural suspect (res_screen 2026-07-16)
+   and it carries most of the recoverable gap.
+3. **The neck's GAP8 price is small:** new probe `graft_r292_pan_160_mcu` (int8, matched
+   84 KB L2, 175 MHz, GVSOC): **33,173,637 cyc = 189.6 ms = 5.28 FPS**, ops/cyc 2.11,
+   190 nodes — vs A1's 30,852,955 (5.67 FPS) and A3's 59,852,262 (2.92 FPS). **+7.5 %
+   cycles for +7.8 mAP pts**; A2 is the family knee and runs **1.80×** faster than the
+   baseline at −0.088 mAP. The 2026-07-16 "dominated at every usable point" verdict is
+   REPLACED by a genuine trade — neither A2 nor A3 dominates the other.
+
+**Toolchain fact (the 5th, joins the CP 10.1 four):** NNTool's `expression_matcher` fuses
+the ReZero gated add (`target + g·proj(src)`) into a 3-arg expression whose AutoTiler
+AddNode template takes 2 (`AddNode: passed arguments: 3 while declaration has: 2`,
+S260_Op_expr_30); turning the matcher off instead kills the OFA h-swish Muls
+(`Don't know how to generate kernel for parameter type ... mul`). Resolution: **fold the
+scalar gates into the edge convs at export** — exact (bare Conv2d + nearest upsample are
+linear in the scalar), implemented as `ZeroGatedTopDownNeck.fold_gates_()` + the
+`mcu/export_pruned.py --neck` hook (commit d3a6189; contract test pins exactness +
+idempotence). A data-free probe build carries all-zero ReZero gates, which folding would
+zero into the laterals and let NNTool degenerate — the hook forces gates open (1.0) first so
+the probe prices the trained deploy structure. The A2 graph also needed the L2 ladder:
+construct rc=3 at the stock 160 KB budget (the neck's extra .text), fine at the matched
+84 KB every recorded number uses.
+
+**Caveats that carry:** single seeds everywhere (A2−A1 exceeds the 0.010–0.025 noise band,
+the A3 gap readings are comfortably outside it); recipe confound A1/A2-vs-A3 remains — and
+the beat-n wave-2 result (same day: recipe-lite = +5.0–5.7 pts on a dense recovery) says a
+recipe-parity A2 twin is the single most informative next train. MCU-side training remains
+user-gated (2026-07-15 compute freeze; AGX lost 2026-07-18 → any A-arm rerun is a Kaggle
+decision). Sim cycles stay RANKING-ONLY.
