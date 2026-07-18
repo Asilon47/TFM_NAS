@@ -93,6 +93,18 @@ PB_KD_ALPHA = 1.0
 DS_EPOCHS = 30
 DS_WAVE = "2"
 DS_SEED = 0
+# MODE="baseline_train" — MCU resolution question, arm A3 (procedure.md "fp16 rehabilitated"
+#   session's sibling): the deployed baseline's OWN recipe (gate_baseline/args.yaml, incl.
+#   multi_scale + patience 300), gate-trained AT BT_IMGSZ instead of 640. Run on Kaggle because
+#   AGX access was lost mid-session (2026-07-18); A1/A2 (the graft arms, same question) already
+#   finished on the AGX. Self-contained via detect/train_baseline.py — resumes from last.pt
+#   across Kaggle commits the same way every other MODE here resumes (push.sh --resume
+#   round-trips /kaggle/working through the cache Dataset; BT_EPOCHS/BT_BATCH empty = the
+#   recipe's own 2000/4, letting patience 300 end it rather than a Kaggle session wall).
+BT_MODEL = "yolo11n-pose.pt"
+BT_IMGSZ = 160
+BT_EPOCHS = ""     # "" = recipe default 2000 (patience 300 ends it)
+BT_BATCH = ""      # "" = recipe default 4
 # MODE="prune_graft" — CP 6.2-G (graft arm): train the pruned graft to its recovered pose mAP.
 #   Self-contained: the gate donor warm-starts the head, no trained-graft input needed. One
 #   ratio per T4 when two are visible. Technique ladder: PG_TECH/PG_ITER as above; PG_INDEX
@@ -445,6 +457,29 @@ def main() -> None:
         print(f"[done] dense_scaling.json: "
               f"{[(r['tag'], r['params'], round(r['map'], 4)) for r in payload['rows']]}",
               flush=True)
+        return
+
+    # 4.75 MCU resolution question, arm A3: the baseline gate-trained AT resolution, on Kaggle
+    #      because AGX access was lost mid-session. Uses the SAME dataset.yaml symlink every
+    #      other MODE here wires (`dataset` -> the attached Dataset's gate-pose root), so
+    #      detect.train_baseline just needs --imgsz + --out-dir; it resumes from its own
+    #      last.pt on re-invocation, same as any other MODE surviving a Kaggle commit boundary.
+    if MODE == "baseline_train":
+        out_dir = work / f"baseline_r{BT_IMGSZ}"
+        cmd = (f"{sys.executable} -m detect.train_baseline --model {BT_MODEL} "
+               f"--imgsz {BT_IMGSZ} --data-yaml dataset/dataset.yaml --out-dir {out_dir} "
+               "--device 0")
+        if BT_EPOCHS:
+            cmd += f" --epochs {BT_EPOCHS}"
+        if BT_BATCH:
+            cmd += f" --batch {BT_BATCH}"
+        sh(cmd)
+        rep = out_dir / f"baseline_{Path(BT_MODEL).stem}_r{BT_IMGSZ}.json"
+        if not rep.exists():
+            raise SystemExit(f"detect.train_baseline produced no {rep.name}")
+        p = json.loads(rep.read_text())
+        print(f"[done] {p['tag']}: map={p['map']:.4f} map50={p['map50']:.4f} "
+              f"(vs @640 anchor: {p['delta_vs_640_anchor']:+.4f})", flush=True)
         return
 
     # 4.8 CP 3.5 de-noise: re-score the pinned top-K candidates at fresh seeds to remove the
