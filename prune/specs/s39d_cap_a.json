@@ -1,0 +1,15 @@
+{
+  "stage_ratios": [0.2, 0.1, 0.2, 0.1, 0.1],
+  "rest_ratio": 0.1,
+  "act_mbytes_honest": 250.09,
+  "params_after": 1804187,
+  "measured_fp32_ms": 11.62,
+  "measured_fp16_ms": 6.781,
+  "measured_fp16_spread_ms": 0.0636,
+  "donor": "data/cp33_kaggle_out/dense_nas/dense_s39-40-38-38-14_o100_best.pt",
+  "family": "dense_pruned",
+  "provenance": "beat-n capacity-max hand ladder point (2026-07-18 Nano session): the allocator's internal act predictor over-estimates ~14% so its fence saturates at honest act ~240 while the measured bar crossing sits at ~275; this spec spends the measured margin. Probe ONNX (l2-pruned random-weight graph) benched weight-free on the Nano BEFORE any recovery: fp32 11.62 / fp16 6.781 median-of-3 fresh-cache, mode 0, locked clocks, docker-ps-empty (data/e2e/probe_s39d_cap_a_640*.json). Sibling capc2 (act 275.3, 1,998,795 params) measured fp32 12.63 (bar margin 0.11 ms) but its fp16 engine failed to build twice under board memory pressure - retired.",
+  "note": "latency claims are measured-only; act figures are the post-yolo_tp_prep split currency (PHYSICAL_DENSE_PRUNED_* laws over-predict ~0.6-0.9 ms in the 230-250 band, conservative direction).",
+  "timestamp": "2026-07-18T21:50:00Z",
+  "probe_onnx": "data/allocate_dense/s39d_cap_a_640.onnx"
+}
