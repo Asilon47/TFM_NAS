@@ -72,3 +72,23 @@ def test_ladder_vocab_reexported():
     # kaggle/run.py imports run_tag/TECHNIQUES via this module — keep the surface.
     assert recover_graft.run_tag(0.60, technique="global_taylor") == "r60_gtay"
     assert "uniform" in recover_graft.TECHNIQUES
+
+
+def test_neck_tag_not_doubled_for_neck_aware_specs():
+    """Source pin: v2_pan_act*.json stems already carry the neck — the tag must not become
+    'v2_pan_act315_pan'; bare tags (r50_gtay + --neck pan) still get the suffix."""
+    import inspect
+
+    src = inspect.getsource(recover_graft.graft_prune_train_ladder)
+    assert "if neck and neck not in tag:" in src
+
+
+def test_main_rejects_spec_neck_mismatch(tmp_path):
+    """A neck-aware spec's act fence is topology-specific — running it under a different
+    --neck must fail fast, before any heavy import."""
+    spec = tmp_path / "v2_topdown_act307.json"
+    spec.write_text(json.dumps({"stage_ratios": [0.4] * 5, "rest_ratio": 0.2,
+                                "neck": "topdown"}))
+    with pytest.raises(SystemExit, match="priced with neck='topdown'"):
+        recover_graft.main(["--head-weights", "x.pt", "--ratio-spec", str(spec),
+                            "--neck", "pan"])

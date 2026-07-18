@@ -86,6 +86,30 @@ def test_spec_payload_carries_the_legacy_keys():
     assert p["predicted_fp32_ms"] == pytest.approx(0.7876 + 0.031618 * 290.0, abs=0.01)
 
 
+def test_spec_payload_extra_records_neck():
+    """Arm-N specs carry their pricing topology; recover_graft refuses a mismatched --neck."""
+    p = spec_payload([0.4] * 5, 0.2, act_honest=290.0, act_predicted=288.5,
+                     params_after=800_000, fence_fp16_ms=7.5, act_max=306.7,
+                     extra={"neck": "topdown"})
+    assert p["neck"] == "topdown"
+
+
+def test_neck_threads_through_the_honest_path():
+    """Source pin (the heavy path needs .venv-nas): every honest build inside the spec
+    search must price the SAME topology the spec will train — neck included — and the
+    emitted filename must carry it (two specs at one act fence must not collide)."""
+    import inspect
+
+    import prune.allocate_v2 as av
+
+    assert "neck" in inspect.signature(av.honest_spec_features).parameters
+    assert "neck" in inspect.signature(av.fit_sensitivities).parameters
+    assert "neck" in inspect.signature(av.search_specs).parameters
+    src = inspect.getsource(av.search_specs)
+    assert src.count("neck=neck") >= 2          # sensitivities + verify loop
+    assert "('_' + neck) if neck else ''" in src  # filename carries the topology
+
+
 def test_expand_per_stage():
     assert expand_per_stage([3, 3, 4, 4, 6]) == [3] * 4 + [3] * 4 + [4] * 4 + [4] * 4 + [6] * 4
     with pytest.raises(ValueError, match="per-stage"):

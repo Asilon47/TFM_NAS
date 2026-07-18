@@ -197,12 +197,15 @@ def pick_probe(rows: list[dict], act_max: float) -> tuple[dict, bool]:
 
 def honest_spec_features(arch: dict, spec: dict | None, *, supernet: Any = None,
                          imgsz: int = 640, workdir: Any = None,
-                         name: str = "probe") -> dict:
+                         name: str = "probe", neck: str | None = None) -> dict:
     """Build the (optionally spec-pruned) graft on CPU → deploy ONNX → exact act bytes.
 
     ``spec=None`` prices the UNPRUNED subnet (Track 1b). Head weights are irrelevant to
     shapes, so no donor is needed; l2/local importance keeps counts identical to what
-    global_taylor produces at the same per-stage ratios.
+    global_taylor produces at the same per-stage ratios. ``neck`` ("topdown"/"pan") prices
+    the necked graft — the Phase-5 fusion repair the Arm-N specs carry; the neck's own convs
+    sit outside the stage map, so they take rest_ratio, exactly as recover_graft will prune
+    them at train time.
     """
     import torch
 
@@ -216,7 +219,7 @@ def honest_spec_features(arch: dict, spec: dict | None, *, supernet: Any = None,
 
     sn = supernet if supernet is not None else load_supernet()
     _seed_everything(0)
-    model = build_grafted_pose_model(arch, supernet=sn)
+    model = build_grafted_pose_model(arch, supernet=sn, neck=neck)
     report = None
     if spec is not None:
         prd, ignored = spec_ratio_dict(model, arch["d"], spec)
@@ -235,7 +238,7 @@ def honest_spec_features(arch: dict, spec: dict | None, *, supernet: Any = None,
 
 
 def fit_sensitivities(arch: dict, *, supernet: Any = None, imgsz: int = 640,
-                      workdir: Any = None) -> dict:
+                      workdir: Any = None, neck: str | None = None) -> dict:
     """Phase A: 8 honest builds → the linear per-knob act model for grid screening."""
     def zspec(**over: Any) -> dict:
         s = {"stage_ratios": [0.0] * N_STAGES, "rest_ratio": REST_BASE}
@@ -243,19 +246,20 @@ def fit_sensitivities(arch: dict, *, supernet: Any = None, imgsz: int = 640,
         return s
 
     unpruned = honest_spec_features(arch, None, supernet=supernet, imgsz=imgsz,
-                                    workdir=workdir, name="sens_unpruned")
+                                    workdir=workdir, name="sens_unpruned", neck=neck)
     base = honest_spec_features(arch, zspec(), supernet=supernet, imgsz=imgsz,
-                                workdir=workdir, name="sens_base")
+                                workdir=workdir, name="sens_base", neck=neck)
     stage_sens = []
     for s in range(N_STAGES):
         ratios = [0.0] * N_STAGES
         ratios[s] = PROBE_RATIO
         probe = honest_spec_features(arch, zspec(stage_ratios=ratios), supernet=supernet,
-                                     imgsz=imgsz, workdir=workdir, name=f"sens_s{s}")
+                                     imgsz=imgsz, workdir=workdir, name=f"sens_s{s}",
+                                     neck=neck)
         stage_sens.append((base["act_mbytes"] - probe["act_mbytes"]) / PROBE_RATIO)
     rest_hi = 0.5
     probe_r = honest_spec_features(arch, zspec(rest_ratio=rest_hi), supernet=supernet,
-                                   imgsz=imgsz, workdir=workdir, name="sens_rest")
+                                   imgsz=imgsz, workdir=workdir, name="sens_rest", neck=neck)
     rest_sens = (base["act_mbytes"] - probe_r["act_mbytes"]) / (rest_hi - REST_BASE)
     return {"base_act": base["act_mbytes"], "stage": stage_sens, "rest": rest_sens,
             "unpruned_act": unpruned["act_mbytes"], "params_unpruned": unpruned["params_after"]}
@@ -263,7 +267,8 @@ def fit_sensitivities(arch: dict, *, supernet: Any = None, imgsz: int = 640,
 
 def search_specs(arch: dict, fence_fp16_ms: list[float], *, supernet: Any = None,
                  imgsz: int = 640, workdir: Any = None, out_dir: Any = None,
-                 verify_top: int = 12, max_verify: int = 36) -> list[Path]:
+                 verify_top: int = 12, max_verify: int = 36,
+                 neck: str | None = None) -> list[Path]:
     """Phase A + B + honest verification; one emitted spec per fp16 fence."""
     from supernet.sampler import load_supernet
 
@@ -271,7 +276,7 @@ def search_specs(arch: dict, fence_fp16_ms: list[float], *, supernet: Any = None
     out_dir = Path(out_dir) if out_dir is not None else SPEC_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sens = fit_sensitivities(arch, supernet=sn, imgsz=imgsz, workdir=workdir)
+    sens = fit_sensitivities(arch, supernet=sn, imgsz=imgsz, workdir=workdir, neck=neck)
     print(f"[phase A] base_act={sens['base_act']:.1f} MB  stage_sens="
           f"{[round(c, 1) for c in sens['stage']]}  rest_sens={sens['rest']:.1f}", flush=True)
 
@@ -293,7 +298,8 @@ def search_specs(arch: dict, fence_fp16_ms: list[float], *, supernet: Any = None
                 break
             spec = {"stage_ratios": list(c["stage_ratios"]), "rest_ratio": c["rest_ratio"]}
             h = honest_spec_features(arch, spec, supernet=sn, imgsz=imgsz, workdir=workdir,
-                                     name=f"verify_f{str(fence).replace('.', 'p')}_{i}")
+                                     name=f"verify_f{str(fence).replace('.', 'p')}_{i}",
+                                     neck=neck)
             row = {**spec, "act_predicted": round(c["act"], 2),
                    "act_honest": round(h["act_mbytes"], 2), "params": h["params_after"],
                    "coverage": round(h["coverage"], 3),
@@ -312,10 +318,11 @@ def search_specs(arch: dict, fence_fp16_ms: list[float], *, supernet: Any = None
                                act_honest=h["act_mbytes"], act_predicted=c["act"],
                                params_after=h["params_after"], fence_fp16_ms=fence,
                                act_max=act_max,
-                               extra={"sensitivities": {k: sens[k] for k in
+                               extra={"neck": neck,
+                                      "sensitivities": {k: sens[k] for k in
                                                         ("base_act", "stage", "rest")},
                                       "verified": verified})
-        out = out_dir / f"v2_act{round(act_max)}.json"
+        out = out_dir / f"v2{('_' + neck) if neck else ''}_act{round(act_max)}.json"
         out.write_text(json.dumps(payload, indent=2) + "\n")
         print(f"[emit] {out.name}: stages={payload['stage_ratios']} "
               f"rest={payload['rest_ratio']} act={payload['act_mbytes_honest']} MB "
@@ -430,6 +437,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fence-fp16-ms", type=float, default=7.2,
                    help="fence for the topology-screen pick")
     p.add_argument("--winner-dir", type=Path, default=ROOT / "state" / "winner_v1")
+    p.add_argument("--neck", choices=["topdown", "pan"], default=None,
+                   help="price the NECKED graft (Phase-5 fusion; Arm N of the beat-n "
+                        "program) — the emitted spec records it and recover_graft must be "
+                        "run with the same --neck")
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--workdir", type=Path, default=None)
     p.add_argument("--out-dir", type=Path, default=None)
@@ -440,12 +451,15 @@ def main(argv: list[str] | None = None) -> int:
 
     arch = load_winner(a.winner_dir)["arch"]
     if a.topology_screen:
+        if a.neck:
+            raise SystemExit("--topology-screen prices bare (e,d) subnets; --neck applies "
+                             "to the spec search only")
         topology_screen(arch, fence_fp16_ms=a.fence_fp16_ms, imgsz=a.imgsz,
                         workdir=a.workdir, out_dir=a.out_dir)
         return 0
     targets = a.target_fp16_ms or [7.2, 6.8]
     search_specs(arch, targets, imgsz=a.imgsz, workdir=a.workdir, out_dir=a.out_dir,
-                 verify_top=a.verify_top)
+                 verify_top=a.verify_top, neck=a.neck)
     return 0
 
 

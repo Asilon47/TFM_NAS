@@ -183,8 +183,9 @@ def graft_prune_train_ladder(
         if teacher is not None:
             tag += "_kd"
         # neck/imgsz ride the tag or a 160 run silently CLOBBERS the 640 artifacts it shares a
-        # spec stem with (weights/onnx/resume-ckpt are all tag-named).
-        if neck:
+        # spec stem with (weights/onnx/resume-ckpt are all tag-named). Neck-aware spec files
+        # (v2_pan_act*.json) already carry the neck in their stem — don't double it.
+        if neck and neck not in tag:
             tag += f"_{neck}"
         if imgsz != 640:
             tag += f"_r{imgsz}"
@@ -341,6 +342,17 @@ def main(argv: list[str] | None = None) -> int:
     if a.ratio_spec is not None:
         ratio_spec = json.loads(Path(a.ratio_spec).read_text())
         spec_tag = Path(a.ratio_spec).stem
+        # The act fence is priced on a specific topology: a neck-aware spec run with the
+        # wrong --neck would carry silently-wrong latency predictions.
+        if "neck" in ratio_spec and ratio_spec["neck"] != a.neck:
+            raise SystemExit(f"spec {a.ratio_spec} was priced with "
+                             f"neck={ratio_spec['neck']!r} but --neck is {a.neck!r} — "
+                             f"the act fence would be wrong")
+        if "neck" not in ratio_spec and a.neck:
+            print(f"[warn] spec {Path(a.ratio_spec).name} predates neck-aware pricing "
+                  f"(priced neck-less) but --neck={a.neck}: the spec's act/latency "
+                  f"predictions exclude the neck — treat this row as measured-only",
+                  flush=True)
 
     payload = graft_prune_train_ladder(
         a.winner_dir, head_weights=a.head_weights,
