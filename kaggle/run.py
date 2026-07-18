@@ -86,6 +86,14 @@ PB_ITER = 1
 PB_SEED = 0
 PB_KD = 1          # KD recovery twin (teacher = the in-Dataset gate donor, CP 8.2-early)
 PB_KD_ALPHA = 1.0
+# Arm S (beat-n program, 2026-07-18): PB_SPEC = repo-relative per-stage spec
+# (prune/specs/s39d_*.json from prune.allocate_dense) → --ratio-spec: counts spec-pinned,
+# PB_RATIOS ignored, PB_TECH picks the importance only. PB_DONOR = donor .pt FILENAME
+# searched under /kaggle/input ("" = the gate donor) — ships via the cache Dataset
+# (push.sh --cache stages data/kaggle_donors/). Arm-S protocol: PB_KD=0 — KD measured
+# harmful on converged dense recovery (procedure.md "KD twins", 2026-07-12).
+PB_SPEC = ""
+PB_DONOR = ""
 # MODE="dense_scaling" — yolo11-pose scaling grid, stock recipe, from scratch, one candidate
 #   subset per T4; latencies measured later on the Nano. DS_WAVE selects the wave (2 = the
 #   finer width sweep; depth is a dead knob below n, see CP 3c.1). DS_SEED != 0 = de-noise
@@ -138,6 +146,13 @@ DN_ORACLE_SEED = 3   # !=0 -> fresh-seed de-noise re-train (CP 3.5 winner's-curs
 # PG_KD=1 adds output-level KD to the recovery (teacher = the in-Dataset gate donor, CP 8.2-early).
 PG_KD = 1
 PG_KD_ALPHA = 1.0
+# Arm N/K (beat-n program, 2026-07-18): PG_NECK inserts the Phase-5 nano-neck
+# ("topdown"/"pan" — must match the spec's own pricing; neck-aware specs are
+# prune/specs/v2_<neck>_act*.json); PG_KD_FEAT=1 adds FitNets feature-mimic at the
+# head-input taps (distill/kd_feat.py; needs PG_KD=1 for the teacher forward).
+PG_NECK = ""
+PG_KD_FEAT = 0
+PG_KD_FEAT_ALPHA = 1.0
 # -----------------------------------------------------------------------------
 
 
@@ -293,13 +308,23 @@ def main() -> None:
     # 4.76 CP 6.2-B (dense-family arm): the pruned-BASELINE control ladder. Single process —
     #      3 sequential prune->recover->export points (~2-3 h); gate_best.pt is the donor.
     if MODE == "prune_baseline":
-        pb_suffix = (f"_{PB_TECH}" if PB_TECH != "uniform" else "") + \
+        pb_donor = head
+        if PB_DONOR:
+            pb_donor = find(PB_DONOR)
+            if pb_donor is None:
+                raise SystemExit(
+                    f"FATAL: PB_DONOR {PB_DONOR!r} not found under /kaggle/input — stage it "
+                    "into data/kaggle_donors/ + run `push.sh --cache`, then refresh the "
+                    "cache-Dataset input to its latest version.")
+        pb_suffix = (f"_{Path(PB_SPEC).stem}" if PB_SPEC else "") + \
+                    (f"_{PB_TECH}" if PB_TECH != "uniform" else "") + \
                     (f"_it{PB_ITER}" if PB_ITER > 1 else "") + \
                     (f"_s{PB_SEED}" if PB_SEED != 0 else "") + ("_kd" if PB_KD else "")
         out_dir = work / f"prune_baseline{pb_suffix}"
-        cmd = (f"{sys.executable} -m prune.prune_baseline --donor {head} "
+        cmd = (f"{sys.executable} -m prune.prune_baseline --donor {pb_donor} "
                f"--ratios {PB_RATIOS} --epochs {PB_EPOCHS} --device cuda "
                f"--technique {PB_TECH} --iterative-steps {PB_ITER} --seed {PB_SEED} "
+               + (f"--ratio-spec {repo}/{PB_SPEC} " if PB_SPEC else "")
                + (f"--teacher {head} --kd-alpha {PB_KD_ALPHA} " if PB_KD else "")
                + f"--imgsz 640 --batch 16 --out-dir {out_dir}")
         print("+", cmd, flush=True)
@@ -322,9 +347,12 @@ def main() -> None:
         ratios = [r for r in PG_RATIOS.split(",") if r]
         pg_extra = (f"--technique {PG_TECH} --iterative-steps {PG_ITER} --seed {PG_SEED}"
                     + (f" --index {PG_INDEX}" if PG_INDEX != "" else "")
-                    + (f" --teacher {head} --kd-alpha {PG_KD_ALPHA}" if PG_KD else ""))
+                    + (f" --teacher {head} --kd-alpha {PG_KD_ALPHA}" if PG_KD else "")
+                    + (f" --kd-feat --kd-feat-alpha {PG_KD_FEAT_ALPHA}" if PG_KD_FEAT else "")
+                    + (f" --neck {PG_NECK}" if PG_NECK else ""))
         pg_prefix = f"idx{PG_INDEX}_" if PG_INDEX != "" else ""
-        pg_kd_sfx = "_kd" if PG_KD else ""
+        pg_kd_sfx = ("_kdf" if PG_KD_FEAT else "_kd") if PG_KD else ""
+        pg_neck_sfx = f"_{PG_NECK}" if PG_NECK else ""
 
         def pg_cmd(ratio_csv: str, sub: str, spec: str = "") -> str:
             spec_arg = f" --ratio-spec {repo}/{spec}" if spec else ""
@@ -342,6 +370,8 @@ def main() -> None:
             procs = []
             for i, s in enumerate(specs):
                 sub = Path(s).stem + (f"_s{PG_SEED}" if PG_SEED != 0 else "") + pg_kd_sfx
+                if PG_NECK and PG_NECK not in sub:   # neck-aware spec stems already carry it
+                    sub += pg_neck_sfx
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % max(ngpu, 1)))
                 print(f"+ [gpu{i % max(ngpu, 1)}] spec {s} → {sub}", flush=True)
                 procs.append(subprocess.Popen(pg_cmd(PG_RATIOS, sub, spec=s),
@@ -353,7 +383,8 @@ def main() -> None:
             procs = []
             for i, r in enumerate(ratios):
                 sub = pg_prefix + run_tag(float(r), technique=PG_TECH,
-                                          iterative_steps=PG_ITER, seed=PG_SEED) + pg_kd_sfx
+                                          iterative_steps=PG_ITER,
+                                          seed=PG_SEED) + pg_kd_sfx + pg_neck_sfx
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % ngpu))
                 print(f"+ [gpu{i % ngpu}] ratio {r} → {sub}", flush=True)
                 procs.append(subprocess.Popen(pg_cmd(r, sub), shell=True, env=env))
@@ -361,7 +392,8 @@ def main() -> None:
             for pr in procs:
                 pr.wait()
         else:
-            subprocess.run(pg_cmd(PG_RATIOS, pg_prefix + "all" + pg_kd_sfx), shell=True)
+            subprocess.run(pg_cmd(PG_RATIOS, pg_prefix + "all" + pg_kd_sfx + pg_neck_sfx),
+                           shell=True)
 
         found = []
         for sub_dir in sorted(work.glob("recover_graft*")):

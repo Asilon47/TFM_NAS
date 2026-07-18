@@ -117,8 +117,17 @@ case "${1:-kernel}" in
         cp "$f" "$C/"; n=$((n + 1))
       done
     fi
-    printf 'CP 3.3 BO eval caches (cp33_bo_cache_r<RES>.seed<N>.{bo,rs}.jsonl).\nResume store for the cross-session search; versioned by kaggle/push.sh --cache.\n' > "$C/cache_readme.txt"
-    echo "staging $n cache shard(s) -> $KUSER/$CACHE_SLUG"
+    # Small donor .pt files ride the same Dataset (beat-n program: PB_DONOR names one and
+    # run.py find()s it under /kaggle/input) — drop them in data/kaggle_donors/.
+    DONORS="$ROOT/data/kaggle_donors"
+    if [ -d "$DONORS" ]; then
+      for f in "$DONORS"/*; do
+        [ -e "$f" ] || continue
+        cp "$f" "$C/"; n=$((n + 1))
+      done
+    fi
+    printf 'CP 3.3 BO eval caches (cp33_bo_cache_r<RES>.seed<N>.{bo,rs}.jsonl)\n+ small donor checkpoints (data/kaggle_donors/ -> PB_DONOR).\nResume store for the cross-session search; versioned by kaggle/push.sh --cache.\n' > "$C/cache_readme.txt"
+    echo "staging $n file(s) -> $KUSER/$CACHE_SLUG"
     sub "$KAGGLE_DIR/cache-metadata.json" > "$C/dataset-metadata.json"
     if kaggle datasets files "$KUSER/$CACHE_SLUG" >/dev/null 2>&1; then
       kaggle datasets version -p "$C" -m "cache $(date -u +%FT%TZ)"
@@ -165,6 +174,19 @@ case "${1:-kernel}" in
       echo "staged run.py with MODE=$KMODE"
     else
       cp "$KAGGLE_DIR/run.py" "$K/run.py"
+    fi
+    if [ -n "${KSET:-}" ]; then
+      # KSET="NAME=VALUE;NAME2=VALUE2" rewrites knob constants in the STAGED copy only
+      # (VALUE is a python literal). Per-account campaign knobs without touching the repo:
+      #   KSET='PB_SPEC="prune/specs/s39d_act252.json";PB_KD=0;PB_SEED=1'
+      IFS=';' read -ra _kvs <<< "$KSET"
+      for kv in "${_kvs[@]}"; do
+        name="${kv%%=*}"; val="${kv#*=}"
+        grep -qE "^${name}[[:space:]]*=" "$K/run.py" || { echo "KSET: unknown knob '$name'"; exit 1; }
+        sed -i -E "s|^${name}[[:space:]]*=[^#]*|${name} = ${val}  |" "$K/run.py"
+        grep -qF "${name} = ${val}" "$K/run.py" || { echo "KSET sed failed for '$name'"; exit 1; }
+      done
+      echo "staged run.py with KSET: $KSET"
     fi
     sub "$KAGGLE_DIR/kernel-metadata.json" > "$K/kernel-metadata.json"
     kaggle kernels push -p "$K"
