@@ -159,6 +159,18 @@ PG_NECK = ""
 PG_KD_FEAT = 0
 PG_KD_FEAT_ALPHA = 1.0
 PG_RECIPE = 0      # append RECIPE_ARGS to the graft recovery (Arm R)
+# PG_IMGSZ != 640 = the MCU res arms (recover_graft tags them _r{imgsz} itself and marks the
+# donor anchor cross-topology; the AGX A1/A2 runs used 160 — Kaggle parity for Gate 1).
+PG_IMGSZ = 640
+# MODE="proxy_rank" — CP 10.3 Gate 2a: the CP 2.4 rank-fidelity instrument re-run AT the MCU
+# resolution (unpruned graft family; the pruned-necked fidelity leg rides recover_graft @160
+# 5-ep-vs-100-ep pairs instead). Verdict = eval.shortft.rank_verdict (ρ≥0.70 AND regret≤0.01).
+PR_IMGSZ = 160
+PR_ARCHS = 5
+PR_PROXY_EPOCHS = 5
+PR_FULL_EPOCHS = 100
+PR_PROXY_SEEDS = 3
+PR_SEED = 0
 # -----------------------------------------------------------------------------
 
 
@@ -363,13 +375,14 @@ def main() -> None:
         pg_kd_sfx = (("_kdf" if PG_KD_FEAT else "_kd") if PG_KD else "") + \
                     ("_rl" if PG_RECIPE else "")
         pg_neck_sfx = f"_{PG_NECK}" if PG_NECK else ""
+        pg_res_sfx = f"_r{PG_IMGSZ}" if PG_IMGSZ != 640 else ""   # AGX A1/A2 dir parity
 
         def pg_cmd(ratio_csv: str, sub: str, spec: str = "") -> str:
             spec_arg = f" --ratio-spec {repo}/{spec}" if spec else ""
             return (f"{sys.executable} -m prune.recover_graft "
                     f"--winner-dir {repo}/state/winner_v1 --head-weights {head} "
                     f"--ratios {ratio_csv} --epochs {PG_EPOCHS} {pg_extra}{spec_arg} "
-                    f"--device cuda --imgsz 640 --batch 16 --out-dir {base_out}_{sub}")
+                    f"--device cuda --imgsz {PG_IMGSZ} --batch 16 --out-dir {base_out}_{sub}")
 
         ngpu = int(subprocess.check_output(
             [sys.executable, "-c", "import torch; print(torch.cuda.device_count())"]
@@ -379,7 +392,8 @@ def main() -> None:
             # Wave B: one HALP spec per T4 (spec overrides ratios/technique in recover_graft).
             procs = []
             for i, s in enumerate(specs):
-                sub = Path(s).stem + (f"_s{PG_SEED}" if PG_SEED != 0 else "") + pg_kd_sfx
+                sub = (Path(s).stem + (f"_s{PG_SEED}" if PG_SEED != 0 else "")
+                       + pg_kd_sfx + pg_res_sfx)
                 if PG_NECK and PG_NECK not in sub:   # neck-aware spec stems already carry it
                     sub += pg_neck_sfx
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % max(ngpu, 1)))
@@ -394,7 +408,7 @@ def main() -> None:
             for i, r in enumerate(ratios):
                 sub = pg_prefix + run_tag(float(r), technique=PG_TECH,
                                           iterative_steps=PG_ITER,
-                                          seed=PG_SEED) + pg_kd_sfx + pg_neck_sfx
+                                          seed=PG_SEED) + pg_kd_sfx + pg_neck_sfx + pg_res_sfx
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(i % ngpu))
                 print(f"+ [gpu{i % ngpu}] ratio {r} → {sub}", flush=True)
                 procs.append(subprocess.Popen(pg_cmd(r, sub), shell=True, env=env))
@@ -527,6 +541,26 @@ def main() -> None:
         p = json.loads(rep.read_text())
         print(f"[done] {p['tag']}: map={p['map']:.4f} map50={p['map50']:.4f} "
               f"(vs @640 anchor: {p['delta_vs_640_anchor']:+.4f})", flush=True)
+        return
+
+    # CP 10.3 Gate 2a: the CP 2.4 rank-fidelity instrument AT the MCU resolution. One device,
+    # sequential; PR_ARCHS=5 keeps the 100-ep @160 fulls inside a 12 h session.
+    if MODE == "proxy_rank":
+        out_dir = work / f"proxy_rank_r{PR_IMGSZ}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        cmd = (f"{sys.executable} -m eval.proxy_rank --archs {PR_ARCHS} "
+               f"--proxy-epochs {PR_PROXY_EPOCHS} --full-epochs {PR_FULL_EPOCHS} "
+               f"--proxy-seeds {PR_PROXY_SEEDS} --seed {PR_SEED} "
+               f"--head-weights {head} --freeze-head --device cuda "
+               f"--imgsz {PR_IMGSZ} --batch 16 --out {out_dir}/cp103_proxy_rank.json")
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        rep = out_dir / "cp103_proxy_rank.json"
+        if not rep.exists():
+            raise SystemExit(f"eval.proxy_rank produced no report (rc={rc})")
+        payload = json.loads(rep.read_text())
+        v = payload.get("verdict", payload.get("rank_verdict", {}))
+        print(f"[done] cp103_proxy_rank.json: verdict={v}", flush=True)
         return
 
     # 4.8 CP 3.5 de-noise: re-score the pinned top-K candidates at fresh seeds to remove the
