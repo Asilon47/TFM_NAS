@@ -182,6 +182,21 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
+**ACTIVE PROGRAM (user goal 2026-07-18): BEAT-N — NAS-born under both baseline bars.**
+Deliverable: a NAS-born net with **de-noised mAP ≥ 0.83** and measured **< 12.74 fp32 AND
+< 7.75 fp16** @640 (mode 0). Boundary re-framed via AskUserQuestion: the **s39 searched
+dense lineage is RE-ADMITTED as NAS-born** (+ OFA-graft stays); accuracy bar 0.83; both
+latency axes. Arms: **S** = prune s39 per act-fenced specs (primary, expected 0.84–0.85;
+`prune/allocate_dense.py`, PRUNED-currency law `PHYSICAL_DENSE_PRUNED_*` — the dense act
+currency SPLITS at the yolo_tp_prep rewrite, see procedure.md); **N** = necked pruned
+graft (`allocate_v2 --neck`; the neck costs ~6–9 MB act ≈ free); **K** = feature-KD
+(`distill/kd_feat.py`); **R** = recipe-lite (`--cos-lr/--ema/--close-mosaic`, `_rl` tags).
+Wave-1 LIVE 2026-07-18: asilarnous = s39d_act252 100 ep no-KD; asilarnous47 =
+v2_topdown_act307+314 taylor+KD; owais joins after A3. **Nano pre-bench owed
+(weight-free, before any wave-2): `scripts/bench_beatn_probes.sh`** — 7 probe ONNX, gates
+fp32/fp16 bars vs spec predictions. De-noise before any pick. AGX access lost 2026-07-18.
+See procedure.md "BEAT-N PROGRAM OPENED" + plan file floofy-wondering-fountain.
+
 **THE CROSS-FAMILY FRONTIER IS FULLY MEASURED** (2026-07-08 locked-clock bench + CP 6.2-G
 2026-07-11) — the 21-row table lives in `models/README.md`. Pareto set (fp32): dense w25
 0.854@11.33 › prune r20 0.838@9.52 › r35 0.826@8.36 › r45 0.809@7.94 › r55 0.798@7.66. Every
@@ -334,7 +349,7 @@ CUDA variant from PyPI).
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **TFM_NAS** (3204 symbols, 6921 relationships, 267 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **TFM_NAS** (3340 symbols, 7167 relationships, 278 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

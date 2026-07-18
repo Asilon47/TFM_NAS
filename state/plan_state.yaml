@@ -409,3 +409,17 @@ notes: |
   published nano-gate nets; new module dir mcu/). ALL training on the AGX for now (cloud
   pull-only; Nano measurement-only). Incumbent champion = r50_gtay no-KD 0.7947 @ measured
   10.23/7.48. See procedure.md "PIVOT 2026-07-15" + PROJECT_PLAN.md Phase 10.
+
+  **BEAT-N PROGRAM OPENED 2026-07-18 (no checkpoint advance; current stays 5.3):** user
+  goal = NAS-born net beating BOTH baseline bars (<12.74 fp32 / <7.75 fp16 @640) at
+  de-noised mAP >= 0.83. Boundary re-framed (AskUserQuestion): s39 searched-dense lineage
+  RE-ADMITTED as NAS-born + OFA-graft; new non-YOLO space not selected. Arms S (prune s39
+  via act-fenced specs, PRUNED-currency law LOO 0.6%/1.2% — the dense act currency splits
+  at the yolo_tp_prep rewrite), N (necked pruned graft — neck ~6-9 MB act, near-free),
+  K (feature-KD at head-input taps), R (recipe-lite: cos-lr/EMA/close-mosaic). Specs
+  s39d_act{240,252,259,264} + v2_topdown_act{307,314} + v2_pan_act307 emitted by honest
+  CPU probes; both train paths CPU-smoked green. Wave-1 LIVE: asilarnous (s39d_act252,
+  100ep, no KD) + asilarnous47 (both topdown specs, taylor+KD). Owed: weight-free Nano
+  pre-bench of all 7 probe graphs (scripts/bench_beatn_probes.sh) -> wave-2 pick;
+  champion de-noise seeds {1,2} before any claim. AGX access lost 2026-07-18 (A3 moved
+  to Kaggle/owais). See procedure.md "BEAT-N PROGRAM OPENED".
