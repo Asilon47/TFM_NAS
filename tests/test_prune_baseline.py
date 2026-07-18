@@ -68,6 +68,64 @@ def test_trace_imgsz_stays_small() -> None:
     assert 32 <= TRACE_IMGSZ <= 160
 
 
+# --- Arm S (beat-n program): per-stage spec support --------------------------------------------
+
+def _stub_dense_model(n: int = 24):
+    """A stand-in with the stock yolo11-pose module count — the maps only need indexing."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(model=[object() for _ in range(n)])
+
+
+def test_dense_spec_ratio_dict_maps_stages() -> None:
+    """Stage s's modules get stage_ratios[s] via dense_nas's yaml-index maps; ratio-0 stages
+    are protected outright; everything else falls to MetaPruner's default (= rest_ratio)."""
+    from prune.prune_baseline import dense_spec_ratio_dict
+
+    model = _stub_dense_model()
+    spec = {"stage_ratios": [0.5, 0.0, 0.3, 0.2, 0.1], "rest_ratio": 0.2}
+    prd, ignored = dense_spec_ratio_dict(model, spec)
+    layers = model.model
+    assert prd[layers[0]] == 0.5                     # stem = stage 1
+    assert layers[1] in ignored and layers[2] in ignored   # stage 2 at ratio 0 → protected
+    assert prd[layers[3]] == 0.3 and prd[layers[4]] == 0.3         # stage 3
+    assert all(prd[layers[i]] == 0.1 for i in (7, 8, 9, 10))       # stage-5 tail
+    assert prd[layers[11 + 2]] == 0.2                # head C3k2 emitting P4 → stage 4
+    assert prd[layers[11 + 5]] == 0.3                # head C3k2 emitting P3 → stage 3
+    assert prd[layers[11 + 11]] == 0.1               # head C3k2 emitting P5 → stage 5
+    assert layers[23] not in prd                     # the Pose module: rest_ratio territory
+
+
+def test_dense_spec_ratio_dict_guards() -> None:
+    from prune.prune_baseline import dense_spec_ratio_dict
+
+    with pytest.raises(ValueError, match="rest_ratio"):
+        dense_spec_ratio_dict(_stub_dense_model(),
+                              {"stage_ratios": [0.1] * 5, "rest_ratio": 0.0})
+    with pytest.raises(ValueError, match="stock yolo11-pose layout"):
+        dense_spec_ratio_dict(_stub_dense_model(n=20),
+                              {"stage_ratios": [0.1] * 5, "rest_ratio": 0.2})
+
+
+def test_spec_branch_pins_counts_and_merges_ignored() -> None:
+    """Source pin (the heavy path needs .venv-nas): the spec branch passes the technique's
+    importance but never global_pruning (counts stay spec-pinned → shapes and act are
+    importance-invariant, the allocate contract), and the prep rewrite's protected modules
+    must survive alongside the spec's ratio-0 stages."""
+    import inspect
+
+    from prune.prune_baseline import prune_ladder
+
+    src = inspect.getsource(prune_ladder)
+    spec_branch = src.split("dense_spec_ratio_dict(model")[1].split("else:")[0]
+    assert 'importance=tech["importance"]' in spec_branch
+    assert "global_pruning=" not in spec_branch    # the kwarg must never be passed here
+    assert "extra_ignored + spec_ignored" in spec_branch
+    # spec tags mirror recover_graft's (stem, _sN on non-zero seeds) and name the resume ckpt
+    assert 'tag = spec_tag if seed == 0 else f"{spec_tag}_s{seed}"' in src
+    assert 'ckpt_path=(out_dir / f"ckpt_{tag}.pt"' in src
+
+
 # donor-dependent guards for the 2026-07-08 criterion/args reset (Kaggle rc=1). Gated on
 # ultralytics + the trained donor being present → run locally (.venv-nas), skip in CI.
 _DONOR = __import__("pathlib").Path(

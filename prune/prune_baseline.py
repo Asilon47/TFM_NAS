@@ -133,6 +133,39 @@ def assemble_ladder_report(donor: dict, rows: Sequence[dict]) -> dict:
     }
 
 
+def dense_spec_ratio_dict(model: Any, spec: dict) -> tuple[dict, list]:
+    """Per-stage spec → (pruning_ratio_dict, extra_ignored) for a DENSE (yolo11-pose) model.
+
+    The dense mirror of :func:`prune.recover_graft.spec_ratio_dict` (Arm S of the beat-n
+    program — "pruning-as-search stage 2" applied to the searched s39 donor): stage s's
+    modules get ``stage_ratios[s]`` via the SAME yaml-index → stage maps the width search
+    used (``search.dense_nas.BACKBONE_STAGE`` / ``HEAD_STAGE``), so the cut allocation
+    speaks the search's own coordinates. Ratio-0 stages are protected outright (DepGraph
+    still slices their in-channels when a producer shrinks); the Pose head's internals fall
+    through to MetaPruner's default ratio = ``rest_ratio``.
+    """
+    from search.dense_nas import BACKBONE_STAGE, HEAD_STAGE
+
+    if spec["rest_ratio"] <= 0.0:
+        raise ValueError("spec rest_ratio must be > 0 (MetaPruner default ratio)")
+    layers = list(model.model)
+    n_backbone = 1 + max(BACKBONE_STAGE)          # yolo11 backbone section length (11)
+    if len(layers) != n_backbone + 1 + max(HEAD_STAGE) + 1:  # + head section + Pose module
+        raise ValueError(f"expected the stock yolo11-pose layout "
+                         f"({n_backbone + max(HEAD_STAGE) + 2} modules), got {len(layers)} — "
+                         "the stage maps would misalign")
+    ratio_dict: dict = {}
+    ignored: list = []
+    for yaml_i, stage in {**BACKBONE_STAGE,
+                          **{n_backbone + j: s for j, s in HEAD_STAGE.items()}}.items():
+        r = float(spec["stage_ratios"][stage - 1])
+        if r > 0.0:
+            ratio_dict[layers[yaml_i]] = r
+        else:
+            ignored.append(layers[yaml_i])
+    return ratio_dict, ignored
+
+
 def load_baseline_model(donor: Path) -> Any:
     """The gate-trained yolo11n-pose as a trainable fp32 ``PoseModel`` (DFL stays frozen).
 
@@ -327,6 +360,9 @@ def prune_ladder(
     taylor_batches: int = 8,
     teacher_path: Any = None,
     kd_alpha: float = 1.0,
+    ratio_spec: dict | None = None,
+    spec_tag: str = "spec",
+    ckpt_every: int = 10,
 ) -> dict:
     """The full control-arm ladder: prune → BN re-estimate → recover → eval → export, per ratio.
 
@@ -334,6 +370,13 @@ def prune_ladder(
     program): TECHNIQUES maps the name to prune_graft's allocation/importance flags; iterative
     runs ``iter_recover_epochs`` of recovery between prune steps (BN re-estimated first);
     ``seed`` drives the recovery loop (de-noise waves) and lands in the artifact tags.
+
+    ``ratio_spec`` (Arm S, beat-n program) replaces the uniform ladder with ONE per-stage
+    allocation from ``prune.allocate_dense`` (``dense_spec_ratio_dict``): stage counts stay
+    spec-pinned (global_pruning never passed → shapes importance-invariant, the allocate_v2
+    contract), and the donor may be any yolo11-shaped .pt — the searched s39, not just the
+    gate baseline. Spec runs get a tag-named resume ckpt (``ckpt_every`` epochs), the
+    recover_graft pattern.
     """
     import torch
 
@@ -361,7 +404,18 @@ def prune_ladder(
     del donor_model
 
     rows: list[dict] = []
-    for ratio in ladder_plan(ratios):
+    points = ([ratio_spec["rest_ratio"]] if ratio_spec is not None else ladder_plan(ratios))
+    for ratio in points:
+        # Tag first — it names the resume ckpt (spec runs only; the uniform ladder keeps its
+        # legacy no-resume behavior and rNN names).
+        if ratio_spec is not None:
+            tag = spec_tag if seed == 0 else f"{spec_tag}_s{seed}"
+        else:
+            tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps,
+                          seed=seed)
+        if teacher is not None:
+            tag += "_kd"
+
         model = load_baseline_model(donor)  # fresh weights per point — points are independent
         # yolo11-specific prep: split the C2f-family chunks + keep attention dense —
         # stock C3k2/C2PSA graphs break tp's DepGraph (see prune/yolo_tp_prep.py).
@@ -388,31 +442,46 @@ def prune_ladder(
                 accumulate_pose_grads(_model, data_yaml=data_yaml, device=device, imgsz=imgsz,
                                       batch=batch, n_batches=taylor_batches)
 
-        report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
-                             ratio=ratio, extra_ignored=extra_ignored,
-                             iterative_steps=iterative_steps,
-                             between_steps=(_between if iterative_steps > 1 else None),
-                             **tech)
+        if ratio_spec is not None:
+            prd, spec_ignored = dense_spec_ratio_dict(model, ratio_spec)
+            # importance rides --technique; global_pruning is NOT passed — per-stage counts
+            # stay pinned to the spec, so shapes (and act/latency) are importance-invariant
+            # (the allocate contract, same as recover_graft's spec branch).
+            report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
+                                 ratio=ratio, pruning_ratio_dict=prd,
+                                 extra_ignored=extra_ignored + spec_ignored,
+                                 importance=tech["importance"])
+        else:
+            report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
+                                 ratio=ratio, extra_ignored=extra_ignored,
+                                 iterative_steps=iterative_steps,
+                                 between_steps=(_between if iterative_steps > 1 else None),
+                                 **tech)
 
         reestimate_bn(model.to(device), bn_feed)
         metrics = recovery_finetune(model, epochs=epochs, lr=lr, device=device, imgsz=imgsz,
                                     batch=batch, data_yaml=data_yaml, seed=seed,
-                                    max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha)
+                                    max_steps=max_steps, teacher=teacher, kd_alpha=kd_alpha,
+                                    ckpt_path=(out_dir / f"ckpt_{tag}.pt"
+                                               if ratio_spec is not None else None),
+                                    ckpt_every=ckpt_every)
 
-        tag = run_tag(ratio, technique=technique, iterative_steps=iterative_steps, seed=seed)
-        if teacher is not None:
-            tag += "_kd"
         weights = out_dir / f"prune_base_{tag}.pt"
         torch.save(model.state_dict(), str(weights))
         onnx = out_dir / f"prune_base_{tag}_640.onnx"
         _export_deploy_onnx(model, onnx, imgsz=imgsz)
         row = {"ratio": ratio, "params": report["params_after"],
                "params_sparsity": report["params_sparsity"], "all_rounded": report["all_rounded"],
-               "n_convs_changed": report["n_convs_changed"], "technique": technique,
+               "n_convs_changed": report["n_convs_changed"],
+               "technique": ("dense_spec" if ratio_spec is not None else technique),
                "iterative_steps": iterative_steps, "seed": seed,
                "kd": (None if teacher is None else {"teacher": str(teacher_path),
                                                     "alpha": kd_alpha}), **metrics,
                "weights": str(weights), "onnx": str(onnx)}
+        if ratio_spec is not None:
+            row["spec"] = {k: ratio_spec.get(k) for k in
+                           ("stage_ratios", "rest_ratio", "predicted_fp32_ms",
+                            "fp16_estimate_ms", "act_mbytes_honest")}
         (out_dir / f"prune_base_{tag}.meta.json").write_text(json.dumps(
             {"pruned_baseline": True, **row}, indent=2) + "\n")
         rows.append(row)
@@ -420,9 +489,11 @@ def prune_ladder(
               f"map={row['map']:.4f}", flush=True)
 
     payload = assemble_ladder_report(donor_row, rows)
-    payload["technique"] = technique
+    payload["technique"] = ("dense_spec" if ratio_spec is not None else technique)
     payload["iterative_steps"] = iterative_steps
     payload["seed"] = seed
+    if ratio_spec is not None:
+        payload["spec_tag"] = spec_tag
     (out_dir / "prune_baseline.json").write_text(json.dumps(payload, indent=2) + "\n")
     return payload
 
@@ -444,6 +515,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--teacher", type=Path, default=None,
                    help="frozen raw-map KD teacher .pt (CP 8.2-early; e.g. the gate donor)")
     p.add_argument("--kd-alpha", type=float, default=1.0)
+    p.add_argument("--ratio-spec", type=Path, default=None,
+                   help="per-stage allocation spec (prune/specs/s39d_*.json from "
+                        "prune.allocate_dense) — overrides --ratios with spec-pinned stage "
+                        "counts (Arm S: prune the searched s39 donor); --technique then "
+                        "selects the importance only")
+    p.add_argument("--ckpt-every", type=int, default=10,
+                   help="resume-ckpt cadence in epochs for spec runs (0 = off)")
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--device", default="cpu")
@@ -455,13 +533,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-steps", type=int, default=None, help="cap optimizer steps (CPU smoke)")
     a = p.parse_args(argv)
 
+    ratio_spec = None
+    spec_tag = "spec"
+    if a.ratio_spec is not None:
+        ratio_spec = json.loads(Path(a.ratio_spec).read_text())
+        spec_tag = Path(a.ratio_spec).stem
+
     payload = prune_ladder(
         a.donor, ratios=[float(s) for s in a.ratios.split(",")], epochs=a.epochs, lr=a.lr,
         device=a.device, imgsz=a.imgsz, batch=a.batch, out_dir=a.out_dir,
         data_yaml=a.data_yaml, bn_batches=a.bn_batches, max_steps=a.max_steps,
         technique=a.technique, iterative_steps=a.iterative_steps,
         iter_recover_epochs=a.iter_recover_epochs, seed=a.seed,
-        taylor_batches=a.taylor_batches, teacher_path=a.teacher, kd_alpha=a.kd_alpha)
+        taylor_batches=a.taylor_batches, teacher_path=a.teacher, kd_alpha=a.kd_alpha,
+        ratio_spec=ratio_spec, spec_tag=spec_tag, ckpt_every=a.ckpt_every)
     print(f"donor map={payload['donor']['map']:.4f}")
     for row in payload["rows"]:
         print(f"  ratio={row['ratio']:.2f}  params={row['params']:,}  "
