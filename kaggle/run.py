@@ -95,15 +95,20 @@ DS_WAVE = "2"
 DS_SEED = 0
 # MODE="baseline_train" — MCU resolution question, arm A3 (procedure.md "fp16 rehabilitated"
 #   session's sibling): the deployed baseline's OWN recipe (gate_baseline/args.yaml, incl.
-#   multi_scale + patience 300), gate-trained AT BT_IMGSZ instead of 640. Run on Kaggle because
-#   AGX access was lost mid-session (2026-07-18); A1/A2 (the graft arms, same question) already
-#   finished on the AGX. Self-contained via detect/train_baseline.py — resumes from last.pt
-#   across Kaggle commits the same way every other MODE here resumes (push.sh --resume
-#   round-trips /kaggle/working through the cache Dataset; BT_EPOCHS/BT_BATCH empty = the
-#   recipe's own 2000/4, letting patience 300 end it rather than a Kaggle session wall).
+#   multi_scale), gate-trained AT BT_IMGSZ instead of 640. Run on Kaggle because AGX access
+#   was lost mid-session (2026-07-18); A1/A2 (the graft arms, same question) already finished
+#   on the AGX at 100 epochs (prune.recover_graft's PG_EPOCHS default). BT_EPOCHS=100
+#   (2026-07-18, matches A1/A2) — the recipe's own 2000/patience-300 lets the baseline see far
+#   more optimizer steps than the grafts it is being compared against, confounding "trained
+#   longer" with "the architecture is better"; 100 epochs keeps the comparison apples-to-apples
+#   at the cost of not fully reproducing the DEPLOYED baseline's own training regime (that
+#   regime is what earned it 0.877 @640 — a fair arm-vs-arm read, not an absolute one).
+#   Self-contained via detect/train_baseline.py — resumes from last.pt across Kaggle commits
+#   the same way every other MODE here resumes (push.sh --resume round-trips /kaggle/working
+#   through the cache Dataset).
 BT_MODEL = "yolo11n-pose.pt"
 BT_IMGSZ = 160
-BT_EPOCHS = ""     # "" = recipe default 2000 (patience 300 ends it)
+BT_EPOCHS = 100    # matches A1/A2's budget; "" reverts to the recipe's own 2000/patience-300
 BT_BATCH = ""      # "" = recipe default 4
 # MODE="prune_graft" — CP 6.2-G (graft arm): train the pruned graft to its recovered pose mAP.
 #   Self-contained: the gate donor warm-starts the head, no trained-graft input needed. One
