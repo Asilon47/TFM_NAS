@@ -61,12 +61,43 @@ class ZeroGatedTopDownNeck(nn.Module):
 
     def forward(self, feats: Sequence[Tensor]) -> tuple[Tensor, Tensor, Tensor]:
         p3, p4, p5 = feats
+        if getattr(self, "_gates_folded", False):
+            p4 = p4 + self.up(self.lat54(p5))
+            p3 = p3 + self.up(self.lat43(p4))
+            if self.bottom_up:
+                p4 = p4 + self.down34(p3)
+                p5 = p5 + self.down45(p4)
+            return p3, p4, p5
         p4 = p4 + self.g54 * self.up(self.lat54(p5))
         p3 = p3 + self.g43 * self.up(self.lat43(p4))
         if self.bottom_up:
             p4 = p4 + self.g34 * self.down34(p3)
             p5 = p5 + self.g45 * self.down45(p4)
         return p3, p4, p5
+
+    @torch.no_grad()
+    def fold_gates_(self) -> dict[str, float]:
+        """Fold each scalar gate into its edge conv (weight and bias scaled by the gate) and
+        drop the multiply from ``forward`` — exact because every edge is
+        ``target + g * up_or_down(conv(source))`` with a bare Conv2d and a linear resample.
+
+        Deploy/export transform (the GAP8 path needs it: NNTool's expression_matcher fuses
+        ``mul+add`` into a 3-arg expression AutoTiler's AddNode template rejects). Idempotent;
+        NOT for training — ReZero dynamics need the explicit gate.
+        """
+        if getattr(self, "_gates_folded", False):
+            return {}
+        folded = self.gate_values()
+        edges = [(self.g54, self.lat54), (self.g43, self.lat43)]
+        if self.bottom_up:
+            edges += [(self.g34, self.down34), (self.g45, self.down45)]
+        for gate, conv in edges:
+            conv.weight.mul_(gate)
+            if conv.bias is not None:
+                conv.bias.mul_(gate)
+            gate.fill_(1.0)
+        self._gates_folded = True
+        return folded
 
     def gate_values(self) -> dict[str, float]:
         """The learned gate magnitudes — CP 5.2 logs these ("did the data turn the neck on?")."""

@@ -112,6 +112,28 @@ def main(argv: list[str] | None = None) -> int:
               f"{expect:,} ({100 * (after - expect) / expect:+.1f}%) — price its cycles before "
               f"reading any accuracy win as a Pareto win.")
 
+    if args.neck:
+        # Fold the scalar edge gates into their convs (exact: bare Conv2d + linear resample).
+        # Without this, NNTool's expression_matcher fuses the gated mul+add into a 3-arg
+        # expression AutoTiler's AddNode template rejects (measured 2026-07-19, S260_Op_expr_30)
+        # — and turning the matcher off breaks the h-swish Muls instead.
+        import torch
+
+        from detect.neck import ZeroGatedTopDownNeck
+
+        for m in model.modules():
+            if isinstance(m, ZeroGatedTopDownNeck):
+                if all(v == 0.0 for v in m.gate_values().values()):
+                    # Data-free probe build: gates sit at their ReZero init. Folding 0 would
+                    # zero the lateral convs and let NNTool degenerate them — under-pricing
+                    # the neck. Price the OPEN-gate deploy graph (what a trained net ships).
+                    with torch.no_grad():
+                        for g in (p for n, p in m.named_parameters() if n.startswith("g")):
+                            g.fill_(1.0)
+                    print("[mcu-neck] probe build (all gates 0) -> forced open (1.0) so the "
+                          "cycle probe prices the trained deploy structure")
+                print(f"[mcu-neck] folded gates {m.fold_gates_()} into the edge convs")
+
     path, meta = export_grafted_onnx(
         arch, args.out, prebuilt=model, imgsz=args.imgsz, opset=args.opset,
         mcu_act=True, raw_head=True,

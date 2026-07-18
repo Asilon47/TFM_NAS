@@ -74,3 +74,22 @@ def test_build_neck_dispatch() -> None:
     with pytest.raises(ValueError, match="3 scales"):
         ZeroGatedTopDownNeck((64, 128))
     assert set(NECK_KINDS) == {"topdown", "pan"}
+
+
+def test_fold_gates_is_exact_and_idempotent() -> None:
+    """The GAP8 export transform: y(folded) == y(gated) for random open gates (bare Conv2d +
+    nearest upsample are linear in the scalar), gates report back, and refolding is a no-op."""
+    torch.manual_seed(7)
+    pan = ZeroGatedTopDownNeck(CH, bottom_up=True)
+    with torch.no_grad():
+        for g in (pan.g54, pan.g43, pan.g34, pan.g45):
+            g.uniform_(-1.5, 1.5)
+    feats = _feats()
+    before = pan(feats)
+    folded = pan.fold_gates_()
+    assert set(folded) == {"g54", "g43", "g34", "g45"} and any(v != 0 for v in folded.values())
+    after = pan(feats)
+    for b, a in zip(before, after, strict=True):
+        assert torch.allclose(b, a, atol=1e-5)
+    assert pan.fold_gates_() == {}                      # idempotent — second call folds nothing
+    assert all(v == 1.0 for v in pan.gate_values().values())
