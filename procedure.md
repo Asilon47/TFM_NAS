@@ -4351,3 +4351,76 @@ engine build. During this session a timeout left an orphaned `lut-runner` holdin
 92–99 %; the next measurement would have been silently contended and looked entirely normal.
 **`docker ps` on the board must be empty before any bench** — that is how 2026-07-08's three
 bad rows were born.
+
+## BEAT-N PROGRAM OPENED — NAS-born under both baseline bars; boundary re-framed (2026-07-18)
+
+**User goal (2026-07-18): retry "beat yolo11n's latency with good accuracy" on the Orin
+Nano; the only restriction is the network must come from a NAS.** Three decisions taken
+via AskUserQuestion, superseding the 2026-07-15 boundary for this program:
+1. **Admissible lineages: the per-stage-width searched dense family (s39) is RE-ADMITTED
+   as NAS-born** (real space + TPE + G3-gated proxy + de-noise — the widths were
+   discovered, not hand-scaled) **and** the OFA-graft lineage stays in. A new non-YOLO
+   space was briefed and not selected.
+2. **Accuracy bar: ≥ 0.83 mAP50-95** (140-img val, CUDA validator, de-noised over seeds).
+3. **Latency bar: beat BOTH axes** — < 12.74 ms fp32 AND < 7.75 ms fp16 @640, mode 0.
+
+Compute: the three Kaggle accounts (owaismalekarnous finishes the A3 MCU-res arm first —
+AGX access was lost 2026-07-18, so cloud is the only trainer); the Nano is
+measurement-only, launched by the user on request. Plan file: floofy-wondering-fountain.
+
+**Arms** (each lever measured or explicitly named-untried in the record; none ever stacked):
+- **Arm S (primary)** — prune the searched winner s39-40-38-38-14 (0.8709 ± 0.0012 @
+  measured 15.27/8.84) under the bars: "pruning-as-search stage 2 on the NAS output", the
+  cheapest searched-and-compressed path the Stage-3 Nano gate briefing named (option c).
+  No KD (measured harmful on converged dense recovery). Expected 0.84–0.85.
+- **Arm N** — the necked pruned graft: the Phase-5 fusion repair (+0.026 proxy; the
+  measured resolution-fragility mechanism) had never been combined with pruning. Taylor +
+  output-KD (helps from-init grafts +0.85). Expected 0.815–0.83 alone.
+- **Arm K** — feature-mimic KD at the P3/P4/P5 head-input taps (`distill/kd_feat.py`,
+  FitNets regressors, training-only) — the lever the KD record names for sub-1M students.
+- **Arm R** — recipe-lite recovery (`--cos-lr --warmup-epochs 3 --ema --close-mosaic 10`):
+  the loader already applies stock train augmentation, so the actual recipe gap vs the
+  donor's training is schedule + EMA + close-mosaic (minus COCO pretrain, which no
+  recovery can retrofit). Default-off, `_rl`-tagged; wave-2 stack on champions.
+
+**The measured discovery that shapes everything: the dense family's act currency SPLITS.**
+The pooled dense fit degrades to LOO 5–7 % with ±12 % SYSTEMATIC residuals because
+prep-rewritten pruned graphs (`yolo_tp_prep` C2f chunk-split) deflate ONNX-counted act —
+baseline 549 → 197 MB at r20 — without a proportional latency drop. Split by subfamily
+both laws are tight (`search/dense_latency_fit.json`, pinned `PHYSICAL_DENSE_PRUNED_*`):
+  pruned  fp32 ms = −0.022 + 0.048426·act (LOO 0.6 %) / fp16 = 1.317 + 0.023450·act (1.2 %)
+  scaled  fp32 2.752 + 0.018207·act (3.4 %) / fp16 3.315 + 0.007829·act (3.9 %)
+fp32 binds for a pruned dense net (bar → act ≤ 263 MB; fp16 bar → 274). The pruned law's
+support is 158–203 MB and specs land at 229–238 — the extrapolation is retired by a
+**weight-free Nano pre-bench** of every emitted spec's probe ONNX (latency is
+weight-independent; `scripts/bench_beatn_probes.sh`) BEFORE any 100-ep recovery buys in.
+
+**Emitted specs** (honest CPU probes: donor → prep rewrite → l2 spec-prune → deploy ONNX →
+act; counts importance-invariant):
+- Arm S (`prune/allocate_dense.py`, donor = the s39 seed-0 oracle ckpt):
+  s39d_act240/252/259/264 — act 229–238 MB, pred fp32 11.1–11.5 / fp16 6.7–6.9,
+  params 1.34–1.63 M. s39's own act physics differ from the baseline's: its biggest act
+  knob is P3 (stage sens 99.6 vs stem 46.9) — the searched wide-feature allocation is
+  where its traffic lives; the prep rewrite ALONE deflates its act 695 → 334 MB.
+- Arm N (`allocate_v2 --neck`): v2_topdown_act307/314, v2_pan_act307 — pred fp16
+  7.49–7.60 / fp32 ~10.5. **The nano-neck costs only ~6–9 MB of act (~0.15 ms fp16)** —
+  cross-scale fusion is nearly free in this currency; the spec files record their neck and
+  `recover_graft` refuses a mismatched `--neck` (legacy neck-less specs warn).
+
+**Infra landed** (commits 4d387b6…15b12eb): dense-family law + split (`--fit-dense`);
+`allocate_dense` + `prune_baseline --ratio-spec/--donor-agnostic` (spec branch mirrors
+recover_graft: counts pinned, no global_pruning, tag-named resume ckpt);
+`allocate_v2 --neck`; `distill/kd_feat.py` + `recover_graft --kd-feat`; recipe-lite in
+`recovery_finetune`; kaggle `PB_SPEC/PB_DONOR/PG_NECK/PG_KD_FEAT/PB_RECIPE/PG_RECIPE` +
+`push.sh KSET` (per-account knob rewrite in the staged copy, KMODE's discipline) + donor
+shipping via the cache Dataset (`data/kaggle_donors/`). check.sh green (607).
+
+**Execution order:** wave-1 Kaggle now (asilarnous: Arm S s39d_act252 seed 0, 100 ep;
+asilarnous47: Arm N v2_topdown_act307+314, one per T4, taylor+KD; owais joins on A3
+finish) — both picks are mid-margin, low-regret vs the pre-bench. Nano pre-bench of all 7
+probe graphs whenever the user launches the board (~30 min; also stamps the law-vs-measured
+comparison at the spec acts). Wave-2 from bench + wave-1 reads: champion de-noise seeds
+{1,2} (winner's-curse rule, 3 catches on record), K/R stacks, capacity-max spec if the law
+holds with margin. Finalists: fresh-cache median-of-3 fp16 + fp32 on the Nano, audit_e2e
+clean, then stamp winner + models/README row. G-noise: no pick without de-noise. G-measure:
+no claim off-surrogate.
