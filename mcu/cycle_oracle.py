@@ -9,10 +9,12 @@ One candidate = one deployable graft graph::
 
 ``cycles_for`` prices it on GVSOC (int8, matched 84 KB AutoTiler L2 — the budget every
 recorded CP 10.1 number uses) and caches by content key. Three properties make this a
-better search oracle than the Jetson ever was: cycles are **deterministic** (no clocks,
-no contention, no fresh-cache medians), **weight-free** (the export prunes data-free l2;
-counts are spec-pinned = importance-invariant, the CP 10.1 parity fact), and **local**
-(laptop docker; no board session).
+better search oracle than the Jetson ever was: cycles are **repeatable to <1 %** (no
+clocks, no contention, no fresh-cache medians; measured re-run jitter 0.02–0.8 % —
+unpinned hash ordering in the toolchain, so NOT bit-deterministic: use median-of-N only
+for constraint-boundary calls), **weight-free** (the export prunes data-free l2; counts
+are spec-pinned = importance-invariant, the CP 10.1 parity fact), and **local** (laptop
+docker; no board session).
 
 A failed stage is a RESULT, not an error (cyc_probe doctrine): the oracle caches
 ``{"status": "infeasible", "stage": ...}`` so the search treats the candidate as
