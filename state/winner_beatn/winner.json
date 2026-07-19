@@ -1,0 +1,45 @@
+{
+  "program": "beat-n (2026-07-18 -> 2026-07-19): NAS-born under both baseline bars",
+  "bars": {
+    "accuracy_map50_95_denoised": 0.83,
+    "fp32_ms": 12.74,
+    "fp16_ms": 7.75,
+    "regime": "@640, Orin Nano mode 0, locked clocks, fp16 = median-of-3 fresh-timing-cache builds, docker-ps-empty"
+  },
+  "champion": {
+    "tag": "s39d_cap_a_rl",
+    "lineage": "searched dense s39-40-38-38-14 (Stage-3 TPE per-stage-width NAS, de-noised 0.8709) -> DepGraph per-stage spec prune (prune/specs/s39d_cap_a.json: stages [0.2,0.1,0.2,0.1,0.1] rest 0.1, l2, counts spec-pinned) -> 100-ep recipe-lite recovery (--cos-lr --warmup-epochs 3 --ema --close-mosaic 10), no KD",
+    "params": 1804187,
+    "map50_95_seeds": {"0": 0.8703, "1": 0.8681, "2": 0.8779},
+    "map50_95_denoised_mean": 0.8721,
+    "map50_95_denoised_std": 0.0051,
+    "measured_fp32_ms": 11.59,
+    "measured_fp16_ms": 6.765,
+    "measured_fp16_spread_ms": 0.0218,
+    "e2e_rows": ["data/e2e/prune_base_s39d_cap_a_rl_640.json", "data/e2e/prune_base_s39d_cap_a_rl_640_fp16.json"],
+    "weights": "state/winner_beatn/weights_cap_a_rl_s0.pt (gitignored; sha256[:16]=4b66be90cace4778; source data/kaggle_out_asilarnous47/prune_baseline_s39d_cap_a_rl/)",
+    "vs_baseline": "accuracy -0.005 (0.8721 vs 0.8774); fp32 -9.0% (11.59 vs 12.74); fp16 -12.7% (6.765 vs 7.752)"
+  },
+  "alternate": {
+    "tag": "s39d_act252_rl",
+    "note": "margin-optimized alternate: bigger latency margins, -0.6 pts",
+    "spec": "prune/specs/s39d_act252.json (stages [0.2,0.3,0.3,0.2,0.1] rest 0.1)",
+    "params": 1592811,
+    "map50_95_seeds": {"0": 0.8609, "1": 0.8684, "2": 0.8679},
+    "map50_95_denoised_mean": 0.8657,
+    "map50_95_denoised_std": 0.0042,
+    "measured_fp32_ms": 10.74,
+    "measured_fp16_ms": 6.407,
+    "measured_fp16_spread_ms": 0.0458,
+    "e2e_rows": ["data/e2e/prune_base_s39d_act252_rl_640.json", "data/e2e/prune_base_s39d_act252_rl_640_fp16.json"],
+    "weights": "state/winner_beatn/weights_act252_rl_s0.pt (gitignored; sha256[:16]=731ba04102dce58d; source data/kaggle_out_asilarnous/prune_baseline_s39d_act252_rl/)"
+  },
+  "verdict": "BOTH FINALISTS PASS ALL THREE BARS. Champion = cap_a_rl (highest de-noised accuracy; the capacity-max point the measured fp16 margin funded). The recovered-weights ONNX reproduced the weight-free probes to 0.03 ms on every axis (act252 10.74/6.407 vs probe 10.75/6.392; cap_a 11.59/6.765 vs probe 11.62/6.781).",
+  "protocol_notes": [
+    "de-noise: 3 seeds per finalist (winner's-curse law; cap_a s2=0.8779 is a seed ABOVE the baseline's 0.8774 - a reminder the tail is wide in both directions)",
+    "recipe-lite was the decisive lever: +5.0-5.7 pts over the bare-AdamW wave-1 recovery (0.8114); KD off per the dense-recovery record",
+    "latency: measured-only, single clean session 2026-07-19 (setup -> both finalists -> audit_e2e (1 pre-existing suspect: legacy yolo11s row, documented) -> teardown)",
+    "validator: CUDA Ultralytics .val on the 140-img val split, same as every table row"
+  ],
+  "timestamp": "2026-07-19T07:30:00Z"
+}

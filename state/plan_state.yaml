@@ -423,3 +423,12 @@ notes: |
   pre-bench of all 7 probe graphs (scripts/bench_beatn_probes.sh) -> wave-2 pick;
   champion de-noise seeds {1,2} before any claim. AGX access lost 2026-07-18 (A3 moved
   to Kaggle/owais). See procedure.md "BEAT-N PROGRAM OPENED".
+
+  **BEAT-N PROGRAM CLOSED 2026-07-19 — WON (no checkpoint advance; current stays 5.3):**
+  champion s39d_cap_a_rl (s39 -> spec-prune 1.8M -> 100ep recipe-lite, no KD) = de-noised
+  0.8721 +/- 0.0051 @ measured 11.59 fp32 / 6.765 fp16 (baseline 0.8774 @ 12.74/7.75 ->
+  -9.0%/-12.7% at -0.5pt); alternate s39d_act252_rl 0.8657 @ 10.74/6.407. All bars passed
+  with margin; stamp = state/winner_beatn/winner.json + models/README.md rows + procedure.md
+  "BEAT-N PROGRAM CLOSED". Graft arm retired by the weight-free pre-bench (all necked specs
+  fail fp16). Successor thread: CP 10.3 MCU-native search prep (cycle oracle live; Gate 1
+  recipe-parity = negative -5pts; Gate 2a proxy-fidelity @160 pending -> search go/no-go).

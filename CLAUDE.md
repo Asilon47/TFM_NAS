@@ -182,20 +182,26 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
-**ACTIVE PROGRAM (user goal 2026-07-18): BEAT-N — NAS-born under both baseline bars.**
-Deliverable: a NAS-born net with **de-noised mAP ≥ 0.83** and measured **< 12.74 fp32 AND
-< 7.75 fp16** @640 (mode 0). Boundary re-framed via AskUserQuestion: the **s39 searched
-dense lineage is RE-ADMITTED as NAS-born** (+ OFA-graft stays); accuracy bar 0.83; both
-latency axes. Arms: **S** = prune s39 per act-fenced specs (primary, expected 0.84–0.85;
-`prune/allocate_dense.py`, PRUNED-currency law `PHYSICAL_DENSE_PRUNED_*` — the dense act
-currency SPLITS at the yolo_tp_prep rewrite, see procedure.md); **N** = necked pruned
-graft (`allocate_v2 --neck`; the neck costs ~6–9 MB act ≈ free); **K** = feature-KD
-(`distill/kd_feat.py`); **R** = recipe-lite (`--cos-lr/--ema/--close-mosaic`, `_rl` tags).
-Wave-1 LIVE 2026-07-18: asilarnous = s39d_act252 100 ep no-KD; asilarnous47 =
-v2_topdown_act307+314 taylor+KD; owais joins after A3. **Nano pre-bench owed
-(weight-free, before any wave-2): `scripts/bench_beatn_probes.sh`** — 7 probe ONNX, gates
-fp32/fp16 bars vs spec predictions. De-noise before any pick. AGX access lost 2026-07-18.
-See procedure.md "BEAT-N PROGRAM OPENED" + plan file floofy-wondering-fountain.
+**BEAT-N PROGRAM CLOSED 2026-07-19 — WON.** Champion **s39d_cap_a_rl** (searched s39 →
+DepGraph spec-prune `prune/specs/s39d_cap_a.json` 1.8M → 100-ep recipe-lite recovery, no
+KD): **de-noised 0.8721 ± 0.0051** {0.8703, 0.8681, 0.8779} @ **measured 11.59 fp32 /
+6.765 fp16** — beats the baseline's 12.74/7.75 by 9.0/12.7 % within 0.5 pt of its 0.8774.
+Alternate s39d_act252_rl 0.8657 @ 10.74/6.41. Stamp: `state/winner_beatn/winner.json`,
+rows in `models/README.md`, full narrative procedure.md "BEAT-N PROGRAM CLOSED". Key
+levers, in order: weight-free Nano pre-bench (killed the graft arm pre-spend: all necked
+specs fail fp16 7.96–8.04; funded the capacity ladder), **recipe-lite = +5.0–5.7 pts**
+on the recovery (the decisive lever; KD off), capacity-max hand ladder around the
+allocator's saturated act fence, 3-seed de-noise per finalist (seeds spanned 1.7 pts).
+
+**ACTIVE (opened 2026-07-19): CP 10.3 — MCU-native search prep.** A1/A2/A3 @160 read:
+PAN neck = +7.5 % cycles for +7.8 pts (A2 knee 0.5347 @ 5.28 FPS vs yolo11n 0.6227 @
+2.92 — genuine trade, dominance verdict replaced). `mcu/cycle_oracle.py` = the search's
+latency oracle (GVSOC, content-cached, validated 0.02 %). Gate 1 (recipe-parity A2 twin
+@160) = **NEGATIVE: recipe-lite −5.0 pts on the graft@160** (0.4846 vs bare 0.5347) —
+the gap is architectural. @160 finals so far: act273+pan 0.5288 @ 7.06 FPS (efficiency
+knee, 2.42× baseline), u30+pan 0.5159 @ 4.28 (dominated — uniform loses to allocation
+on cycles too). **Gate 2a pending** (MODE=proxy_rank @160, owais): ρ≥0.70 ∧ regret≤0.01
+gates the search launch. MCU training remains user-gated.
 
 **THE CROSS-FAMILY FRONTIER IS FULLY MEASURED** (2026-07-08 locked-clock bench + CP 6.2-G
 2026-07-11) — the 21-row table lives in `models/README.md`. Pareto set (fp32): dense w25
@@ -349,7 +355,7 @@ CUDA variant from PyPI).
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **TFM_NAS** (3340 symbols, 7167 relationships, 278 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **TFM_NAS** (3464 symbols, 7449 relationships, 287 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

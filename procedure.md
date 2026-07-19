@@ -4474,3 +4474,51 @@ the beat-n wave-2 result (same day: recipe-lite = +5.0–5.7 pts on a dense reco
 recipe-parity A2 twin is the single most informative next train. MCU-side training remains
 user-gated (2026-07-15 compute freeze; AGX lost 2026-07-18 → any A-arm rerun is a Kaggle
 decision). Sim cycles stay RANKING-ONLY.
+
+## BEAT-N PROGRAM CLOSED — the bar is beaten on all three axes (2026-07-19)
+
+**Deliverable achieved in ~36 h from open to stamp: a NAS-born network that beats the
+deployed yolo11n-pose on BOTH latency axes with de-noised mAP50-95 within half a point of
+the baseline itself.** Champion = **s39d_cap_a_rl**: the Stage-3-searched dense
+s39-40-38-38-14, DepGraph-pruned per the capacity-max spec `prune/specs/s39d_cap_a.json`
+(1,804,187 params), recovered 100 ep with recipe-lite, no KD.
+
+| | mAP50-95 (3-seed de-noised) | fp32 ms | fp16 ms | params |
+|---|---|---|---|---|
+| baseline yolo11n-pose | 0.8774 | 12.74 | 7.752 | 2.7M |
+| **champion s39d_cap_a_rl** | **0.8721 ± 0.0051** {0.8703, 0.8681, 0.8779} | **11.59 (−9.0 %)** | **6.765 (−12.7 %)** | 1.8M |
+| alternate s39d_act252_rl | 0.8657 ± 0.0042 {0.8609, 0.8684, 0.8679} | 10.74 (−15.7 %) | 6.407 (−17.3 %) | 1.6M |
+
+Both finalists pass the program bars (≥0.83 de-noised; <12.74; <7.75) with margin; full
+record in `state/winner_beatn/winner.json`; rows in `models/README.md`.
+
+**How the last mile was won, in order:**
+1. **Weight-free Nano pre-bench** (14 rows, one session): all four emitted dense specs
+   passed both bars with ≥1.3 ms fp16 margin (the pruned-currency law was conservative
+   above its support); all three necked graft specs FAILED fp16 (7.96–8.04 vs 7.75; the
+   graft law under-predicted) → the graft arm was retired before a single recovery epoch
+   was spent on it, and the measured margin exposed the capacity headroom.
+2. **Recipe-lite was the decisive accuracy lever** (wave-2): bare-AdamW wave-1 recovered
+   act252 to 0.8114; +cos-LR/warmup/EMA/close-mosaic lifted it to 0.8609/0.8684 —
+   **+5.0–5.7 pts**, twice the forecast — confirming the recovery gap was recipe, not
+   capacity. KD stayed off (dense-recovery record).
+3. **The capacity-max hand ladder** (cap_a: honest act 250, benched 11.62/6.78 as a probe)
+   spent the measured margin on retention: its recipe recovery landed 0.8703/0.8681/0.8779
+   — seed 2 ABOVE the baseline's 0.8774. The allocator's own fence saturates at honest act
+   ~240 (its internal act predictor over-estimates ~14 %); the ladder went around it.
+   capc2 (act 275, fp32 margin 0.11 ms) was retired: its fp16 engine failed to build twice
+   under the board's recurring fresh-cache memory pressure (also killed a legacy yolo11s
+   re-measure; that row stays audit-flagged, true value ≈ 11.6 ms from partial builds).
+4. **De-noise discipline paid again**: single seeds ranged 0.8609–0.8779 (1.7 pts) across
+   finalists — either tail alone would have mis-ranked the pair. Both triplets were
+   completed before the pick ([[cp35-winners-curse]] would say: 4th catch).
+5. **The stamp session** (2026-07-19): the RECOVERED finalist ONNX reproduced their
+   weight-free probes to ≤0.03 ms on every axis — the weight-independence the whole
+   probe-first doctrine banks on, now measured end-to-end. audit_e2e: every beat-n row
+   clean (91 audited; 1 pre-existing suspect = the legacy yolo11s row, documented above).
+
+**Claim discipline:** every latency in this entry is a measured `source=jetson_trt` row
+(mode 0, locked clocks, fp16 = median-of-3 fresh-cache, docker-ps-empty); accuracy = CUDA
+Ultralytics validator on the 140-img val split, de-noised over seeds {0,1,2}. The NAS-born
+boundary is the 2026-07-18 user decision (s39 searched lineage re-admitted; recorded in
+"BEAT-N PROGRAM OPENED").
