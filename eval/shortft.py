@@ -205,6 +205,7 @@ def short_finetune(
     freeze_head: bool = False,
     save_to: Any = None,
     graft_kwargs: dict | None = None,
+    prebuilt: Any = None,
 ) -> dict[str, float]:
     """Fine-tune a sampled OFA-backbone pose model ~``epochs`` epochs; return its pose mAP.
 
@@ -228,6 +229,10 @@ def short_finetune(
     "topdown"}`` (V2) — so the graft-interface ablation runs the exact same protocol with only
     the interface changed. ``None`` (the default) is the historical graft, byte-compatible with
     every prior proxy result.
+
+    ``prebuilt`` (CP 10.3 candidate proxy) skips the build entirely and fine-tunes the given
+    model — the caller owns warm-start/freeze/neck/pruning (``head_weights``/``freeze_head``/
+    ``graft_kwargs`` are ignored). ``None`` (the default) keeps the historical build path.
     """
     import torch
 
@@ -237,10 +242,11 @@ def short_finetune(
     _seed_everything(seed)
     data_yaml = DEFAULT_DATA_YAML if data_yaml is None else data_yaml
 
-    model = build_grafted_pose_model(
+    model = prebuilt if prebuilt is not None else build_grafted_pose_model(
         arch_dict, supernet=supernet, head_weights=head_weights, freeze_head=freeze_head,
         **(graft_kwargs or {}),
-    ).to(device).train()
+    )
+    model = model.to(device).train()
     loader = _build_pose_loader(data_yaml, imgsz=imgsz, batch=batch, mode="train")
     # Only trainable params: a frozen head must stay out of the optimizer (a no-op otherwise).
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)

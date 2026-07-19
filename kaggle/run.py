@@ -171,6 +171,13 @@ PR_PROXY_EPOCHS = 5
 PR_FULL_EPOCHS = 100
 PR_PROXY_SEEDS = 3
 PR_SEED = 0
+# MODE="candidate_proxy" — CP 10.3 accuracy half of the screen: eval.candidate_proxy over a
+# tracked candidates file (repo-relative), jsonl-resumable across sessions (rows restored
+# from prior kernel output via the cache-restore pattern).
+CPX_FILE = "mcu/screens/wave1.json"
+CPX_EPOCHS = 5
+CPX_SEED = 0
+CPX_LIMIT = 0          # 0 = all
 # -----------------------------------------------------------------------------
 
 
@@ -541,6 +548,27 @@ def main() -> None:
         p = json.loads(rep.read_text())
         print(f"[done] {p['tag']}: map={p['map']:.4f} map50={p['map50']:.4f} "
               f"(vs @640 anchor: {p['delta_vs_640_anchor']:+.4f})", flush=True)
+        return
+
+    # CP 10.3 accuracy screen: proxy every candidate in CPX_FILE (jsonl-resumable).
+    if MODE == "candidate_proxy":
+        out_dir = work / "candidate_proxy"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / (Path(CPX_FILE).stem + "_proxy.jsonl")
+        prior = sorted(input_root.rglob(out.name)) if input_root.exists() else []
+        for src in prior:
+            if not out.exists():
+                shutil.copy(src, out)
+                print(f"[resume] restored {src}", flush=True)
+        cmd = (f"{sys.executable} -m eval.candidate_proxy --candidates {repo}/{CPX_FILE} "
+               f"--out {out} --epochs {CPX_EPOCHS} --seed {CPX_SEED} --device cuda"
+               + (f" --limit {CPX_LIMIT}" if CPX_LIMIT else ""))
+        print("+", cmd, flush=True)
+        rc = subprocess.run(cmd, shell=True).returncode
+        if not out.exists():
+            raise SystemExit(f"eval.candidate_proxy produced no rows (rc={rc})")
+        n = len(out.read_text().splitlines())
+        print(f"[done] {out.name}: {n} rows", flush=True)
         return
 
     # CP 10.3 Gate 2a: the CP 2.4 rank-fidelity instrument AT the MCU resolution. One device,
