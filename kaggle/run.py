@@ -178,6 +178,7 @@ CPX_FILE = "mcu/screens/wave1.json"
 CPX_EPOCHS = 5
 CPX_SEED = 0
 CPX_LIMIT = 0          # 0 = all
+CPX_RECIPE = 0         # 1 = recipe-lite recovery (finals; the beat-n +5-pt lever, _rl out file)
 # -----------------------------------------------------------------------------
 
 
@@ -554,7 +555,9 @@ def main() -> None:
     if MODE == "candidate_proxy":
         out_dir = work / "candidate_proxy"
         out_dir.mkdir(parents=True, exist_ok=True)
-        out = out_dir / (Path(CPX_FILE).stem + "_proxy.jsonl")
+        # recipe rows share the graph key with their bare siblings, so they MUST live in a
+        # distinct file or the jsonl resume would dedup them away.
+        out = out_dir / (Path(CPX_FILE).stem + ("_rl" if CPX_RECIPE else "") + "_proxy.jsonl")
         prior = sorted(input_root.rglob(out.name)) if input_root.exists() else []
         for src in prior:
             if not out.exists():
@@ -562,7 +565,8 @@ def main() -> None:
                 print(f"[resume] restored {src}", flush=True)
         cmd = (f"{sys.executable} -m eval.candidate_proxy --candidates {repo}/{CPX_FILE} "
                f"--out {out} --donor {head} --epochs {CPX_EPOCHS} --seed {CPX_SEED} "
-               f"--device cuda" + (f" --limit {CPX_LIMIT}" if CPX_LIMIT else ""))
+               f"--device cuda" + (" --recipe" if CPX_RECIPE else "")
+               + (f" --limit {CPX_LIMIT}" if CPX_LIMIT else ""))
         print("+", cmd, flush=True)
         rc = subprocess.run(cmd, shell=True).returncode
         if not out.exists():

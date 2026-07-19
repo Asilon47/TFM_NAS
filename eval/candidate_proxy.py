@@ -49,12 +49,18 @@ def done_keys(out_path: Path) -> set[str]:
 
 
 def proxy_one(cand: dict, *, donor: Path, epochs: int, seed: int, device: str,
-              supernet: Any = None, max_steps: int | None = None) -> dict:
-    """Build -> spec-prune -> frozen-head short-FT at the candidate's res -> row dict."""
+              supernet: Any = None, max_steps: int | None = None,
+              recipe: bool = False) -> dict:
+    """Build -> spec-prune -> short-FT at the candidate's res -> row dict.
+
+    ``recipe`` routes the fine-tune through ``recovery_finetune`` with the beat-n recipe-lite
+    bundle (cos-LR + warmup + EMA + close-mosaic) instead of the bare-AdamW ``short_finetune``
+    — the +5-pt lever, for the 100-ep FINALS. Rows are tagged so a recipe twin never overwrites
+    its bare sibling in a resumable jsonl.
+    """
     import torch
 
     from detect.pose_model import build_grafted_pose_model
-    from eval.shortft import short_finetune
     from mcu.cycle_oracle import candidate_key, canonical_candidate
     from prune.prune_baseline import TRACE_IMGSZ
     from prune.prune_graft import prune_graft
@@ -67,14 +73,25 @@ def proxy_one(cand: dict, *, donor: Path, epochs: int, seed: int, device: str,
     report = prune_graft(model.to("cpu"), torch.randn(1, 3, TRACE_IMGSZ, TRACE_IMGSZ),
                          ratio=float(c["spec"]["rest_ratio"]), pruning_ratio_dict=prd,
                          extra_ignored=spec_ignored, importance="l2")
-    res = short_finetune(c["arch"], prebuilt=model, epochs=epochs, seed=seed,
-                         imgsz=c["imgsz"], device=device, supernet=supernet,
-                         max_steps=max_steps)
+    if recipe:
+        from prune.prune_baseline import recovery_finetune
+        res = recovery_finetune(model, epochs=epochs, seed=seed, imgsz=c["imgsz"],
+                                device=device, max_steps=max_steps, cos_lr=True,
+                                warmup_epochs=3.0, ema=True,
+                                close_mosaic=10 if epochs > 20 else 0)
+        protocol = ("warm head UNFROZEN, l2 spec-prune, recipe-lite recovery (cos-LR+warmup"
+                    "+EMA+close-mosaic, no KD) — the beat-n +5-pt lever on the graft final")
+    else:
+        from eval.shortft import short_finetune
+        res = short_finetune(c["arch"], prebuilt=model, epochs=epochs, seed=seed,
+                             imgsz=c["imgsz"], device=device, supernet=supernet,
+                             max_steps=max_steps)
+        protocol = ("warm head UNFROZEN, l2 spec-prune, bare-AdamW whole-net (recover_graft "
+                    "truncated; pruned-fidelity leg validates it via the anchor 5ep-vs-100ep "
+                    "pairs)")
     return {"key": candidate_key(c), "candidate": c, "params": report["params_after"],
             "proxy_map": res["map"], "proxy_map50": res["map50"],
-            "epochs": epochs, "seed": seed, "protocol": "warm head UNFROZEN, l2 spec-prune, "
-            "5-ep bare-AdamW whole-net (recover_graft truncated; pruned-fidelity leg "
-            "validates it via the anchor 5ep-vs-100ep pairs)"}
+            "epochs": epochs, "seed": seed, "recipe": recipe, "protocol": protocol}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -87,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--max-steps", type=int, default=None)
+    ap.add_argument("--recipe", action="store_true",
+                    help="recipe-lite recovery (finals; the beat-n +5-pt lever)")
     a = ap.parse_args(argv)
 
     from mcu.cycle_oracle import candidate_key
@@ -102,7 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     sn = load_supernet()
     for i, cand in enumerate(todo):
         row = proxy_one(cand, donor=a.donor, epochs=a.epochs, seed=a.seed,
-                        device=a.device, supernet=sn, max_steps=a.max_steps)
+                        device=a.device, supernet=sn, max_steps=a.max_steps,
+                        recipe=a.recipe)
         with a.out.open("a") as f:
             f.write(json.dumps(row) + "\n")
         print(f"[{i + 1}/{len(todo)}] {row['key']} res={row['candidate']['imgsz']} "

@@ -41,3 +41,17 @@ def test_proxy_one_pins_the_pruned_proxy_protocol() -> None:
     assert 'importance="l2"' in src
     assert 'ratio=float(c["spec"]["rest_ratio"])' in src
     assert "prebuilt=model" in src
+
+
+def test_proxy_one_recipe_routes_to_recovery_finetune() -> None:
+    """recipe=True uses recovery_finetune with the recipe-lite bundle; the graph build/prune
+    is shared, so a recipe twin keeps the same key (must be written to a distinct file)."""
+    import inspect
+
+    from eval.candidate_proxy import proxy_one
+
+    src = inspect.getsource(proxy_one)
+    assert "if recipe:" in src
+    assert "recovery_finetune(model" in src
+    assert "cos_lr=True" in src and "ema=True" in src
+    assert 'close_mosaic=10 if epochs > 20 else 0' in src
