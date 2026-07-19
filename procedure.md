@@ -4569,3 +4569,34 @@ convergence speed may be res-dependent) — hence wave-1 finals launched (asilar
 2.91 FPS — matched-FPS vs yolo11n@160's 2.92/0.6227: the hardware-conditional claim in
 one number) and **d0d520f8a66e** (192-topdown 769K @ 4.09 FPS — the knee). Both no-KD
 (protocol-matched to their proxies; the KD record on grafts is mixed-to-null).
+
+## CP 10.3 WAVE-1 FINALS — the gap collapsed −9→−2, still a trade at matched FPS (2026-07-20)
+
+The two 192-topdown screen leaders trained 100-ep (bare-AdamW, no KD) and re-priced:
+**863c75818953** (1.23M) = **0.6026 @ 2.91 FPS**; **d0d520f8a66e** (769K) = 0.5921 @ 4.09.
+Baseline yolo11n@160 = 0.6227 @ 2.92. Full read: `data/mcu/screen/wave1_finals_read.md`.
+
+**Verdict — a genuine Pareto TRADE, not a domination:**
+- At matched FPS (~2.9) the baseline still wins **+2.0 pts** (0.6227 vs 0.6026) — same
+  faster-but-less-accurate shape as the Orin leg, NOT a match.
+- **The gap collapsed from −0.088 (res-screen @160) to −0.020** via res 160→192 + topdown
+  neck + fresh arch: 6.8 of the 8.8 points recovered.
+- **d0d520 is the sole true Pareto point**: 4.09 FPS (+40 % over baseline) for −3.1 pts,
+  3.4× fewer params — the "want more FPS" operating point. 863c is dominated (matched
+  speed, less accurate) but is the accuracy-max of the NAS family so far.
+
+**Two untried levers make the −2 likely closable:** (1) recipe confound — these are
+bare-AdamW, the baseline is stock recipe; beat-n measured recipe-lite = **+5.0 pts** on a
+recovery, so a recipe-lite 192-td twin is the highest-EV single experiment and could flip
+the matched-FPS verdict. (2) This is the screen, not the search — MOTPE hasn't run.
+
+**Proxy correction to the wave-1 entry:** the two 192-td finals CONFIRM the proxy's region
++ coarse ranking (863c proxy 0.352 > d0d520 0.293 → finals 0.6026 > 0.5921 held). The
+ρ=0.2 fidelity failure is specifically WITHIN the tight anchor band (1.9 pts @160), not
+across regions — so MOTPE trusts the proxy for region selection, finals for near-ties.
+
+**Decision now owed by the user (bank vs push):** spend the week's returning quota on
+(a) a recipe-lite 192-td twin then (b) the MOTPE loop in the 160–192 topdown region — or
+bank "the NAS family gives a faster GAP8 operating point (4.09 vs 2.92 FPS, 3.4× fewer
+params) at −3 pts; at matched speed the baseline leads by 2" as the hardware-conditional
+finding. Either way the finding is clean and thesis-usable.
