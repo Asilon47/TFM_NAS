@@ -4522,3 +4522,27 @@ record in `state/winner_beatn/winner.json`; rows in `models/README.md`.
 Ultralytics validator on the 140-img val split, de-noised over seeds {0,1,2}. The NAS-born
 boundary is the 2026-07-18 user decision (s39 searched lineage re-admitted; recorded in
 "BEAT-N PROGRAM OPENED").
+
+## CP 10.3 GATE 2a PASSED — the @160 proxy is search-grade; the MCU search is GO (2026-07-19)
+
+`MODE=proxy_rank` @160 (5 archs, 3-seed 5-ep warm-head proxies vs 100-ep fulls, CUDA
+validator): **Spearman ρ = 0.90 (gate ≥ 0.70), top-1 regret = 0.0 (gate ≤ 0.01),
+reproducibility Δ = 0.0018 → DoD PASS** (Kendall-τ 0.80, precision@k 0.67 as diagnostics —
+the same reframed-gate shape as CP 2.4). Verdict artifact:
+`data/cp33_kaggle_out/proxy_rank_r160/cp103_proxy_rank.json{,.verdict.json}`.
+
+The kernel itself ended ERROR — my wrapper's summary print assumed a dict report while
+proxy_rank's top level is a rows LIST; it crashed AFTER both jsons were written (the AGX
+crash-at-report-writing pattern again; fixed in kaggle/run.py by reading the sidecar).
+
+**Search plan confirmed (user asked "NSGA then BO?"):** the Phase-3 skeleton with two
+adaptations. Stage 1 = per-node cycle SURROGATE (the sim jsons carry 190 per-node rows
+each; `cycles_sum_nodes` ≈ graph total within 0.3 % ⇒ near-additive) fitted from the
+priced graphs, additivity-DoD-validated, then NSGA-II against the surrogate for the
+structural frontier (raw NSGA-II on the 15-min GVSOC oracle is unaffordable). Stage 2 =
+MOTPE (CP 3.4: reproduces BO within 0.8 %; handles the new mixed dims neck/res/spec
+natively) with the REAL cycle oracle pricing proposals (cached; cycles ≤ FPS-floor
+constraint) and the now-validated @160 warm-head proxy as the accuracy signal. Laws
+carried: de-noise before any pick, sim cycles ranking-only, finals = 100-ep trains.
+Gate 1's negative (recipe-lite −5 pts on the graft @160) stands: recovery recipe for
+search finals stays bare-AdamW + KD.

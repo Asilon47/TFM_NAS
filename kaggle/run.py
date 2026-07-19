@@ -559,7 +559,14 @@ def main() -> None:
         if not rep.exists():
             raise SystemExit(f"eval.proxy_rank produced no report (rc={rc})")
         payload = json.loads(rep.read_text())
-        v = payload.get("verdict", payload.get("rank_verdict", {}))
+        # proxy_rank's report top level is a ROWS LIST; the verdict lives in the sidecar
+        # (.verdict.json). The first Gate-2a run crashed HERE after a PASS was already
+        # written (2026-07-19) — never assume the report shape, read the sidecar.
+        if isinstance(payload, dict):
+            v = payload.get("verdict", payload.get("rank_verdict", {}))
+        else:
+            vpath = Path(f"{rep}.verdict.json")
+            v = json.loads(vpath.read_text()) if vpath.exists() else {"n_rows": len(payload)}
         print(f"[done] cp103_proxy_rank.json: verdict={v}", flush=True)
         return
 
