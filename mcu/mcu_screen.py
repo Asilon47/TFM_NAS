@@ -50,10 +50,18 @@ def sample_candidate(rng: random.Random) -> dict:
     }
 
 
-def sample_screen(n: int, seed: int) -> list[dict]:
-    """Stratified: every (neck, res) cell gets floor(n/9) draws, remainder random."""
+def sample_screen(n: int, seed: int, *, necks: list | None = None,
+                  reses: list | None = None) -> list[dict]:
+    """Stratified: every (neck, res) cell gets floor(n/cells) draws, remainder random.
+
+    ``necks``/``reses`` restrict the cells — the wave-2 focus knob. Wave-1 found the
+    192-topdown region owns the proxy Pareto, so wave-2 prices that region densely
+    (``necks=["topdown"], reses=[160, 192]``) for its latency-feasible frontier.
+    """
     rng = random.Random(seed)
-    cells = [(nk, r) for nk in NECKS for r in RESES]
+    nk_cells = list(necks) if necks is not None else list(NECKS)
+    r_cells = list(reses) if reses is not None else list(RESES)
+    cells = [(nk, r) for nk in nk_cells for r in r_cells]
     out: list[dict] = []
     per_cell, extra = divmod(n, len(cells))
     for i, (nk, r) in enumerate(cells):
@@ -69,12 +77,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--n", type=int, default=18)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--necks", nargs="+", default=None,
+                    help="restrict neck cells (use the literal 'None' for the neck-less cell)")
+    ap.add_argument("--reses", nargs="+", type=int, default=None, help="restrict res cells")
+    ap.add_argument("--tag", type=str, default=None, help="output name (default screen_nN_seedS)")
     ap.add_argument("--dry", action="store_true", help="print the plan, price nothing")
     a = ap.parse_args(argv)
 
-    cands = sample_screen(a.n, a.seed)
+    necks = None if a.necks is None else [None if x == "None" else x for x in a.necks]
+    cands = sample_screen(a.n, a.seed, necks=necks, reses=a.reses)
     OUT.mkdir(parents=True, exist_ok=True)
-    plan = OUT / f"screen_n{a.n}_seed{a.seed}.json"
+    plan = OUT / f"{a.tag or f'screen_n{a.n}_seed{a.seed}'}.json"
     plan.write_text(json.dumps(cands, indent=2))
     print(f"[plan] {len(cands)} candidates -> {plan}")
     if a.dry:
@@ -85,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from mcu.cycle_oracle import candidate_key, cycles_for
 
+    results_path = OUT / f"{a.tag or f'screen_n{a.n}_seed{a.seed}'}_results.json"
     results: list[dict[str, Any]] = []
     for i, c in enumerate(cands):
         r = cycles_for(c)
@@ -92,11 +106,9 @@ def main(argv: list[str] | None = None) -> int:
         stat = (f"{r['cycles']:,} cyc {r['fps_at_175mhz']} FPS" if r["status"] == "ok"
                 else f"{r['status']} @ {r.get('stage')}")
         print(f"[{i + 1}/{len(cands)}] {candidate_key(c)} ({r['status']}): {stat}", flush=True)
-        (OUT / f"screen_n{a.n}_seed{a.seed}_results.json").write_text(
-            json.dumps(results, indent=2))
+        results_path.write_text(json.dumps(results, indent=2))
     ok = [r for r in results if r["status"] == "ok"]
-    print(f"[done] {len(ok)}/{len(cands)} priced ok -> "
-          f"{OUT / f'screen_n{a.n}_seed{a.seed}_results.json'}")
+    print(f"[done] {len(ok)}/{len(cands)} priced ok -> {results_path}")
     return 0
 
 

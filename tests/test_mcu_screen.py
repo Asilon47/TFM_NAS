@@ -18,3 +18,11 @@ def test_sample_screen_respects_the_ofa_contract() -> None:
         assert len(c["spec"]["stage_ratios"]) == 5
         assert 0.0 < c["spec"]["rest_ratio"] <= 0.45
         assert c["neck"] in NECKS and c["imgsz"] in RESES
+
+
+def test_sample_screen_focus_restricts_cells() -> None:
+    """Wave-2 focus: only the requested neck/res cells appear, still seeded + stratified."""
+    cands = sample_screen(12, seed=1, necks=["topdown"], reses=[160, 192])
+    assert {(c["neck"], c["imgsz"]) for c in cands} == {("topdown", 160), ("topdown", 192)}
+    assert len(cands) == 12
+    assert cands == sample_screen(12, seed=1, necks=["topdown"], reses=[160, 192])
