@@ -4546,3 +4546,26 @@ constraint) and the now-validated @160 warm-head proxy as the accuracy signal. L
 carried: de-noise before any pick, sim cycles ranking-only, finals = 100-ep trains.
 Gate 1's negative (recipe-lite −5 pts on the graft @160) stands: recovery recipe for
 search finals stays bare-AdamW + KD.
+
+## CP 10.3 WAVE-1 PROXIES READ — pruned-proxy fidelity FAILS fine-grained; 192 leads (2026-07-19)
+
+`MODE=candidate_proxy` scored all 17 wave-1 rows (13 feasible screen points + 4 anchors;
+5-ep truncated-recovery instrument, no KD, 1 seed; `data/kaggle_out_asilarnous47/
+candidate_proxy/wave1_proxy.jsonl`).
+
+**Pruned-proxy fidelity (the anchors vs their 100-ep finals): ρ = 0.2, top-1 regret
+0.0188 → FAILS the ≥0.70 / ≤0.01 gate.** The instrument separates the coarse levers (A1
+no-neck last in both orders — a real 7-pt effect) but INVERTS inside the anchors' 1.9-pt
+final band (u30 proxies 1st of the pan trio, finals 3rd) — the CP 2.4 within-band
+weakness, now measured on pruned candidates. Consequence for MOTPE: the proxy ranks
+REGIONS (res x neck x capacity class), never near-ties; picks inside a band need 100-ep
+finals; de-noise unchanged.
+
+**Screen pattern:** the proxy Pareto is owned by TOPDOWN necks at every res, and res 192
+leads outright (top-3 all 192-topdown: 0.352 @ 2.91 FPS / 0.292 @ 4.09 / 0.287 @ 4.88);
+res 128 clusters low despite params. Cross-res proxy comparability is UNVALIDATED (5-ep
+convergence speed may be res-dependent) — hence wave-1 finals launched (asilarnous,
+`mcu/screens/wave1_finals.json`, CPX_EPOCHS=100): **863c75818953** (192-topdown 1.23M @
+2.91 FPS — matched-FPS vs yolo11n@160's 2.92/0.6227: the hardware-conditional claim in
+one number) and **d0d520f8a66e** (192-topdown 769K @ 4.09 FPS — the knee). Both no-KD
+(protocol-matched to their proxies; the KD record on grafts is mixed-to-null).
