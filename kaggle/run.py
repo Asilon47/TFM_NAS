@@ -561,8 +561,8 @@ def main() -> None:
                 shutil.copy(src, out)
                 print(f"[resume] restored {src}", flush=True)
         cmd = (f"{sys.executable} -m eval.candidate_proxy --candidates {repo}/{CPX_FILE} "
-               f"--out {out} --epochs {CPX_EPOCHS} --seed {CPX_SEED} --device cuda"
-               + (f" --limit {CPX_LIMIT}" if CPX_LIMIT else ""))
+               f"--out {out} --donor {head} --epochs {CPX_EPOCHS} --seed {CPX_SEED} "
+               f"--device cuda" + (f" --limit {CPX_LIMIT}" if CPX_LIMIT else ""))
         print("+", cmd, flush=True)
         rc = subprocess.run(cmd, shell=True).returncode
         if not out.exists():
