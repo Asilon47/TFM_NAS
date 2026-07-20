@@ -180,3 +180,21 @@ family buys nothing at fp16. Fence: w25 is a dense-scaled yolo11, **not an allow
 under the NAS-born constraint, so this sharpens the known finding rather than moving the
 deliverable. Accuracies remain single-seed and recipe-confounded (see header) — this corrects the
 latency axis only.
+
+## GAP8 / MCU leg (Phase 10 — a SEPARATE measurement context: GVSOC sim cycles, ranking-only)
+
+These are **not** Orin milliseconds — GAP8 GVSOC simulated cycles @175 MHz, int8, 84 KB
+matched AutoTiler L2, at each net's own input resolution. Accuracy is the same CUDA
+Ultralytics pose-mAP validator (140-img val). Full record: `state/winner_mcu/winner.json`,
+procedure.md "CP 10.3 CLOSED".
+
+| model | res | params | mAP50-95 | sim cyc | sim FPS | vs baseline |
+|---|---|---|---|---|---|---|
+| yolo11n-pose (baseline) | 160 | 2.65M | 0.6227 | 59.85 M | 2.92 | — |
+| **a5fddcc (graft+topdown, CP 10.3 winner)** | 192 | 1.13M | **0.6299** (de-noised) | 58.39 M | **3.0** | **dominates: +acc, −cyc, 2.3× fewer params** |
+| 19efff (graft+topdown, speed point) | 192 | 0.75M | 0.6014 | 43.26 M | 4.05 | +39 % FPS, −2.1 pts |
+| 863c (graft+topdown, prior best) | 192 | 1.23M | 0.6026 | 60.44 M | 2.91 | superseded |
+
+**a5fddcc Pareto-dominates the deployed baseline on GAP8** (every seed ≥ baseline; mean
++0.72 pt, 2.4 % fewer cycles, 2.3× fewer params). The same OFA-graft family is a *trade* on
+the Orin (beat-n, above) and a *domination* on the MCU — the hardware-conditional finding.

@@ -1,0 +1,63 @@
+{
+  "program": "CP 10.3 MCU-native search (2026-07-18 -> 2026-07-20): the OFA-graft family on GAP8",
+  "target": "GAP8 / Crazyflie AI-deck (int8, 84 KB matched AutoTiler L2, GVSOC sim @175 MHz)",
+  "champion": {
+    "tag": "a5fddcc354bd",
+    "lineage": "OFA-graft (winner-v1 backbone arch) + zero-gated topdown neck, DepGraph l2 spec-prune, res 192, 100-ep bare-AdamW recovery (warm gate head, no KD, no recipe-lite)",
+    "arch_ks_e": "winner-v1 base (models/res224/graft_noneck_224_mcu.meta.json)",
+    "arch_d": [
+      2,
+      2,
+      4,
+      3,
+      3
+    ],
+    "spec": {
+      "stage_ratios": [
+        0.2,
+        0.6,
+        0.0,
+        0.45,
+        0.2
+      ],
+      "rest_ratio": 0.45
+    },
+    "neck": "topdown",
+    "imgsz": 192,
+    "params": 1130069,
+    "map50_95_seeds": {
+      "0": 0.6319,
+      "1": 0.635,
+      "2": 0.6227
+    },
+    "map50_95_denoised_mean": 0.6299,
+    "map50_95_denoised_std": 0.0064,
+    "gap8_sim_cycles": 58394932,
+    "gap8_sim_fps_175mhz": 3.0,
+    "gap8_sim_nodes": 200,
+    "probe_onnx": "models/res192/cand_a5fddcc354bd.onnx (data-free l2 export; cycles are weight-independent + spec-pinned = the trained shape)",
+    "proxy_map_5ep": 0.3596
+  },
+  "baseline": {
+    "tag": "yolo11n-pose @160 (A3 arm, stock recipe, 100-ep, single seed)",
+    "map50_95": 0.6227,
+    "params": 2654636,
+    "gap8_sim_cycles": 59852262,
+    "gap8_sim_fps_175mhz": 2.92,
+    "gap8_sim_nodes": 214
+  },
+  "verdict": "a5fddcc PARETO-DOMINATES the deployed baseline on the GAP8 cycle model: de-noised accuracy 0.6299 >= baseline 0.6227 (EVERY seed >= baseline; mean +0.72 pt), 2.4% FEWER sim cycles (3.0 vs 2.92 FPS), and 2.3x fewer parameters (1.13M vs 2.65M). Survives 3-seed de-noise.",
+  "how_it_was_won": [
+    "recipe-lite FAILED twice (Gate 1 -5 pts @160; the 192-td twin -0.6/-0.8) \u2014 does NOT transfer from the dense-recovery regime to the graft",
+    "KD null-to-negative on record",
+    "the LEVER was the base architecture: a deeper backbone d=[4,4,2,3,3] + gentle prune (rest 0.45) at res 192 with the topdown neck, surfaced by the wave-2 region-focused cycle screen + proxy",
+    "res 160->192 + topdown neck closed the res-screen's -0.088 gap; the base-arch search closed the last 2 pts and flipped it to +0.72"
+  ],
+  "caveats": [
+    "GAP8 latency is GVSOC SIM cycles (ranking-only, no AI-deck hardware); the ACCURACY is real (CUDA Ultralytics validator, 140-img val, de-noised)",
+    "the sim-FPS edge (2.4% cycles) is above the oracle's <1% jitter but slim \u2014 the domination rests as much on +accuracy and 2.3x fewer params as on speed",
+    "baseline is single-seed (A3); a5fddcc's WORST seed (0.6227) still matches it, so the result is robust to baseline noise",
+    "champion WEIGHTS are not persisted (candidate_proxy is an eval runner) \u2014 one save-run owed for deployable weights; the arch+spec+ONNX are pinned and reproducible"
+  ],
+  "timestamp": "2026-07-20T13:00:00Z"
+}

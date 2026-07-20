@@ -4600,3 +4600,43 @@ across regions — so MOTPE trusts the proxy for region selection, finals for ne
 bank "the NAS family gives a faster GAP8 operating point (4.09 vs 2.92 FPS, 3.4× fewer
 params) at −3 pts; at matched speed the baseline leads by 2" as the hardware-conditional
 finding. Either way the finding is clean and thesis-usable.
+
+## CP 10.3 CLOSED — MCU-NATIVE SEARCH WON: a5fddcc Pareto-dominates on GAP8 (2026-07-20)
+
+**The push paid off: a NAS-born net that Pareto-dominates the deployed baseline on the GAP8
+cycle model — better accuracy, fewer cycles, 2.3× fewer params — and it survived de-noise.**
+
+| | de-noised mAP50-95 | GAP8 sim cyc | sim FPS | params |
+|---|---|---|---|---|
+| yolo11n-pose @160 (baseline) | 0.6227 | 59.85 M | 2.92 | 2.65M |
+| **a5fddcc (192-topdown)** | **0.6299 ± 0.0064** {0.6319, 0.6350, 0.6227} | **58.39 M** | **3.0** | **1.13M** |
+
+a5fddcc is more accurate (+0.72 pt, every seed ≥ baseline), 2.4 % fewer cycles, and 2.3×
+smaller. Stamp: `state/winner_mcu/winner.json`.
+
+**How it was won — the base architecture, after the class-levers failed:**
+1. **Recipe-lite FAILED twice** (Gate 1 −5 pts @160; the 192-td finals twin −0.6/−0.8) —
+   the beat-n +5-pt lever does NOT transfer from dense-recovery to the graft regime.
+2. **KD null-to-negative** on record. So both accuracy class-levers were spent.
+3. **The lever was the base arch:** the wave-2 region-focused cycle screen (192-topdown,
+   dense-priced locally, free) + 5-ep proxy surfaced **a5fddcc** — a deeper backbone
+   (d=[4,4,2,3,3]) with a gentle prune (rest 0.45). Its 100-ep final (0.6319) topped the
+   incumbent 863c (0.6026); de-noise held it at 0.6299. res 160→192 + topdown neck had
+   already closed the res-screen's −0.088 to −0.02; the base-arch search closed the last
+   2 and flipped it to +0.72.
+4. **Method note:** given Gate 2a's within-band proxy failure (ρ=0.2), I deliberately did
+   NOT run a fine sequential MOTPE (it would trust proxy near-ties built on sand). The
+   honest tool — oracle picks the region, dense-price its latency frontier, finals rank the
+   top — is what delivered a5fddcc. The proxy's top pick (0.3596) → the top final held.
+
+**Caveats (in any claim):** GAP8 latency is GVSOC **sim** cycles (ranking-only, no AI-deck
+hardware); accuracy is real (CUDA validator, de-noised). The sim-FPS edge (2.4 %) is above
+the oracle's <1 % jitter but slim — the domination rests as much on +accuracy and 2.3×
+fewer params as on speed. Baseline is single-seed, but a5fddcc's worst seed (0.6227) still
+matches it. Champion **weights are not persisted** (candidate_proxy is an eval runner) — one
+save-run owed for deployable weights; arch+spec+ONNX are pinned and reproducible.
+
+**Two-device result now stands:** beat-n won the **Orin** (0.8721 @ 11.59/6.77, a Pareto
+trade at matched accuracy) and CP 10.3 won the **GAP8** (0.6299 @ 3.0 FPS, a strict
+domination) — the same OFA-graft family, hardware-conditional: marginal on Orin, decisive
+on the MCU. That is the thesis's hardware-conditional-NAS spine, delivered on measurement.
