@@ -177,25 +177,33 @@ def filter_normalised_directions(
 
 def sweep(model: Any, batches: list[dict], grid: int, seed: int) -> tuple[list[str], float]:
     """Row-major (alpha outer, beta inner) sweep of alpha,beta in [-1,1]; return (rows, loss@0)."""
+    if grid % 2 == 0:
+        raise ValueError(f"grid={grid} must be ODD so theta* (0,0) is a real grid cell")
     theta = {k: v.detach().clone() for k, v in model.state_dict().items()}
     d1, d2 = filter_normalised_directions(theta, seed)
-    axis = torch.linspace(-1.0, 1.0, grid)
+    # float64 axis (float32's 0.05 step lands the centre at ~1e-7, not 0), then SNAP the exact
+    # centre to 0.0 so the (0,0) cell is a true unperturbed theta* eval — the honesty gate holds
+    # to machine precision. The centre is located by INDEX, never by float equality.
+    center = grid // 2
+    axis = torch.linspace(-1.0, 1.0, grid, dtype=torch.float64)
+    axis[center] = 0.0
+    coords: list[float] = axis.tolist()
 
     rows: list[str] = []
     base: float | None = None
-    for ai, a in enumerate(axis.tolist()):
-        for b in axis.tolist():
+    for ai, a in enumerate(coords):
+        for bi, b in enumerate(coords):
             perturbed = {k: theta[k] + a * d1[k] + b * d2[k] for k in theta}
             model.load_state_dict(perturbed, strict=True)  # restore-by-replace: no accumulation
             loss_val = eval_loss(model, batches)
-            if abs(a) < 1e-9 and abs(b) < 1e-9:
+            if ai == center and bi == center:
                 base = loss_val
             rows.append(f"{a:.4f} {b:.4f} {loss_val:.4f}")
         print(f"  row {ai + 1}/{grid} (alpha={a:+.4f}) done", flush=True)
 
     model.load_state_dict(theta, strict=True)  # restore theta* for good measure
-    if base is None:  # odd grids include 0; guard against an even grid skipping the centre cell
-        raise RuntimeError(f"grid={grid} excludes (0,0) — use an odd grid so theta* is a cell")
+    if base is None:  # unreachable given the odd-grid guard, but keeps the return type honest
+        raise RuntimeError(f"grid={grid} did not evaluate the centre cell")
     return rows, base
 
 
@@ -231,6 +239,8 @@ def main() -> None:
     ap.add_argument("--tol", type=float, default=1e-3, help="honesty gate: |loss(0,0) - ref| bound")
     ap.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
     args = ap.parse_args()
+    if args.grid % 2 == 0:  # fail before the ~20-min sweep, not after
+        raise SystemExit(f"--grid must be ODD (got {args.grid}) so theta* (0,0) is a grid cell")
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     ckpt = Path(args.ckpt) if args.ckpt else (DEFAULT_WINNER_CKPT if args.model == "winner"
