@@ -37,3 +37,25 @@ The two 192-td finals confirm the proxy's **region and coarse ranking** (0.352 >
 pruned anchors at 160, ρ=0.2). So: MOTPE trusts the proxy to pick res × neck × capacity
 regions, and spends finals only to break near-ties. Cross-res comparability now has one
 data point — 192 proxies did predict the best finals, consistent with the table.
+
+## UPDATE 2026-07-20 — recipe-lite does NOT transfer to the graft (2nd confirmation)
+
+The recipe-lite twin (same arch/res/seed, 100 ep, cos-LR+warmup+EMA+close-mosaic) came
+back **below** its bare-AdamW sibling on both points:
+
+| point | bare-AdamW | recipe-lite | Δ |
+|---|---|---|---|
+| 863c (192-td 1.23M) | 0.6026 | 0.5950 | **−0.0076** |
+| d0d520 (192-td 769K) | 0.5921 | 0.5861 | **−0.0060** |
+
+**Recipe-lite hurt the graft** — the opposite of beat-n (where it bought +5 pts on a dense
+recovery), and the **second** negative after Gate 1 (the A2 recipe-parity twin @160:
+0.4846 vs bare 0.5347, −5 pts). The lever that won the Orin does not carry to the MCU
+graft family; the regime differs (from-init-ish OFA backbone + pose head vs a converged
+dense donor). **The −2 pt matched-FPS gap is NOT a recipe artifact — it is structural.**
+
+Consequence: the two class-levers that could close an accuracy gap are both spent on the
+graft — recipe (negative, ×2) and KD (null-to-negative, on record). What remains is a
+**better base architecture** — exactly what the wave-2 proxy batch (8 matched-FPS-and-
+faster 192-topdown-region candidates) is testing. If none beats 863c's 0.6026, the honest
+MCU verdict is the trade: −2 pts at matched FPS, structural.
