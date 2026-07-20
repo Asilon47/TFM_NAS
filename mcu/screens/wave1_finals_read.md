@@ -59,3 +59,29 @@ graft — recipe (negative, ×2) and KD (null-to-negative, on record). What rema
 **better base architecture** — exactly what the wave-2 proxy batch (8 matched-FPS-and-
 faster 192-topdown-region candidates) is testing. If none beats 863c's 0.6026, the honest
 MCU verdict is the trade: −2 pts at matched FPS, structural.
+
+## WAVE-2 FINALS 2026-07-20 — a5fddcc DOMINATES the baseline (PENDING DE-NOISE)
+
+The two 192-topdown wave-2 region contenders trained 100-ep (bare-AdamW, no recipe):
+
+| point | params | final mAP50-95 | GAP8 FPS | vs baseline |
+|---|---|---|---|---|
+| yolo11n-pose @160 (baseline) | 2.65M | 0.6227 | 2.92 | — |
+| **a5fddcc (192-td, d=[4,4,2,3,3])** | **1.13M** | **0.6319** | **3.0** | **DOMINATES: +0.9 pt, faster, 2.3× fewer params** |
+| 19efff (192-td, d=[2,3,2,2,2]) | 0.75M | 0.6014 | 4.05 | +40 % FPS, −2.1 pts (speed Pareto point) |
+| 863c (192-td, prior best) | 1.23M | 0.6026 | 2.91 | now superseded |
+
+**a5fddcc appears to strictly Pareto-DOMINATE the deployed baseline on GAP8** — more
+accurate (0.6319 vs 0.6227), matched-to-slightly-faster sim FPS (3.0 vs 2.92, a 2.7 %
+edge — real but slim vs the oracle's <1 % jitter), and 2.3× fewer parameters. The push's
+thesis held: after recipe (×2) and KD (null) failed, the **base architecture** was the
+lever — a deeper backbone (d=[4,4,2,3,3]) with a gentle prune (rest 0.45) at res 192 with
+the topdown neck. The proxy's top pick (0.3596, above the incumbent) delivered the top
+final, so region+top proxy ranking held even though within-band fidelity fails.
+
+**NOT YET A CLAIM — de-noise gates it.** 0.6319 is single-seed; the +0.9 pt edge over the
+baseline is inside the seed spread (σ 0.005–0.025), exactly the winner's-curse regime that
+has bitten 4× on this project. Seeds 1+2 launched (asilarnous / owais,
+`mcu/screens/a5fddcc_denoise.json`). The domination claim stands **only if the 3-seed mean
+holds ≥ 0.6227**. If it regresses to ~0.62, it reverts to a near-tie / faster-at-matched-
+accuracy point (still a strong result, just not a strict domination).
