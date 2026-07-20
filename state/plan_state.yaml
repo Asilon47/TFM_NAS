@@ -432,3 +432,15 @@ notes: |
   "BEAT-N PROGRAM CLOSED". Graft arm retired by the weight-free pre-bench (all necked specs
   fail fp16). Successor thread: CP 10.3 MCU-native search prep (cycle oracle live; Gate 1
   recipe-parity = negative -5pts; Gate 2a proxy-fidelity @160 pending -> search go/no-go).
+
+  **CP 10.3 CLOSED 2026-07-20 — MCU-NATIVE SEARCH WON (no checkpoint advance; current stays
+  5.3):** a5fddcc (OFA-graft, deeper backbone d=[4,4,2,3,3] + gentle prune, topdown neck,
+  res 192, 1.13M params) Pareto-DOMINATES the deployed baseline on GAP8: de-noised 0.6299 +/-
+  0.0064 {0.6319, 0.6350, 0.6227} vs yolo11n@160 0.6227; 58.39M vs 59.85M sim cyc (3.0 vs
+  2.92 FPS); 2.3x fewer params; every seed >= baseline. The lever was the base architecture
+  (recipe-lite failed x2, KD null). Two-device result: OFA-graft family = TRADE on Orin
+  (beat-n 0.8721 @ 11.59/6.77) + DOMINATION on GAP8 = the hardware-conditional-NAS spine.
+  Stamp: state/winner_mcu/winner.json + models/README MCU section + procedure.md "CP 10.3
+  CLOSED". Caveats: GAP8 sim cycles ranking-only (no AI-deck HW); champion weights not
+  persisted (one save-run owed). Infra: mcu/cycle_oracle.py, mcu/mcu_screen.py,
+  eval/candidate_proxy.py, kaggle MODE=candidate_proxy/proxy_rank.
