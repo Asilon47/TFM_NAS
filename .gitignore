@@ -94,3 +94,7 @@ mcu/vendor/
 # GAP8 app build trees (regenerable; written root-owned from inside the
 # tfm-gap8 container, so clean them with mcu/run.sh 'rm -rf ...', not host rm).
 mcu/probes/*/BUILD/
+
+# Loss-landscape surface data (generated on GPU by figs/loss_landscape.py, pulled from
+# Kaggle; the deliverable is copied into the thesis LaTeX repo, not tracked here).
+figs/data/

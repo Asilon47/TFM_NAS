@@ -27,11 +27,11 @@ from pathlib import Path
 # ---- CONFIG (the full 5-seed DoD; resumable across sessions) ----------------
 REPO_URL   = "https://github.com/Asilon47/TFM_NAS.git"
 DATASET    = "tfm-nas-gate-pose"  # attached Kaggle Dataset slug (no <user>/ prefix)
-MODE       = "full_finetune"      # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
+MODE       = "loss_landscape"     # search | verify_winner (CP 3.5 DoD) | denoise (CP 3.5
 #   re-score) | full_finetune (side experiment; see eval/full_finetune.py) | graft_ablate
 #   (CP 5.2 ablation, CLOSED) | honest_search (Phase 3b: re-search under the honest
 #   Stage-0 cost model — backbone sum <= 7.16ms == e2e <= the baseline's 12.75ms;
-#   procedure.md "Phase 3b LAUNCHED")
+#   procedure.md "Phase 3b LAUNCHED") | loss_landscape (thesis pruning figure, Li et al. 2018)
 # Phase-3b honest-search knobs (MODE="honest_search"):
 HS_T_MAX   = 7.16                 # (12.75 - 0.926 - 3.837) / 1.115 — the honest sum ceiling
 HS_SEEDS   = "0,1"
@@ -179,6 +179,15 @@ CPX_EPOCHS = 5
 CPX_SEED = 0
 CPX_LIMIT = 0          # 0 = all
 CPX_RECIPE = 0         # 1 = recipe-lite recovery (finals; the beat-n +5-pt lever, _rl out file)
+# MODE="loss_landscape" — filter-normalised loss surfaces (Li et al. 2018) for the thesis pruning
+# figure: figs.loss_landscape over BOTH surfaces (baseline = the in-Dataset gate donor; winner =
+# the neck-less graft). The winner .pt is gitignored, so it ships via the cache Dataset: stage
+# models/graft/winner_v1_noneck.pt into data/kaggle_donors/ + `push.sh --cache`, then it's found
+# by filename under /kaggle/input. One 41x41 grid over 140 val imgs is minutes on a T4 (no resume).
+LL_WINNER_CKPT = "winner_v1_noneck.pt"   # found under /kaggle/input (ships via the cache Dataset)
+LL_GRID = 41                             # points per axis (odd, includes the theta* centre cell)
+LL_SUBSET = 0                            # cap val images (0 = all 140)
+LL_BATCH = 16
 # -----------------------------------------------------------------------------
 
 
@@ -250,6 +259,36 @@ def main() -> None:
 
     # 4. OFA supernet checkpoint (internet on; SHA-verified in supernet/download_ofa.py)
     sh(f"{sys.executable} -m supernet.download_ofa")
+
+    # 4.6 Loss-landscape figure (Li et al. 2018): filter-normalised val-loss surfaces for BOTH
+    #     the deployed baseline (gate donor = the 0.877 yolo11n-pose) and the neck-less winner
+    #     graft. Self-contained — reuses the supernet/dataset/head donor wired above; the winner
+    #     .pt is gitignored so it ships via the cache Dataset (see LL_WINNER_CKPT). Each .dat has
+    #     an honesty gate (loss(0,0) == the real val loss); a non-zero rc means that gate tripped.
+    if MODE == "loss_landscape":
+        winner_ckpt = find(LL_WINNER_CKPT)
+        if winner_ckpt is None:
+            raise SystemExit(
+                f"FATAL: winner ckpt {LL_WINNER_CKPT!r} not found under /kaggle/input — stage it "
+                "into data/kaggle_donors/ + run `push.sh --cache`, then refresh the cache-Dataset "
+                "input to its latest version. See the tree above.")
+        out_dir = work / "loss_landscape"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        common_ll = (f"--grid {LL_GRID} --batch {LL_BATCH} --imgsz 640 --device cuda"
+                     + (f" --subset {LL_SUBSET}" if LL_SUBSET else ""))
+        runs = [("baseline", f"--model baseline --ckpt {head}"),
+                ("winner", f"--model winner --ckpt {winner_ckpt}")]
+        for tag, model_args in runs:
+            dat = out_dir / f"loss_landscape_{tag}.dat"
+            cmd = f"{sys.executable} -m figs.loss_landscape {model_args} {common_ll} --out {dat}"
+            print("+", cmd, flush=True)
+            rc = subprocess.run(cmd, shell=True).returncode
+            if not dat.exists():
+                raise SystemExit(f"figs.loss_landscape produced no {dat.name} (rc={rc})")
+            shutil.copy(dat, work / dat.name)
+            prov = next((ln for ln in dat.read_text().splitlines()[:3] if "loss(0,0)" in ln), "")
+            print(f"[done] {dat.name}: {prov}", flush=True)
+        return
 
     # 4.7 CP 3.5 winner verification: a single warm-head re-fine-tune of the serialized α*, not a
     #     search. Reuses the head donor + dataset + checkpoint wired above; writes repro.json
