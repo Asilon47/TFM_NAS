@@ -1,0 +1,13 @@
+adjust
+fusions -a scaled_match_group expression_matcher
+set default_input_home_location AT_MEM_L3_HRAM
+set default_input_exec_location AT_MEM_L3_HRAM
+set default_output_home_location AT_MEM_L3_HRAM
+set default_output_exec_location AT_MEM_L3_HRAM
+set l3_ram_device AT_MEM_L3_HRAM
+set l3_flash_device AT_MEM_L3_HFLASH
+set graph_produce_node_names true
+set graph_produce_operinfos true
+set graph_monitor_cycles true
+aquant aq_sample/*.jpg -H @RES@ -W @RES@ -T
+save_state
