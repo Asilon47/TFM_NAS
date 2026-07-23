@@ -65,6 +65,11 @@ yolo11n_pose_160_raw 160 160000        # baseline: more L2 headroom
   from the image (GreenWaves is defunct). `build_bench.sh` ships `mcu/vendor/LibTile.a`
   into the app dir and `docker_make.sh` drops it into `/gap_sdk`; if `mcu/vendor/LibTile.a`
   is itself missing, re-fetch it (SHA-pinned) with `mcu/fetch_tiler.sh`.
+- `Can't find a matching Convolution basic kernel` … `_Custom` (GenTile abort) → nntool
+  fused an MBv3 h-swish into a depthwise conv, and the CHW SQ8 DW kernel set has no
+  `KOP_CUSTOM` variant. `build_bench.sh` ships `mcu/patches/0001-*.patch` and
+  `docker_make.sh` applies it to the image's nntool (keeps h-swish a standalone
+  expression kernel — also the fairer latency-oracle shape).
 
 ## Results (fill from silicon; sim columns from `state/winner_mcu/winner.json`)
 

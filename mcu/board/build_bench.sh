@@ -42,8 +42,11 @@ PY
 ) || { echo "IO_READ_FAIL ${MODEL} (need .venv-nas with onnx)"; exit 3; }
 echo "IO in=${IN} out=$((O1+O2+O3+O4+O5+O6)) B  (6 outputs: ${O1} ${O2} ${O3} ${O4} ${O5} ${O6})"
 
-# Assemble the self-contained app dir.
-rm -rf "${APPDIR}"
+# Assemble the self-contained app dir. Tolerate root-owned leftovers from a prior
+# docker build (docker runs as root on the mounted volume -> host `rm` can't remove
+# BUILD*/; the container's `make clean` clears them). Source files are user-owned and
+# get overwritten by the cp's below either way.
+rm -rf "${APPDIR}" 2>/dev/null || true
 mkdir -p "${APPDIR}/model" "${APPDIR}/aq_sample"
 cp "${SRC}/net_bench.c" "${SRC}/Makefile" "${APPDIR}/"
 cp "${EX_ROOT}/examples/ai/classification/model_decl.mk" \
@@ -62,6 +65,18 @@ if [[ -f "${TILER}" ]]; then
     cp "${TILER}" "${APPDIR}/LibTile.a"
 else
     echo "WARN: ${TILER} missing -> run mcu/fetch_tiler.sh; the AutoTiler link will fail without it"
+fi
+
+# nntool in bitcraze/aideck lacks patch 0001, so it fuses the MBv3 h-swish expression
+# into DW convs as a _Custom activation -> GenTile aborts ("no matching Convolution basic
+# kernel"; the CHW SQ8 DW kernel set has no KOP_CUSTOM variant). Ship the patch; the
+# standalone-expression shape is also the fairer latency oracle (every arch pays the
+# activation cost through the same kernel path). docker_make.sh applies it in-container.
+PATCH="${REPO}/mcu/patches/0001-nntool-no-expression-conv-fusion.patch"
+if [[ -f "${PATCH}" ]]; then
+    cp "${PATCH}" "${APPDIR}/nntool_no_expr_fusion.patch"
+else
+    echo "WARN: ${PATCH} missing -> AutoTiler will abort on MBv3 h-swish DW convs"
 fi
 sed "s/@RES@/${RES}/g" "${SRC}/nntool_script.tmpl" > "${APPDIR}/model/nntool_script"
 

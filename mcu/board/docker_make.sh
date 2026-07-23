@@ -25,16 +25,21 @@ MAKEARGS="${*:-clean all image}"
 }
 
 echo "docker: ${IMAGE}   app: ${APP}   make ${MAKEARGS}"
-# In-container prep before make:
+# In-container prep before make (the image is fresh each run -> --rm):
 #   - pin numpy<1.24 (nntool's sklearn uses the removed np.float alias);
-#   - drop the vendored LibTile.a (build_bench.sh shipped it in the app dir) into the
-#     paths AutoTiler links -- the image ships the generators but not the blob.
+#   - drop the vendored LibTile.a (build_bench.sh shipped it) into the paths AutoTiler
+#     links -- the image ships the generators but not the closed-source blob;
+#   - apply patch 0001 to the image's nntool so MBv3 h-swish stays a standalone
+#     expression kernel instead of a _Custom DW-conv activation GenTile can't generate.
 exec docker run --rm -v "${EX_ROOT}:/module" "${IMAGE}" /bin/bash -c \
     "pip3 install 'numpy<1.24' -q 2>/dev/null; \
      if [ -f /module/${APP}/LibTile.a ]; then \
        mkdir -p /gap_sdk/tools/autotiler_v3/Autotiler; \
        cp /module/${APP}/LibTile.a /gap_sdk/tools/autotiler_v3/Autotiler/LibTile.a; \
        cp /module/${APP}/LibTile.a /gap_sdk/tools/autotiler_v3/libtile.4.3.5.a; \
+     fi; \
+     if [ -f /module/${APP}/nntool_no_expr_fusion.patch ]; then \
+       patch -p1 -d /gap_sdk -i /module/${APP}/nntool_no_expr_fusion.patch || echo 'PATCH FAILED (nntool expr-fusion)'; \
      fi; \
      source /gap_sdk/configs/ai_deck.sh; \
      cd /module/${APP} && make ${MAKEARGS}"
