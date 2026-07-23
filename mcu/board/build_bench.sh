@@ -51,6 +51,18 @@ cp "${EX_ROOT}/examples/ai/classification/model_decl.mk" \
    "${EX_ROOT}/examples/ai/classification/config.ini" "${APPDIR}/"
 cp "${ONNX}" "${APPDIR}/${MODEL}.onnx"
 cp "${CALIB}"/*.jpg "${APPDIR}/aq_sample/"
+
+# The closed-source AutoTiler blob (libtile.4.3.5.a) is ABSENT from bitcraze/aideck
+# (GreenWaves' fetch flow is dead), yet that image pins the exact TILER_VER=4.3.5 +
+# gap_sdk a23026507efe our sim toolchain does. Ship our SHA-pinned vendored copy so
+# docker_make.sh can drop it into /gap_sdk. Gitignored + EULA-restricted to GAP-target
+# compiles (our exact use); the app dir is throwaway, not committed.
+TILER="${REPO}/mcu/vendor/LibTile.a"
+if [[ -f "${TILER}" ]]; then
+    cp "${TILER}" "${APPDIR}/LibTile.a"
+else
+    echo "WARN: ${TILER} missing -> run mcu/fetch_tiler.sh; the AutoTiler link will fail without it"
+fi
 sed "s/@RES@/${RES}/g" "${SRC}/nntool_script.tmpl" > "${APPDIR}/model/nntool_script"
 
 # Per-model make config the Makefile include's.

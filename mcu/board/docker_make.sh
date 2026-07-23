@@ -25,7 +25,16 @@ MAKEARGS="${*:-clean all image}"
 }
 
 echo "docker: ${IMAGE}   app: ${APP}   make ${MAKEARGS}"
+# In-container prep before make:
+#   - pin numpy<1.24 (nntool's sklearn uses the removed np.float alias);
+#   - drop the vendored LibTile.a (build_bench.sh shipped it in the app dir) into the
+#     paths AutoTiler links -- the image ships the generators but not the blob.
 exec docker run --rm -v "${EX_ROOT}:/module" "${IMAGE}" /bin/bash -c \
     "pip3 install 'numpy<1.24' -q 2>/dev/null; \
+     if [ -f /module/${APP}/LibTile.a ]; then \
+       mkdir -p /gap_sdk/tools/autotiler_v3/Autotiler; \
+       cp /module/${APP}/LibTile.a /gap_sdk/tools/autotiler_v3/Autotiler/LibTile.a; \
+       cp /module/${APP}/LibTile.a /gap_sdk/tools/autotiler_v3/libtile.4.3.5.a; \
+     fi; \
      source /gap_sdk/configs/ai_deck.sh; \
      cd /module/${APP} && make ${MAKEARGS}"

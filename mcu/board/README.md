@@ -61,6 +61,10 @@ yolo11n_pose_160_raw 160 160000        # baseline: more L2 headroom
 - `AttributeError: module 'numpy' has no attribute 'float'` (only if you `docker run`
   by hand) → this image's nntool needs `numpy<1.24`; `docker_make.sh` pins it for you,
   else `pip3 install 'numpy<1.24'` in the container before `make`.
+- `LibTile.a: No such file or directory` → the closed-source AutoTiler blob is absent
+  from the image (GreenWaves is defunct). `build_bench.sh` ships `mcu/vendor/LibTile.a`
+  into the app dir and `docker_make.sh` drops it into `/gap_sdk`; if `mcu/vendor/LibTile.a`
+  is itself missing, re-fetch it (SHA-pinned) with `mcu/fetch_tiler.sh`.
 
 ## Results (fill from silicon; sim columns from `state/winner_mcu/winner.json`)
 
