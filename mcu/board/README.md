@@ -22,12 +22,9 @@ sim omits).
 # 1) assemble the app dir (host, .venv-nas):  <model> <res> [L2] [stack]
 mcu/board/build_bench.sh cand_a5fddcc354bd 192
 
-# 2) build INSIDE the Bitcraze docker (run from ~/aideck-gap8-examples so $PWD -> /module;
-#    `make` on the host fails with "Source sourceme in gap_sdk first" — the SDK env is only
-#    in the container, sourced by ai_deck.sh):
-cd ~/aideck-gap8-examples
-docker run --rm -v "$PWD:/module" bitcraze/aideck /bin/bash -c \
-  'source /gap_sdk/configs/ai_deck.sh; cd /module/examples/ai/net-bench-cand_a5fddcc354bd; make clean all image'
+# 2) build INSIDE the Bitcraze docker (wrapper handles the mount + SDK-source + the
+#    numpy<1.24 nntool fix this image needs; a host `make` dies on "Source sourceme"):
+mcu/board/docker_make.sh cand_a5fddcc354bd
 
 # 3) flash over radio:
 mcu/board/flash_bench.sh cand_a5fddcc354bd
@@ -55,12 +52,15 @@ yolo11n_pose_160_raw 160 160000        # baseline: more L2 headroom
   e.g. `mcu/board/build_bench.sh cand_a5fddcc354bd 192 70000`.
 - **Silence after flashing** → run a smoke build to localise it (a GAP8 crash is
   silent — buffered output is lost on abort):
-  `make clean all image EXTRA_CFLAGS=-DBENCH_SMOKE=3` stops right after
-  `Construct` (use `EXTRA_CFLAGS=`, never `APP_CFLAGS+=` — the latter overrides,
-  not appends, and breaks the build). The last `SMOKE` line reached tells the stage:
+  `mcu/board/docker_make.sh cand_a5fddcc354bd clean all image EXTRA_CFLAGS=-DBENCH_SMOKE=3`
+  stops right after `Construct` (use `EXTRA_CFLAGS=`, never `APP_CFLAGS+=` — the latter
+  overrides, not appends, and breaks the build). The last `SMOKE` line reached tells the stage:
   1 boot · 2 cluster · 3 construct · 4 io-placed · 5 dispatch.
 - Garbled floats → the firmware prints **integers only** (GAP8 `%f` is unreliable);
   the receiver derives ms + FPS on the host.
+- `AttributeError: module 'numpy' has no attribute 'float'` (only if you `docker run`
+  by hand) → this image's nntool needs `numpy<1.24`; `docker_make.sh` pins it for you,
+  else `pip3 install 'numpy<1.24'` in the container before `make`.
 
 ## Results (fill from silicon; sim columns from `state/winner_mcu/winner.json`)
 
