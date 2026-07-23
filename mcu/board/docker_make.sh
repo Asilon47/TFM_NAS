@@ -9,7 +9,12 @@
 #      because they have no neural net -> no nntool step.
 #
 #   mcu/board/docker_make.sh cand_a5fddcc354bd
-#   mcu/board/docker_make.sh cand_a5fddcc354bd clean all image EXTRA_CFLAGS=-DBENCH_SMOKE=3
+#   mcu/board/docker_make.sh cand_a5fddcc354bd clean model image EXTRA_CFLAGS=-DBENCH_SMOKE=3
+#
+# Default target is `clean model image`, NOT `all`: the SDK's `all:: build image flash_fs`
+# chains into a JTAG flash (gap8-openocd + an Olimex adapter we don't have), which aborts
+# make AFTER the .img is already written. `model` runs the AutoTiler codegen; `image` builds
+# the ELF + packs target.board.devices.flash.img. We flash that over RADIO with cfloader.
 set -uo pipefail
 
 MODEL="${1:?usage: docker_make.sh <model> [make args...]}"
@@ -17,7 +22,7 @@ shift || true
 EX_ROOT="${AIDECK_EXAMPLES:-$HOME/aideck-gap8-examples}"
 IMAGE="${AIDECK_IMAGE:-bitcraze/aideck}"
 APP="examples/ai/net-bench-${MODEL}"
-MAKEARGS="${*:-clean all image}"
+MAKEARGS="${*:-clean model image}"
 
 [[ -d "${EX_ROOT}/${APP}" ]] || {
     echo "NO app dir: ${EX_ROOT}/${APP} (run mcu/board/build_bench.sh ${MODEL} <res> first)"

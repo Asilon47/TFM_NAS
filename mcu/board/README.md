@@ -52,7 +52,7 @@ yolo11n_pose_160_raw 160 160000        # baseline: more L2 headroom
   e.g. `mcu/board/build_bench.sh cand_a5fddcc354bd 192 70000`.
 - **Silence after flashing** → run a smoke build to localise it (a GAP8 crash is
   silent — buffered output is lost on abort):
-  `mcu/board/docker_make.sh cand_a5fddcc354bd clean all image EXTRA_CFLAGS=-DBENCH_SMOKE=3`
+  `mcu/board/docker_make.sh cand_a5fddcc354bd clean model image EXTRA_CFLAGS=-DBENCH_SMOKE=3`
   stops right after `Construct` (use `EXTRA_CFLAGS=`, never `APP_CFLAGS+=` — the latter
   overrides, not appends, and breaks the build). The last `SMOKE` line reached tells the stage:
   1 boot · 2 cluster · 3 construct · 4 io-placed · 5 dispatch.
@@ -70,6 +70,11 @@ yolo11n_pose_160_raw 160 160000        # baseline: more L2 headroom
   `KOP_CUSTOM` variant. `build_bench.sh` ships `mcu/patches/0001-*.patch` and
   `docker_make.sh` applies it to the image's nntool (keeps h-swish a standalone
   expression kernel — also the fairer latency-oracle shape).
+- `undefined reference to s<N>_kernel` (app link) → the h-swish expression kernels live in
+  a separate `Expression_Kernels.c`; the Makefile links it via `MODEL_EXPRESSIONS`.
+- `gap8-openocd … no device found (vid 15ba)` / `flash_fs … Error 1` → **harmless**: the
+  SDK's `all` target tries a JTAG flash we don't do. `docker_make.sh` targets `model image`
+  (not `all`), so the `.img` is built and no flash is attempted. We flash over radio.
 
 ## Results (fill from silicon; sim columns from `state/winner_mcu/winner.json`)
 
