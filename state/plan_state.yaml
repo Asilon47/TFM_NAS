@@ -1,10 +1,15 @@
 # Cross-session memory for the NAS execution plan.
 # See PROJECT_PLAN.md for the full checkpoint catalog.
-# 2026-07-15 PIVOT ACTIVE — WS1 = winner-v2-OFA close (AGX, jetson/ MODE=prune_recover) +
-# WS2 = Phase 10 MCU retarget (D5). The numbered checkpoint path is paused at 5.3; read the
-# notes tail + procedure.md "PIVOT 2026-07-15" before resuming anything.
-current_checkpoint: "5.3"   # CP 5.2 CLOSED 2026-07-07 (V3 PAN nano-neck wins the ablation: 0.6287±0.0078 vs control 0.6027, +0.026 — fusion is the lever, the adapter-init prior is an honest null; see procedure.md "CP 5.2 CLOSED"). STAGE 0 COMPLETE same day — THE HONEST E2E TRUTH (procedure.md "STAGE 0 COMPLETE"): baseline re-check 12.75ms fp32 (matches the anchor exactly); winner-v1 e2e 17.69ms fp32 (+38.7% SLOWER — the "12% faster" headline is RETIRED); backbone alone 13.85 vs 11.208 sum -> the @224 calibration INVERTS at 640 (x1.236, DRAM-bound); pose adapter+head offset 3.84ms (data/pose_stem_head_offset.json); fp16 deploy precision WIDENS the gap (baseline 7.58 = 1.68x, winner 12.37 = only 1.43x, +63% — depthwise vs tensor cores; cost.py's R4.3 note predicted this). No LUT-frontier arch can beat the baseline e2e (fastest sum 10.15 -> 16.11 measured; fallbacks benched + stamped in winner.json's additive e2e block, winner_beats_baseline_e2e=false). THE GOOD NUMBER: V3 fp16 = 12.75ms = 78 FPS, MEETS the 60-FPS (16.7ms) deployment bar with 24% headroom. NEXT = user decision on the thesis framing (accuracy-first at 60-FPS-deployable latency + transfer-gap findings chapter vs alternatives), then CP 5.3 AGX full-FTs of V3/V2 (jetson deploy.sh MODE=full_finetune, FT_* selectors ready). LUT-summed latencies are RANKING-ONLY forever.
-last_completed: "5.2"       # CP 5.2 graft-interface ablation — V3 (PAN nano-neck) wins: 0.6287±0.0078 proxy, +0.026 over the neck-less control
+# 2026-07-23 RESEARCH PROGRAMME COMPLETE — the 2026-07-15 pivot's two workstreams both CLOSED
+# WON: (WS1) BEAT-N on the Orin (champion s39d_cap_a_rl, 2026-07-19, a Pareto TRADE) + (WS2)
+# Phase 10 MCU retarget (champion a5fddcc, MCU-native search WON 2026-07-20, DOMINATION
+# CONFIRMED ON REAL GAP8 SILICON 2026-07-23). Terminal result = two-device hardware-conditional
+# NAS (Orin trade + GAP8 domination), measured at both ends. The TFM write-up lives in a
+# SEPARATE repo (user, 2026-07-23). Only two non-blocking in-repo riders remain: persist
+# a5fddcc's champion weights + one real-weights GAP8 run. Read the notes tail + procedure.md
+# "CP 10.3 SILICON" for the full terminal picture.
+current_checkpoint: "10.3"  # TERMINAL 2026-07-23 — research programme COMPLETE (see header + the notes tail "CP 10.3 SILICON"). CP 10.3 = the MCU-native search (telescoped the plan's Phase-10 10.1→10.4), WON 2026-07-20 + silicon-confirmed 2026-07-23: a5fddcc Pareto-DOMINATES the deployed baseline on real GAP8 (15.0% fewer cluster cyc = 6× the sim's 2.4% edge; 0.6299 vs 0.6227 mAP50-95; 2.3× fewer params) — state/winner_mcu/winner.json. Nothing numbered comes after: the TFM write-up is in a SEPARATE repo; old Orin Phases 7–9 (recipe-parity/KD/TRT bundle) were SUPERSEDED by the 2026-07-15 NAS-only pivot (KD tried→null, recipe-lite=the +5pt lever; no shipped TRT bundle); two non-blocking riders remain (persist a5fddcc weights + one real-weights GAP8 run). ── Prior numbered-path note (historical): CP 5.2 CLOSED 2026-07-07 (V3 PAN nano-neck wins the ablation: 0.6287±0.0078 vs control 0.6027, +0.026 — fusion is the lever, the adapter-init prior is an honest null; see procedure.md "CP 5.2 CLOSED"). STAGE 0 COMPLETE same day — THE HONEST E2E TRUTH (procedure.md "STAGE 0 COMPLETE"): baseline re-check 12.75ms fp32 (matches the anchor exactly); winner-v1 e2e 17.69ms fp32 (+38.7% SLOWER — the "12% faster" headline is RETIRED); backbone alone 13.85 vs 11.208 sum -> the @224 calibration INVERTS at 640 (x1.236, DRAM-bound); pose adapter+head offset 3.84ms (data/pose_stem_head_offset.json); fp16 deploy precision WIDENS the gap (baseline 7.58 = 1.68x, winner 12.37 = only 1.43x, +63% — depthwise vs tensor cores; cost.py's R4.3 note predicted this). No LUT-frontier arch can beat the baseline e2e (fastest sum 10.15 -> 16.11 measured; fallbacks benched + stamped in winner.json's additive e2e block, winner_beats_baseline_e2e=false). THE GOOD NUMBER: V3 fp16 = 12.75ms = 78 FPS, MEETS the 60-FPS (16.7ms) deployment bar with 24% headroom. NEXT = user decision on the thesis framing (accuracy-first at 60-FPS-deployable latency + transfer-gap findings chapter vs alternatives), then CP 5.3 AGX full-FTs of V3/V2 (jetson deploy.sh MODE=full_finetune, FT_* selectors ready). LUT-summed latencies are RANKING-ONLY forever.
+last_completed: "10.3"      # MCU-native search WON (2026-07-20) + GAP8 silicon domination CONFIRMED (2026-07-23); Orin arm = BEAT-N WON (2026-07-19, s39d_cap_a_rl). Two-device hardware-conditional NAS, delivered on measurement. ── Prior (historical): CP 5.2 graft-interface ablation — V3 (PAN nano-neck) wins: 0.6287±0.0078 proxy, +0.026 over the neck-less control
 completed:
   - "0"      # Phase 0 — Jetson LUT (PROJECT_PLAN.md:47)
   - "1.1"    # Skeleton repo + deps
@@ -26,6 +31,19 @@ completed:
   - "5.1"    # Variant library (detect/neck.py + GraftedPoseModel(neck=)): zero-gated nano-neck, identity at init, model[-1]==head preserved
   - "6.1"    # DepGraph pruning harness (prune/prune_graft.py): CPU-smoke DoD PASS — closed OUT OF ORDER 2026-07-06 while CP 5.2's GPU run is on Kaggle (current_checkpoint stays on the critical path; CP 1.4 precedent)
   - "5.2"    # Graft-interface ablation (eval/graft_ablate.py, Kaggle T4): V3 PAN nano-neck 0.6287±0.0078 vs control 0.6027±0.0131 (+0.026); adapter-init prior = honest null; gates opened (g43~0.39)
+  # ── Post-CP-5.2 milestones (the 2026-07-15 pivot telescoped the numbered path; these are the
+  #    artifact-backed closes after 5.2, in the project's own labels — full detail in the notes tail) ──
+  - "Stage 0" # E2E honest truth (2026-07-07): winner-v1 +38.7% SLOWER e2e → the "12% faster" headline RETIRED; V3 PAN fp16 12.75ms = 78 FPS meets the 60-FPS bar (procedure.md "STAGE 0 COMPLETE")
+  - "3b"      # Honest-ceiling re-search CLOSED (2026-07-07): feasible band tops at proxy 0.4965 → the null trade CONFIRMED
+  - "3c"      # Dense-family scaling arm CLOSED (2026-07-08): 3-point width curve + measured cross-family verdict — latency, not accuracy, separates the four families
+  - "6.2"     # Structured-pruning ladders CLOSED (2026-07-08→12): graft (6.2-G) 0.816/0.759, baseline (6.2-B) 0.834/0.790/0.809, technique table (6.2-T/6.4, HALP-lite champ); every graft strictly dominated on the measured frontier
+  - "6.3"     # Pruning-as-search program CLOSED (2026-07-13, WAVE-2): per-stage width search CONVERGES to the dense Pareto boundary {r20..w22..w25} — no dominator; a valid negative result
+  - "beat-n"  # BEAT-N WON (2026-07-19): Orin champion s39d_cap_a_rl 0.8721±0.0051 @ measured 11.59/6.765 ms — beats baseline latency 9.0/12.7% within 0.5pt (state/winner_beatn/winner.json)
+  - "10.1"    # GAP8 toolchain bring-up + feasibility CLOSED (2026-07-16): both families compile through NNTool/AutoTiler/GVSOC; the pruned graft is 1.94× faster than baseline on GAP8
+  - "10.3"    # MCU-NATIVE SEARCH WON (2026-07-20) + SILICON-CONFIRMED (2026-07-23) → TERMINAL: a5fddcc Pareto-DOMINATES baseline on real GAP8 (55.97M vs 65.83M cluster cyc = 15.0% faster, 6× the sim's 2.4%; 0.6299 vs 0.6227 mAP; 2.3× fewer params) — state/winner_mcu/winner.json
+  # Old Orin Phases 7 (recipe-parity) / 8 (KD) / 9 (TRT bundle): SUPERSEDED by the 2026-07-15
+  # NAS-only pivot, not formally closed — KD was tried (beat-n K arm → null-to-negative) and
+  # recipe-lite was the +5pt lever (beat-n R arm); a shipped TRT deployment bundle was out of scope.
 # NOTE: CP 1.4 (ImageNet sanity) CLOSED 2026-06-18 — backfilled out of order.
 # Re-framed from an absolute-bar DoD to a rank-fidelity gate (the OFA accuracy
 # predictor is a ranking model with a ~constant absolute offset). Spearman
@@ -444,3 +462,35 @@ notes: |
   CLOSED". Caveats: GAP8 sim cycles ranking-only (no AI-deck HW); champion weights not
   persisted (one save-run owed). Infra: mcu/cycle_oracle.py, mcu/mcu_screen.py,
   eval/candidate_proxy.py, kaggle MODE=candidate_proxy/proxy_rank.
+
+  **CP 10.3 SILICON — GAP8 DOMINATION CONFIRMED ON REAL HARDWARE 2026-07-23 → RESEARCH
+  PROGRAMME COMPLETE (terminal; the pivot's WS1+WS2 are both closed WON).** a5fddcc went from
+  GVSOC sim to the real Crazyflie AI-deck GAP8 (new firmware mcu/board/net_bench): on silicon
+  it beats the deployed baseline by 15.0% on latency (55.97M vs 65.83M cluster cyc; 319.8 vs
+  376.2 ms; +17.6% FPS) — 6× the sim's 2.4% edge. The baseline (yolo11n, C2PSA attention) runs
+  +10% MORE cycles on real HW than GVSOC modeled while the graft (depthwise MBv3) runs -4%
+  FEWER → real silicon WIDENS the depthwise family's advantage. Sim was ranking-only by design
+  and behaved so: big separations right, the near-tie 863c-vs-a5fddcc mis-ordered (863c 52.35M
+  is 6.5% fewer on silicon → a trade, not a domination) — the winner is unaffected
+  (accuracy-first pick). The two-device hardware-conditional-NAS result now stands ON
+  MEASUREMENT at both ends: OFA-graft family = TRADE on the Orin (beat-n 0.8721 @ 11.59/6.77
+  ms) + DOMINATION on the GAP8 (a5fddcc 0.6299 mAP @ 15% fewer real cycles). Stamp:
+  state/winner_mcu/winner.json (silicon_measured block) + models/README.md + procedure.md
+  "CP 10.3 SILICON". Bring-up cost: six toolchain gaps + a flash-size wall (STRIP_WEIGHTS →
+  540 KB radio-flashable image) + a CL-clock boot hang, all baked into mcu/board/.
+
+  **What "done" means from here (2026-07-23, user-confirmed):**
+  1. The RESEARCH is complete — terminal, defensible, silicon-confirmed; the numbered checkpoint
+     path terminates at CP 10.3.
+  2. The TFM WRITE-UP (the deliverable) is tracked in a SEPARATE repo — NOT this one.
+  3. Two non-blocking in-repo riders remain: (a) persist a5fddcc's champion WEIGHTS (one
+     save-run; candidate_proxy is only an eval runner) and (b) one REAL-WEIGHTS GAP8 run for a
+     headline absolute — the ranking + the 15% ratio are robust to it (int8 cycle/DMA counts are
+     data-independent), so the silicon claim already holds; these only upgrade "sim/stub" to
+     "measured/real weights".
+  4. The old Orin deployment phases (7 recipe-parity / 8 KD / 9 TRT bundle) were SUPERSEDED by
+     the 2026-07-15 NAS-only pivot, not failed: KD was tried (beat-n K arm → null-to-negative),
+     recipe-lite was the decisive +5pt lever (beat-n R arm), and a shipped TRT bundle was out of
+     the final NAS-demonstration scope. Recorded as scope, not silently-open checkpoints.
+  5. Standing limitation (both devices): the GAP8 champion dominates but at 2.7–3.8 FPS, below
+     the 15–30 FPS racing bar — the deployment gap, stated honestly.
