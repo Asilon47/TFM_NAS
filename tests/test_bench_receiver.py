@@ -14,7 +14,7 @@ parse_bench_line = bench_receiver.parse_bench_line
 def test_parses_bench_line_and_derives_ms_fps():
     line = (
         "BENCH model=cand_a5fddcc354bd res=192 cyc=58394932 "
-        "nodes=58390000 clk_us=333000 n=20 fcl=175"
+        "clk_us=333000 n=20 fcl=175"
     )
     rec = parse_bench_line(line)
     assert rec is not None
@@ -35,6 +35,6 @@ def test_non_bench_line_returns_none():
 
 
 def test_zero_clk_us_does_not_crash():
-    rec = parse_bench_line("BENCH model=m res=160 cyc=1 nodes=1 clk_us=0 n=20 fcl=175")
+    rec = parse_bench_line("BENCH model=m res=160 cyc=1 clk_us=0 n=20 fcl=175")
     assert rec is not None
     assert rec["fps"] is None and rec["ms"] == 0.0

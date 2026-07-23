@@ -21,7 +21,7 @@ import sys
 
 _BENCH = re.compile(
     r"BENCH\s+model=(?P<model>\S+)\s+res=(?P<res>\d+)\s+cyc=(?P<cyc>\d+)\s+"
-    r"nodes=(?P<nodes>\d+)\s+clk_us=(?P<clk_us>\d+)\s+n=(?P<n>\d+)\s+fcl=(?P<fcl>\d+)"
+    r"clk_us=(?P<clk_us>\d+)\s+n=(?P<n>\d+)\s+fcl=(?P<fcl>\d+)"
 )
 
 

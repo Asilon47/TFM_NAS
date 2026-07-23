@@ -206,8 +206,12 @@ static void net_bench(void)
         pi_cluster_send_task_to_cl(&cluster_dev, cl_task);
     }
 
-    /* Forever: N timed runs -> mean us/inference; AT_GraphPerf cluster cycles. */
+    /* Forever: N timed runs -> per-inference cycles + wall-clock us. AT_GraphPerf_CNN_Total
+     * ACCUMULATES across every CNN() call (and wraps uint32), so snapshot it around the loop
+     * and take the delta -- unsigned subtraction is correct even across a single wrap, since
+     * the per-loop delta (BENCH_ITERS * ~56 M) is far below 2^32. */
     while (1) {
+        unsigned int at0 = AT_GraphPerf_CNN_Total;
         unsigned int t0 = pi_time_get_us();
         for (int i = 0; i < BENCH_ITERS; i++) {
             pi_cluster_send_task_to_cl(&cluster_dev, cl_task);
@@ -216,18 +220,13 @@ static void net_bench(void)
                 pmsis_exit(-5);
             }
         }
-        unsigned int t1 = pi_time_get_us();
-
-        unsigned int n_nodes = sizeof(AT_GraphPerf) / sizeof(unsigned int);
-        unsigned int sum_nodes = 0;
-        for (unsigned int i = 0; i < n_nodes; i++) sum_nodes += AT_GraphPerf[i];
-        unsigned int at_total = AT_GraphPerf_CNN_Total;
-        unsigned int us_per = (t1 - t0) / BENCH_ITERS;
+        unsigned int us_per = (pi_time_get_us() - t0) / BENCH_ITERS;
+        unsigned int cyc_per = (AT_GraphPerf_CNN_Total - at0) / BENCH_ITERS;
 
         cpxPrintToConsole(LOG_TO_CRTP,
-                          "BENCH model=%s res=%d cyc=%u nodes=%u clk_us=%u n=%d fcl=%d\n",
-                          BENCH_STR(AT_MODEL_PREFIX), AT_MODEL_RES, at_total,
-                          sum_nodes, us_per, BENCH_ITERS, FREQ_CL);
+                          "BENCH model=%s res=%d cyc=%u clk_us=%u n=%d fcl=%d\n",
+                          BENCH_STR(AT_MODEL_PREFIX), AT_MODEL_RES, cyc_per,
+                          us_per, BENCH_ITERS, FREQ_CL);
     }
 }
 
