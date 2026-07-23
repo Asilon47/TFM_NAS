@@ -54,6 +54,10 @@ APP_CFLAGS += -DconfigUSE_TIMERS=1 -DINCLUDE_xTimerPendFunctionCall=1 -DFS_PARTI
 APP_CFLAGS += -DFREQ_FC=$(FREQ_FC) -DFREQ_CL=$(FREQ_CL) -DTXQ_SIZE=$(CPX_TXQ_SIZE) -DRXQ_SIZE=$(CPX_RXQ_SIZE)
 # AT_*_BYTES and AT_MODEL_RES come in via model_config.mk's BENCH_MODEL_CFLAGS.
 APP_CFLAGS += $(BENCH_MODEL_CFLAGS)
+# Command-line extras go through EXTRA_CFLAGS, e.g. `make ... EXTRA_CFLAGS=-DBENCH_SMOKE=3`.
+# Do NOT use `make APP_CFLAGS+=...`: a var set on the command line OVERRIDES (cannot be
+# += by) the makefile, which would wipe -DPERF/-DAT_MODEL_PREFIX/etc. and break the build.
+APP_CFLAGS += $(EXTRA_CFLAGS)
 APP_INC = ../../../lib/cpx/inc
 
 READFS_FILES=$(abspath $(MODEL_TENSORS))
