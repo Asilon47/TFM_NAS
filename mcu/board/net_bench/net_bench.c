@@ -96,11 +96,12 @@ static void run_cnn(void *arg)
 
 static void net_bench(void)
 {
-    /* Clocks: CL=175 to match the sim's basis; report FREQ_CL in the line so
-     * cyc<->ms is reconstructable on the host. Voltage first, as classification. */
+    /* Clocks: set FC here, but the CL FLL is set LATER, after pi_cluster_open -- the
+     * cluster domain is power-gated until then, and setting its frequency early hangs
+     * the GAP8 before any CPX output (the classification example comments this exact
+     * line out for the same reason). Voltage first, as classification. */
     __pi_pmu_voltage_set(PI_PMU_DOMAIN_FC, 1200);
     pi_freq_set(PI_FREQ_DOMAIN_FC, FREQ_FC * 1000 * 1000);
-    pi_freq_set(PI_FREQ_DOMAIN_CL, FREQ_CL * 1000 * 1000);
 
     struct pi_uart_conf uart_conf;
     struct pi_device uart_dev;
@@ -133,6 +134,9 @@ static void net_bench(void)
         cpxPrintToConsole(LOG_TO_CRTP, "ERR cluster open\n");
         pmsis_exit(-2);
     }
+    /* CL FLL now safe to set (cluster domain powered). 175 MHz = the sim's cycle->ms
+     * basis; AT_GraphPerf is in cycles (freq-independent) but the wall-clock ms needs it. */
+    pi_freq_set(PI_FREQ_DOMAIN_CL, FREQ_CL * 1000 * 1000);
 
 #if BENCH_SMOKE == 2
     cpxPrintToConsole(LOG_TO_CRTP, "SMOKE 2 cluster ok\n");
