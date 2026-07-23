@@ -43,7 +43,13 @@ PULP_APP = net_bench
 USE_PMSIS_BSP=1
 
 APP = net_bench
-APP_SRCS += net_bench.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c $(MODEL_GEN_C) $(CNN_LIB)
+# Target-side h-swish/elementwise expression kernels AutoTiler emits as a SEPARATE file
+# (patch 0001 keeps h-swish out of the convs -> the s<N>_kernel funcs the graph calls live
+# here, not in <prefix>Kernels.c). They compile INTO the app; `all:: model` generates the
+# .c before this links. Mirrors mcu/probes/cyc/Makefile -- without it the app link fails
+# with a flood of "undefined reference to s<N>_kernel".
+MODEL_EXPRESSIONS = $(MODEL_BUILD)/Expression_Kernels.c
+APP_SRCS += net_bench.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c $(MODEL_GEN_C) $(MODEL_EXPRESSIONS) $(CNN_LIB)
 
 APP_CFLAGS += -g -Os -mno-memcpy -fno-tree-loop-distribute-patterns
 APP_CFLAGS += -I. -I$(MODEL_COMMON_INC) -I$(TILER_EMU_INC) -I$(TILER_INC) $(CNN_LIB_INCLUDE) -I$(realpath $(MODEL_BUILD))
