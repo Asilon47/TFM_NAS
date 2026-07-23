@@ -198,3 +198,31 @@ procedure.md "CP 10.3 CLOSED".
 **a5fddcc Pareto-dominates the deployed baseline on GAP8** (every seed ≥ baseline; mean
 +0.72 pt, 2.4 % fewer cycles, 2.3× fewer params). The same OFA-graft family is a *trade* on
 the Orin (beat-n, above) and a *domination* on the MCU — the hardware-conditional finding.
+
+### On real silicon (2026-07-23) — the sim confirmed, the domination *widened*
+
+First **measured** GAP8 numbers (real Crazyflie AI-deck, not GVSOC), via `mcu/board/net_bench`
+(int8 AutoTiler graph on-chip → hardware `AT_GraphPerf` cluster cycles + `pi_time` wall-clock
+over CPX; CL 175 MHz; per-inference mean of 20–33 reads, spread <0.03 %). Full record:
+procedure.md "CP 10.3 SILICON"; raw logs `data/mcu/board/*.txt`.
+
+| model | res | **meas cyc** | **meas ms** | **meas FPS** | sim cyc | sim FPS | sil−sim |
+|---|---|---|---|---|---|---|---|
+| yolo11n-pose (baseline) | 160 | **65.83 M** | 376.2 | **2.66** | 59.85 M | 2.92 | +10.0 % |
+| **a5fddcc (winner)** | 192 | **55.97 M** | 319.8 | **3.13** | 58.39 M | 3.0 | −4.1 % |
+| 19efff (speed) | 192 | 46.34 M | 264.8 | 3.78 | 43.26 M | 4.05 | +7.1 % |
+| 863c (acc-max) | 192 | 52.35 M | 299.2 | 3.34 | 60.44 M | 2.91 | −13.4 % |
+
+- **a5fddcc dominates the baseline by 15.0 % on silicon** (55.97 vs 65.83 M cyc; 319.8 vs
+  376.2 ms; 3.13 vs 2.66 FPS) — **6× the sim's 2.4 % edge**. The baseline (yolo) runs +10 %
+  *more* cycles on real HW than GVSOC modeled while the graft runs −4 % *fewer*, so silicon
+  *widens* the graft's advantage. CP 10.3's domination **holds and strengthens**.
+- **meas ms = cyc / 175 MHz** for every model → the AT_GraphPerf cluster count IS the whole
+  latency (DMA stalls counted as cluster stalls; no hidden overhead).
+- **Sim ranking is coarse on near-ties:** 863c (52.35 M) is 6.5 % FEWER cycles than a5fddcc on
+  silicon, flipping the sim's *a5fddcc-dominates-863c* into a trade (863c faster, a5fddcc
+  +2.7 pts more accurate). Winner unaffected (picked accuracy-first among baseline-dominators);
+  vindicates "never resolve a sim near-tie by cycles."
+- **Caveats:** stub int8 weights (16 KB-truncated partition — a flash-size fix; cycles/DMA are
+  data-independent so valid, a real-weights run owed for a headline absolute); raw-head (excludes
+  DFL/NMS, both families); still 2.7–3.8 FPS, below the 15–30 FPS racing bar (the standing gap).

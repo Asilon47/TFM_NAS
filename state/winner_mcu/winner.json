@@ -59,5 +59,20 @@
     "baseline is single-seed (A3); a5fddcc's WORST seed (0.6227) still matches it, so the result is robust to baseline noise",
     "champion WEIGHTS are not persisted (candidate_proxy is an eval runner) \u2014 one save-run owed for deployable weights; the arch+spec+ONNX are pinned and reproducible"
   ],
-  "timestamp": "2026-07-20T13:00:00Z"
+  "timestamp": "2026-07-20T13:00:00Z",
+  "silicon_measured": {
+    "date": "2026-07-23",
+    "source": "gap8_aideck_hw",
+    "method": "mcu/board/net_bench on the real Crazyflie AI-deck GAP8; AT_GraphPerf cluster cycles + pi_time wall-clock over CPX; CL 175 MHz; per-inference mean of 20-33 reads (spread <0.03%); int8; STUB weights (16KB-truncated partition, a radio-flash-size fix -- cycles/DMA are data-independent so valid)",
+    "champion_a5fddcc": {"cycles": 55966500, "ms": 319.82, "fps": 3.13},
+    "baseline_yolo11n": {"cycles": 65832700, "ms": 376.2, "fps": 2.66},
+    "alt_19efff": {"cycles": 46342800, "ms": 264.83, "fps": 3.78},
+    "alt_863c": {"cycles": 52353900, "ms": 299.18, "fps": 3.34},
+    "verdict": "a5fddcc DOMINATES the baseline by 15.0% on real silicon (55.97M vs 65.83M cyc; 319.8 vs 376.2 ms; +17.6% FPS) -- 6x the sim's 2.4% edge. The baseline runs +10% more cycles on real HW than GVSOC modeled while the graft runs -4% fewer, widening the graft's advantage. CP 10.3's domination HOLDS and STRENGTHENS on silicon.",
+    "caveats": [
+      "STUB weights (data-independent int8 cycles -> valid; a real-weights run owed for a headline absolute; ranking + 15% ratio robust to it)",
+      "sim ranking coarse on near-ties: 863c (52.35M cyc) is 6.5% FEWER than a5fddcc on silicon, flipping sim's a5fddcc-dominates-863c into a trade; winner unaffected (accuracy-first pick)",
+      "raw-head excludes DFL/anchor/NMS (both families, FC-side); CL 175 MHz reported; still 2.7-3.8 FPS, below the 15-30 FPS racing bar"
+    ]
+  }
 }

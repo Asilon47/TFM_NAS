@@ -4640,3 +4640,112 @@ save-run owed for deployable weights; arch+spec+ONNX are pinned and reproducible
 trade at matched accuracy) and CP 10.3 won the **GAP8** (0.6299 @ 3.0 FPS, a strict
 domination) — the same OFA-graft family, hardware-conditional: marginal on Orin, decisive
 on the MCU. That is the thesis's hardware-conditional-NAS spine, delivered on measurement.
+
+## CP 10.3 SILICON — a5fddcc's GAP8 domination CONFIRMED on real AI-deck hardware (2026-07-23)
+
+**The GVSOC sim number went to silicon. On the real Crazyflie AI-deck GAP8, a5fddcc beats the
+deployed baseline by 15.0 % on latency — 6× the 2.4 % the sim predicted. The
+hardware-conditional-NAS claim is now measured, not simulated.**
+
+### What was built (`mcu/board/`, new module)
+
+A board bench firmware `net_bench.c` = the Bitcraze `classification` example's FreeRTOS+CPX
+board shell + `mcu/probes/cyc/net_cyc.c`'s HyperRAM-IO + `AT_GraphPerf` core + a timing loop.
+Per model it runs the int8 AutoTiler graph N=20×, reads the hardware `AT_GraphPerf` cluster
+cycles + `pi_time_get_us()` wall-clock, and reports over the CPX console (radio, or WiFi). Glue:
+`build_bench.sh` (assembles a self-contained aideck app dir + reads the 1-in/6-out int8 byte
+counts from the ONNX), `docker_make.sh` (builds in the bitcraze/aideck docker), `flash_bench.sh`
+(cfloader radio → `deck-bcAI:gap8-fw`), `bench_receiver.py` (tested cflib CPX console reader).
+Design+plan: `docs/superpowers/{specs,plans}/2026-07-22-mcu-board-net-bench*`.
+
+### The silicon numbers (all 4 finalists, real GAP8, CL 175 MHz, per-inference)
+
+| model | res | **silicon cyc** | **silicon ms** | **silicon FPS** | sim cyc | sim FPS | sil−sim cyc |
+|---|---|---|---|---|---|---|---|
+| yolo11n-pose (baseline) | 160 | **65.83 M** | **376.2** | **2.66** | 59.85 M | 2.92 | +10.0 % |
+| **a5fddcc (winner)** | 192 | **55.97 M** | **319.8** | **3.13** | 58.39 M | 3.0 | −4.1 % |
+| 19efff (speed) | 192 | 46.34 M | 264.8 | 3.78 | 43.26 M | 4.05 | +7.1 % |
+| 863c (acc-max) | 192 | 52.35 M | 299.2 | 3.34 | 60.44 M | 2.91 | −13.4 % |
+
+Each is the mean of 20–33 readings; run-to-run spread <0.03 % (a5fddcc 55.959–55.972 M).
+**meas ms = cyc / 175 MHz to 4 sig figs for every model** — the AT_GraphPerf cluster cycle
+count IS the whole inference latency (DMA/HyperRAM stalls are counted as cluster stall cycles),
+so there is no hidden FC-side or memory overhead beyond it. Raw logs: `data/mcu/board/*.txt`.
+
+### The finding: a5fddcc DOMINATES the baseline ~6× harder than the sim said
+
+- **Cycles 55.97 M vs 65.83 M → a5fddcc is 15.0 % fewer** (baseline +17.6 % more);
+  **latency 319.8 vs 376.2 ms → 15.0 % faster; FPS 3.13 vs 2.66 → +17.6 %.**
+- The sim predicted a **2.4 %** cycle edge; silicon delivers **15.0 %**. Why: the baseline
+  (yolo11n, C2PSA attention + heavier memory pattern) runs **+10 % MORE** cycles on real
+  silicon than GVSOC modeled, while a5fddcc (depthwise MBv3) runs **−4 % fewer** — real
+  hardware *widens* the graft's advantage. The CP 10.1 "MCU favours the depthwise family"
+  premise, now on-silicon.
+- **CP 10.3's "a5fddcc Pareto-dominates the baseline" HOLDS on silicon** — more accurate
+  (0.6299 vs 0.6227, GPU validator, unchanged) AND fewer cycles (measured), stronger than sim.
+
+### Sim-vs-silicon: accurate to ±13 %, coarse on near-ties (the discipline vindicated)
+
+The sim was **ranking-only** by construction, and silicon shows exactly that: it got the big
+separations right (all grafts < baseline; 19efff the clear speed point) but **mis-ordered the
+near-tie 863c vs a5fddcc** — sim had a5fddcc dominating 863c (58.39 < 60.44 M); silicon flips it
+(863c **52.35 M is 6.5 % FEWER** than a5fddcc's 55.97 M). So on silicon 863c/a5fddcc are a
+Pareto **trade** (863c faster, a5fddcc +2.7 pts more accurate), not a domination. This does not
+move the winner: a5fddcc was picked accuracy-first among the baseline-dominators, and 863c
+(0.603) is the less-accurate alternate regardless of its cycle re-pricing. It *does* vindicate
+"never resolve a sim near-tie by cycles — ±13 % noise swaps adjacent points" — the same reason
+[[cp35-winners-curse]] de-noises finals rather than trusting an argmax.
+
+### The bring-up saga — six toolchain gaps + a flash-size wall + a boot hang
+
+First-ever build of a NAS graft graph onto real GAP8, peeled in order (all fixes baked into
+`mcu/board/`):
+1. **numpy** — bitcraze/aideck's nntool imports old sklearn using the removed `np.float`; pin
+   `numpy<1.24` in-container. (streamer/helloworld never hit it — no NN → no nntool step.)
+2. **LibTile.a** — the closed-source AutoTiler blob is absent (GreenWaves defunct); the image
+   pins the exact `TILER_VER=4.3.5` + gap_sdk `a23026507efe` our sim toolchain does, so our
+   SHA-pinned `mcu/vendor/LibTile.a` (541f4978…) drops straight in.
+3. **h-swish DW conv** — nntool fuses MBv3 h-swish into a depthwise conv as a `_Custom`
+   activation GenTile can't generate; apply `mcu/patches/0001` (keeps it a standalone
+   expression kernel — also the fairer oracle shape).
+4. **`<prefix>.h` shim** — AutoTiler's Kernels.h `#include`s a per-model header the app must
+   supply (declares `_L3_Flash`); generate it, as `cyc_probe.sh` does for the sim.
+5. **`Expression_Kernels.c`** — the h-swish expression kernels link from a separate file; add
+   `MODEL_EXPRESSIONS` to APP_SRCS (mirrors `mcu/probes/cyc/Makefile`).
+6. **JTAG-flash abort** — the SDK's `all` target chains into a JTAG flash we don't have (no
+   Olimex); target `model image` instead. The `.img` builds; we flash over radio.
+
+Then two on hardware:
+- **Flash-size wall.** cfloader-over-radio reliably flashed the 76 KB streamer but the **1.7 MB**
+  full bench stalled at 99 % / dropped the link / browned the drone out across many attempts;
+  USB deck-flash is impossible (the bootloader reset drops the USB CRTP link → `NoneType …
+  send_packet`, confirming the "radio-only" note). Fix: **`STRIP_WEIGHTS`** — the bench measures
+  data-independent cycles, so truncate the 1.17 MB int8 weight partition to a 16 KB stub →
+  **540 KB image** (baseline 272 KB) that flashes cleanly. That confirmed size was the wall.
+- **CL-clock boot hang.** Setting the cluster FLL (`pi_freq_set(PI_FREQ_DOMAIN_CL)`) *before*
+  `pi_cluster_open` hangs the GAP8 before any CPX output (the classification example comments
+  that exact line out) → total silence with a correctly-flashed image. Move it after cluster
+  open — the last blocker between a flashed image and the first `*** net_bench` line.
+- **cyc reporting** — `AT_GraphPerf_CNN_Total` accumulates across every CNN() call (and wraps
+  uint32); snapshot-and-delta per loop for the per-inference number.
+
+Also, on power: a depleted flight battery browns the drone out mid-flash — power from USB (the
+flash link is still radio; only *flashing over `usb://`* fails).
+
+### Caveats (carry in any silicon claim)
+
+- **Stub weights.** The 16 KB-truncated partition means the graph runs on garbage weights. int8
+  AutoTiler cycles + DMA byte-counts are data-independent (the CP 10.1 / net_cyc.c premise), so
+  cyc and ms are valid and the a5fddcc-vs-baseline comparison is fair (identical methodology). A
+  real-weights run is the gold standard and is owed before a headline *absolute* (the ranking +
+  the 15 % ratio are robust to it).
+- **Raw-head graph** excludes DFL decode + anchor concat + NMS (both families, FC-side C) —
+  cancels from the ratio, same as the sim.
+- **CL 175 MHz** set explicitly + reported (the sim's basis; AT_GraphPerf is freq-independent).
+- Still **2.7–3.8 FPS**, below the 15–30 FPS racing bar — the standing deployment gap, unchanged.
+- Champion accuracy is the GPU-validated de-noised 0.6299 (unchanged); silicon measures latency.
+
+**Bottom line: the MCU leg's headline — a NAS-born net Pareto-dominating the deployed baseline
+on a real nano-drone MCU — is now confirmed on silicon, and larger than the sim promised (15 %
+vs 2.4 % latency). The two-device hardware-conditional-NAS result (Orin trade, GAP8 domination)
+stands on measurement at both ends.**
