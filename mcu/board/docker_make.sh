@@ -29,7 +29,21 @@ MAKEARGS="${*:-clean model image}"
     exit 2
 }
 
-echo "docker: ${IMAGE}   app: ${APP}   make ${MAKEARGS}"
+# STRIP_WEIGHTS=1: truncate the int8 weight READFS partition to a stub AFTER codegen,
+# BEFORE the image is packed. The cycle/FPS bench is data-independent (fixed int8 tile
+# loops), so garbage weights give the SAME numbers -- and the resulting ~0.5 MB image is
+# radio-flash-friendly vs the 1.7 MB full one. `make image` re-packs READFS from the
+# (now-truncated) .dat; it does not regenerate it. Guarded by SMOKE=3 in practice: if
+# Construct can't cope without real weights it prints ERR construct rc=1 on the console.
+if [ "${STRIP_WEIGHTS:-0}" = "1" ]; then
+    SZ="${STRIP_SIZE:-16384}"
+    echo "STRIP_WEIGHTS=1 -> truncate weights to ${SZ} B post-codegen (data-independent cycles)"
+    INNER="make clean model $* && truncate -s ${SZ} BUILD_MODEL_SQ8BIT/*_L3_Flash_Const.dat && ls -l BUILD_MODEL_SQ8BIT/*_L3_Flash_Const.dat && make image $*"
+else
+    INNER="make ${MAKEARGS}"
+fi
+
+echo "docker: ${IMAGE}   app: ${APP}   ${INNER}"
 # In-container prep before make (the image is fresh each run -> --rm):
 #   - pin numpy<1.24 (nntool's sklearn uses the removed np.float alias);
 #   - drop the vendored LibTile.a (build_bench.sh shipped it) into the paths AutoTiler
@@ -47,4 +61,4 @@ exec docker run --rm -v "${EX_ROOT}:/module" "${IMAGE}" /bin/bash -c \
        patch -p1 -d /gap_sdk -i /module/${APP}/nntool_no_expr_fusion.patch || echo 'PATCH FAILED (nntool expr-fusion)'; \
      fi; \
      source /gap_sdk/configs/ai_deck.sh; \
-     cd /module/${APP} && make ${MAKEARGS}"
+     cd /module/${APP} && ${INNER}"
