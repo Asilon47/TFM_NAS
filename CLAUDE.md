@@ -33,7 +33,7 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ---
 
-## Current state (as of last update: CP 6.2-G closed + PRUNING-AS-SEARCH program adopted; frontier fully measured — see "Lowest-friction next build", 2026-07-11)
+## Current state (as of last update: RESEARCH PROGRAMME COMPLETE — CP 10.3 MCU-native search WON + GAP8 silicon-confirmed 2026-07-23; the terminal result is a two-device hardware-conditional NAS; see "Lowest-friction next build" + `state/plan_state.yaml`)
 
 - **Phase 0 (LUT):** COMPLETE. `data/lut.jsonl` holds all 2710 *measured* rows
   (`source=jetson_trt`, fp32, TRT 10.3.0, clocks locked); the original dummy lives
@@ -182,6 +182,11 @@ against a bigger **YOLO11-pose** teacher for its final deployable weights
 
 ### Lowest-friction next build
 
+> **STATUS 2026-07-23 — RESEARCH PROGRAMME COMPLETE (terminal at CP 10.3).** The numbered path
+> ended; `state/plan_state.yaml` is the source of truth. Next = the TFM write-up (a SEPARATE
+> repo) + two non-blocking riders (persist a5fddcc weights; one real-weights GAP8 run).
+> Everything below is the historical record of how the two-device result closed.
+
 **BEAT-N PROGRAM CLOSED 2026-07-19 — WON.** Champion **s39d_cap_a_rl** (searched s39 →
 DepGraph spec-prune `prune/specs/s39d_cap_a.json` 1.8M → 100-ep recipe-lite recovery, no
 KD): **de-noised 0.8721 ± 0.0051** {0.8703, 0.8681, 0.8779} @ **measured 11.59 fp32 /
@@ -193,15 +198,19 @@ specs fail fp16 7.96–8.04; funded the capacity ladder), **recipe-lite = +5.0�
 on the recovery (the decisive lever; KD off), capacity-max hand ladder around the
 allocator's saturated act fence, 3-seed de-noise per finalist (seeds spanned 1.7 pts).
 
-**ACTIVE (opened 2026-07-19): CP 10.3 — MCU-native search prep.** A1/A2/A3 @160 read:
-PAN neck = +7.5 % cycles for +7.8 pts (A2 knee 0.5347 @ 5.28 FPS vs yolo11n 0.6227 @
-2.92 — genuine trade, dominance verdict replaced). `mcu/cycle_oracle.py` = the search's
-latency oracle (GVSOC, content-cached, validated 0.02 %). Gate 1 (recipe-parity A2 twin
-@160) = **NEGATIVE: recipe-lite −5.0 pts on the graft@160** (0.4846 vs bare 0.5347) —
-the gap is architectural. @160 finals so far: act273+pan 0.5288 @ 7.06 FPS (efficiency
-knee, 2.42× baseline), u30+pan 0.5159 @ 4.28 (dominated — uniform loses to allocation
-on cycles too). **Gate 2a pending** (MODE=proxy_rank @160, owais): ρ≥0.70 ∧ regret≤0.01
-gates the search launch. MCU training remains user-gated.
+**CP 10.3 CLOSED 2026-07-20 — MCU-NATIVE SEARCH WON; SILICON-CONFIRMED 2026-07-23 → RESEARCH
+PROGRAMME COMPLETE.** Champion **a5fddcc** (OFA-graft, deeper backbone d=[4,4,2,3,3] + gentle
+prune, topdown neck, res 192, 1.13M params) Pareto-**dominates** the deployed baseline on GAP8:
+de-noised **0.6299 ± 0.0064** {0.6319, 0.6350, 0.6227} vs yolo11n@160 0.6227, and on **real
+AI-deck silicon** (mcu/board/net_bench) **55.97M vs 65.83M cluster cyc = 15.0 % fewer** (319.8
+vs 376.2 ms; 6× the sim's 2.4 % edge), 2.3× fewer params. Stamp: `state/winner_mcu/winner.json`
+(silicon_measured block), procedure.md "CP 10.3 SILICON". The lever was the base architecture
+(recipe-lite failed ×2 @160 −5.0 pts; KD null). **Two-device result:** OFA-graft family = TRADE
+on the Orin (beat-n) + DOMINATION on the GAP8 = the hardware-conditional-NAS spine, measured at
+both ends. **NEXT (research is terminal):** the TFM write-up lives in a SEPARATE repo; two
+non-blocking riders remain — persist a5fddcc's weights (one GPU save-run) + one real-weights
+GAP8 run (past the STRIP_WEIGHTS radio-flash size wall). Deploy gap unchanged: 2.7–3.8 FPS <
+the 15–30 FPS racing bar.
 
 **THE CROSS-FAMILY FRONTIER IS FULLY MEASURED** (2026-07-08 locked-clock bench + CP 6.2-G
 2026-07-11) — the 21-row table lives in `models/README.md`. Pareto set (fp32): dense w25
@@ -211,7 +220,9 @@ dominated** (CP 6.2-G: r40 0.816@11.81/8.41, r60 0.759@9.01/6.58; retention crus
 crater-prior but the +7–8 pt gap at matched latency stands). Both supernet gates (R50
 compute-bound, MBv3 memory-bound) are closed by measurement.
 
-**ACTIVE PROGRAM (user decision 2026-07-11): PRUNING-AS-SEARCH** — pruning = stage 2 of the
+**PRUNING-AS-SEARCH PROGRAM — CLOSED 2026-07-13** (WAVE-2: the feasible per-stage search
+converged to the dense Pareto frontier, no dominator; superseded by the 2026-07-15 NAS-only
+pivot). *Historical design/record below.* Pruning was stage 2 of the
 hardware-aware search (latency-guided width search), symmetric across families; full design in
 procedure.md "CP 6.2-G CLOSED". Order of work:
 1. ~~Track 0 plumbing~~ (DONE with this update): technique knobs in `prune/prune_graft.py`
@@ -355,7 +366,7 @@ CUDA variant from PyPI).
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **TFM_NAS** (3464 symbols, 7449 relationships, 287 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **TFM_NAS** (3585 symbols, 7631 relationships, 293 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
